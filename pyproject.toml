@@ -1,0 +1,26 @@
+# ExplainLab  monorepo 根配置
+# 本文件是 uv workspace 的虚拟根（不包含 [project]），
+# 仅用于统一 Python 工作区、共享 lint / 测试配置。
+# 业务依赖分别声明在 backend/ 与 knowledge-core/ 的 pyproject.toml 中。
+
+[tool.uv.workspace]
+members = ["backend", "knowledge-core"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["backend", "knowledge-core/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic 生成的迁移文件保留其固有约定（未使用的 op/sa 导入、Union 写法等）
+"backend/alembic/versions/*" = ["F401", "I001", "UP007", "UP035"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "knowledge-core/tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
