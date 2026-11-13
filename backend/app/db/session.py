@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
@@ -65,5 +66,22 @@ def get_session() -> Generator[Session, None, None]:
     session = _session_factory()
     try:
         yield session
+    finally:
+        session.close()
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """非请求场景的事务上下文（启动初始化、脚本等）：自动提交 / 回滚。"""
+    if _session_factory is None:
+        init_db()
+    assert _session_factory is not None
+    session = _session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()

@@ -29,8 +29,21 @@ def test_upgrade_head_creates_version_table(tmp_path, monkeypatch: pytest.Monkey
                 version = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
+                tables = {
+                    row[0]
+                    for row in conn.execute(
+                        text("SELECT name FROM sqlite_master WHERE type='table'")
+                    )
+                }
         finally:
             engine.dispose()
-        assert version == "0001_baseline"
+        assert version == "0002_m1_core"
+        assert {
+            "knowledge_space",
+            "conversation",
+            "message",
+            "knowledge_item",
+            "source_ref",
+        } <= tables
     finally:
         get_settings.cache_clear()

@@ -25,11 +25,23 @@
 
 验收证据见 [docs/acceptance/M0-report.md](docs/acceptance/M0-report.md)（含真实运行输出与首页截图）。
 
-## M1 · 对话与知识提取基础 ⬜
+## M1 · 对话与知识提取基础 ✅
 
-- 会话模型与对话 API（接入首个模型供应商，通过 Model Adapter）
-- Knowledge Core：知识提取服务实现、知识条目持久化
-- 个人总知识库 / 项目知识空间的数据模型与基本 CRUD
+**目标**：打通真实模型对话与知识提取持久化，建立知识空间数据模型与基本 CRUD。
+
+验收标准（2026-11-13 全部通过）：
+
+- [x] 会话模型与对话 API（接入首个供应商 DeepSeek，通过 Model Adapter，真实回复落库）
+- [x] Knowledge Core：知识提取服务实现（LLMExtractionService + KnowledgeService）
+- [x] 知识条目持久化（KnowledgeRepository 端口 + SQLAlchemy 实现，来源追溯随条目落库）
+- [x] 个人总知识库 / 项目知识空间数据模型与基本 CRUD
+- [x] 数据迁移 0002_m1_core（5 张表，无漂移）
+- [x] 前端对话视图与知识库视图（真实 API，无假数据）
+- [x] 全量测试（Python 80 通过 + 前端 15 通过 + ruff 通过 + 构建通过）
+- [x] 真实模型端到端联调（对话 + 提取 2 条知识并落库，来源可追溯）
+- [x] API Key 仅存 backend/.env，不进入前端；模型请求直连真实 base_url，无代理替换
+
+验收证据见 [docs/acceptance/M1-report.md](docs/acceptance/M1-report.md)（含真实运行输出、真实模型对话与三视图截图）。
 
 ## M2 · 知识关系、去重与审核 ⬜
 

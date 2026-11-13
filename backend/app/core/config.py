@@ -24,9 +24,11 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
-    # 模型适配层：M0 不接入具体供应商，仅保留配置位
+    # 模型适配层：M1 接入 OpenAI 兼容供应商；密钥仅后端持有，绝不进入前端
     model_provider: str | None = None
+    model_base_url: str | None = None
     model_api_key: str | None = None
+    model_name: str | None = None
 
     @property
     def is_sqlite(self) -> bool:

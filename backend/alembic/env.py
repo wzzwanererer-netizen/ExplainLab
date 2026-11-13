@@ -10,6 +10,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import Connection
 
+import app.models  # noqa: F401  # 注册 ORM 模型到 Base.metadata
 from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base

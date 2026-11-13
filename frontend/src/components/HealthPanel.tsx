@@ -96,7 +96,7 @@ export function HealthPanel() {
           </Row>
           <Row name="模型适配层">
             {state.data.model_adapter === "not_configured" ? (
-              <span className="text-slate-400">未配置（M0 不接入供应商）</span>
+              <span className="text-slate-400">未配置（对话与提取不可用）</span>
             ) : (
               state.data.model_adapter
             )}
