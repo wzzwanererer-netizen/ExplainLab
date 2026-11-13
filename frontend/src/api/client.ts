@@ -1,12 +1,24 @@
 import type {
+  AnalyzeResponse,
   Conversation,
   ConversationDetail,
+  DuplicateCandidate,
   ExtractResponse,
   HealthResponse,
   KnowledgeCreateInput,
   KnowledgeItem,
+  KnowledgeRelation,
   KnowledgeUpdateInput,
+  KnowledgeVersion,
   Message,
+  MutationResult,
+  RelationCreateInput,
+  ReviewRequest,
+  ReviewStatus,
+  ReviewSubmitInput,
+  ReviewSubmitResult,
+  SourceAttachInput,
+  SourceRef,
   Space,
 } from "./types";
 
@@ -22,7 +34,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function send(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...init,
@@ -43,10 +55,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       detail || `请求失败（HTTP ${response.status}）：${path}`,
     );
   }
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(path, init);
   if (response.status === 204) {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+async function requestWithStatus<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ status: number; data: T }> {
+  const response = await send(path, init);
+  if (response.status === 204) {
+    return { status: 204, data: undefined as T };
+  }
+  return { status: response.status, data: (await response.json()) as T };
+}
+
+/** 变更类响应：202 = 重要变更进入审核；其余 = 已直接应用。 */
+function mutationResult<T>(status: number, data: T | ReviewRequest): MutationResult<T> {
+  if (status === 202) {
+    return { kind: "review", review: data as ReviewRequest };
+  }
+  return { kind: "applied", data: data as T };
 }
 
 function spaceQuery(spaceId?: string): string {
@@ -95,11 +131,74 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  updateKnowledge: (id: string, patch: KnowledgeUpdateInput) =>
-    request<KnowledgeItem>(`/api/knowledge/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
+  updateKnowledge: async (
+    id: string,
+    patch: KnowledgeUpdateInput,
+  ): Promise<MutationResult<KnowledgeItem>> => {
+    const { status, data } = await requestWithStatus<KnowledgeItem | ReviewRequest>(
+      `/api/knowledge/${id}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+    return mutationResult<KnowledgeItem>(status, data);
+  },
+  deleteKnowledge: async (id: string): Promise<MutationResult<void>> => {
+    const { status, data } = await requestWithStatus<ReviewRequest | undefined>(
+      `/api/knowledge/${id}`,
+      { method: "DELETE" },
+    );
+    return mutationResult<void>(status, data);
+  },
+
+  // M2 治理：查重 / 分析 / 关系 / 版本 / 来源
+  findDuplicates: (id: string) =>
+    request<DuplicateCandidate[]>(`/api/knowledge/${id}/duplicates`),
+  analyzeKnowledge: (id: string) =>
+    request<AnalyzeResponse>(`/api/knowledge/${id}/analyze`, { method: "POST" }),
+  listRelations: (id: string) =>
+    request<KnowledgeRelation[]>(`/api/knowledge/${id}/relations`),
+  createRelation: (id: string, input: RelationCreateInput) =>
+    request<KnowledgeRelation>(`/api/knowledge/${id}/relations`, {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
-  deleteKnowledge: (id: string) =>
-    request<void>(`/api/knowledge/${id}`, { method: "DELETE" }),
+  deleteRelation: (relationId: string) =>
+    request<void>(`/api/relations/${relationId}`, { method: "DELETE" }),
+  listVersions: (id: string) =>
+    request<KnowledgeVersion[]>(`/api/knowledge/${id}/versions`),
+  restoreVersion: async (
+    id: string,
+    version: number,
+  ): Promise<MutationResult<KnowledgeItem>> => {
+    const { status, data } = await requestWithStatus<KnowledgeItem | ReviewRequest>(
+      `/api/knowledge/${id}/versions/${version}/restore`,
+      { method: "POST" },
+    );
+    return mutationResult<KnowledgeItem>(status, data);
+  },
+  attachSource: (id: string, input: SourceAttachInput) =>
+    request<SourceRef>(`/api/knowledge/${id}/sources`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  // M2 治理：审核
+  listReviews: (status?: ReviewStatus) =>
+    request<ReviewRequest[]>(
+      `/api/reviews${status ? `?status=${status}` : ""}`,
+    ),
+  submitReview: (input: ReviewSubmitInput) =>
+    request<ReviewSubmitResult>("/api/reviews", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  approveReview: (id: string, note?: string) =>
+    request<ReviewRequest>(`/api/reviews/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ note: note ?? null }),
+    }),
+  rejectReview: (id: string, note?: string) =>
+    request<ReviewRequest>(`/api/reviews/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ note: note ?? null }),
+    }),
 };

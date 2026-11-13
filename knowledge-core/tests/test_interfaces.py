@@ -41,6 +41,12 @@ def test_core_has_no_web_framework_dependency():
         "import knowledge_core.relations\n"
         "import knowledge_core.retrieval\n"
         "import knowledge_core.versioning\n"
+        "import knowledge_core.parsing\n"
+        "import knowledge_core.services\n"
+        "import knowledge_core.review\n"
+        "import knowledge_core.relations.llm\n"
+        "import knowledge_core.versioning.service\n"
+        "import knowledge_core.provenance.service\n"
         "forbidden = {'fastapi', 'starlette', 'flask', 'django'} & set(sys.modules)\n"
         "assert not forbidden, f'knowledge-core 引入了禁止依赖: {forbidden}'\n"
     )

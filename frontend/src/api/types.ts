@@ -82,3 +82,98 @@ export interface KnowledgeCreateInput {
 export type KnowledgeUpdateInput = Partial<
   Pick<KnowledgeItem, "title" | "content" | "status" | "space_id">
 >;
+
+/** 以下与后端 M2 治理 DTO 对应。 */
+
+export type RelationType =
+  | "related"
+  | "depends_on"
+  | "duplicate_of"
+  | "refines"
+  | "contradicts";
+
+export type RelationOrigin = "manual" | "llm" | "dedup";
+
+export interface KnowledgeRelation {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: RelationType;
+  confidence: number;
+  origin: RelationOrigin;
+  created_at: string;
+}
+
+export interface RelationCreateInput {
+  target_id: string;
+  relation_type: RelationType;
+  confidence?: number;
+}
+
+export interface KnowledgeVersion {
+  id: string;
+  item_id: string;
+  version: number;
+  title: string;
+  content: string;
+  change_summary: string | null;
+  created_at: string;
+}
+
+export type ReviewStatus = "pending" | "approved" | "rejected";
+
+export type ReviewAction =
+  | "update_item"
+  | "delete_item"
+  | "merge_duplicate"
+  | "restore_version";
+
+export interface ReviewRequest {
+  id: string;
+  item_id: string;
+  action: ReviewAction;
+  payload: Record<string, unknown>;
+  reason: string | null;
+  status: ReviewStatus;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
+}
+
+export interface ReviewSubmitInput {
+  item_id: string;
+  action: ReviewAction;
+  payload?: Record<string, unknown>;
+  reason?: string | null;
+}
+
+export interface ReviewSubmitResult {
+  applied: boolean;
+  review: ReviewRequest | null;
+}
+
+export interface DuplicateCandidate {
+  item_id: string;
+  score: number;
+  title: string;
+}
+
+export interface AnalyzeResponse {
+  duplicates: DuplicateCandidate[];
+  relations: KnowledgeRelation[];
+}
+
+export interface SourceAttachInput {
+  source_type: SourceRef["source_type"];
+  uri?: string | null;
+  conversation_id?: string | null;
+  excerpt?: string | null;
+}
+
+/**
+ * 变更类请求的结果：重要变更被审核门禁拦截时返回审核单（HTTP 202），
+ * 否则直接应用。前端据此提示「已提交审核」。
+ */
+export type MutationResult<T> =
+  | { kind: "applied"; data: T }
+  | { kind: "review"; review: ReviewRequest };

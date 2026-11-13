@@ -119,6 +119,23 @@ class SQLAlchemyKnowledgeRepository:
         self._session.flush()
         return True
 
+    def add_source_ref(self, item_id: UUID, source: SourceRef) -> SourceRef:
+        row = self._session.get(KnowledgeItemORM, str(item_id))
+        if row is None:
+            raise NotFoundError(f"知识条目不存在: {item_id}")
+        row.source_refs.append(
+            SourceRefORM(
+                id=str(source.id),
+                source_type=source.source_type.value,
+                uri=source.uri,
+                conversation_id=source.conversation_id,
+                excerpt=source.excerpt,
+                created_at=source.created_at,
+            )
+        )
+        self._session.flush()
+        return source
+
 
 async def extract_conversation_knowledge(
     session: Session,

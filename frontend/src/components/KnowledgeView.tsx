@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { KnowledgeItem, KnowledgeStatus, Space } from "../api/types";
+import { KnowledgeDetail } from "./KnowledgeDetail";
 
 const STATUS_LABEL: Record<KnowledgeStatus, string> = {
   draft: "草稿",
@@ -32,6 +33,7 @@ export function KnowledgeView() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [status, setStatus] = useState<KnowledgeStatus>("draft");
@@ -103,8 +105,12 @@ export function KnowledgeView() {
     setError(null);
     try {
       if (editingId) {
-        await api.updateKnowledge(editingId, { title: t, content: c, status });
-        setNotice("已更新知识条目。");
+        const result = await api.updateKnowledge(editingId, { title: t, content: c, status });
+        if (result.kind === "review") {
+          setNotice("已提交审核，可在「审核」页签处理。");
+        } else {
+          setNotice("已更新知识条目。");
+        }
       } else {
         await api.createKnowledge({ title: t, content: c, space_id: spaceId || null });
         setNotice("已创建知识条目。");
@@ -128,7 +134,10 @@ export function KnowledgeView() {
     if (!window.confirm("确认删除该知识条目？")) return;
     setError(null);
     try {
-      await api.deleteKnowledge(id);
+      const result = await api.deleteKnowledge(id);
+      if (result.kind === "review") {
+        setNotice("已提交删除审核，可在「审核」页签处理。");
+      }
       if (editingId === id) {
         resetForm();
       }
@@ -305,7 +314,25 @@ export function KnowledgeView() {
                   >
                     删除
                   </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedId(expandedId === item.id ? null : item.id)
+                    }
+                    aria-expanded={expandedId === item.id}
+                    className="rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                  >
+                    {expandedId === item.id ? "收起详情" : "治理详情"}
+                  </button>
                 </div>
+                {expandedId === item.id && (
+                  <KnowledgeDetail
+                    item={item}
+                    onNotice={setNotice}
+                    onError={setError}
+                    onChanged={() => void loadItems(spaceId)}
+                  />
+                )}
               </article>
             ))
           )}

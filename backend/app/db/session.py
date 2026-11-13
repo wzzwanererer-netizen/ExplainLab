@@ -10,7 +10,7 @@ from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
@@ -22,10 +22,21 @@ def create_engine_from_url(database_url: str) -> Engine:
         if database_url.startswith("sqlite:///") and ":memory:" not in database_url:
             db_path = database_url.removeprefix("sqlite:///")
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        return create_engine(
+        engine = create_engine(
             database_url,
             connect_args={"check_same_thread": False},
         )
+
+        # SQLite 默认不启用外键约束；显式开启后，模型声明的 ON DELETE CASCADE
+        # 才会在删除知识条目时真正级联清理关系 / 版本 / 审核 / 来源，避免孤儿数据。
+        # PostgreSQL 默认强制外键，无需此处理。
+        @event.listens_for(engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        return engine
     return create_engine(database_url, pool_pre_ping=True)
 
 

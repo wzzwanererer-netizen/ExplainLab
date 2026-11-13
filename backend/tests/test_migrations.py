@@ -37,13 +37,16 @@ def test_upgrade_head_creates_version_table(tmp_path, monkeypatch: pytest.Monkey
                 }
         finally:
             engine.dispose()
-        assert version == "0002_m1_core"
+        assert version == "0003_m2_governance"
         assert {
             "knowledge_space",
             "conversation",
             "message",
             "knowledge_item",
             "source_ref",
+            "knowledge_relation",
+            "knowledge_version",
+            "review_request",
         } <= tables
     finally:
         get_settings.cache_clear()

@@ -11,7 +11,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from knowledge_core.domain.entities import KnowledgeStatus
+from knowledge_core.domain.entities import (
+    KnowledgeStatus,
+    RelationType,
+    ReviewAction,
+    SourceType,
+)
 
 
 class SpaceOut(BaseModel):
@@ -108,3 +113,83 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     count: int
     items: list[KnowledgeOut]
+
+
+class RelationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    target_id: UUID
+    relation_type: str
+    confidence: float
+    origin: str
+    created_at: datetime
+
+
+class RelationCreate(BaseModel):
+    target_id: UUID
+    relation_type: RelationType
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class VersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    item_id: UUID
+    version: int
+    title: str
+    content: str
+    change_summary: str | None
+    created_at: datetime
+
+
+class ReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    item_id: UUID
+    action: str
+    payload: dict
+    reason: str | None
+    status: str
+    created_at: datetime
+    resolved_at: datetime | None
+    resolution_note: str | None
+
+
+class ReviewSubmit(BaseModel):
+    item_id: UUID
+    action: ReviewAction
+    payload: dict = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class ReviewSubmitResult(BaseModel):
+    """POST /reviews 的结果：重要变更生成审核单；否则直接应用。"""
+
+    applied: bool
+    review: ReviewOut | None = None
+
+
+class ReviewResolve(BaseModel):
+    note: str | None = None
+
+
+class DuplicateOut(BaseModel):
+    item_id: UUID
+    score: float
+    title: str
+
+
+class AnalyzeResponse(BaseModel):
+    duplicates: list[DuplicateOut]
+    relations: list[RelationOut]
+
+
+class SourceAttach(BaseModel):
+    source_type: SourceType
+    uri: str | None = None
+    conversation_id: str | None = None
+    excerpt: str | None = None

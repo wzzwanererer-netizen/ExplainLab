@@ -35,6 +35,14 @@ class RelationType(StrEnum):
     CONTRADICTS = "contradicts"
 
 
+class RelationOrigin(StrEnum):
+    """知识关系的产生方式（M2）。"""
+
+    MANUAL = "manual"
+    LLM = "llm"
+    DEDUP = "dedup"
+
+
 class SourceType(StrEnum):
     """知识来源类型。"""
 
@@ -79,6 +87,7 @@ class KnowledgeRelation(BaseModel):
     target_id: UUID
     relation_type: RelationType
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    origin: RelationOrigin = RelationOrigin.MANUAL
     created_at: datetime = Field(default_factory=utcnow)
 
     @model_validator(mode="after")
@@ -98,3 +107,38 @@ class KnowledgeVersion(BaseModel):
     content: str
     change_summary: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class ReviewStatus(StrEnum):
+    """审核单生命周期状态（M2）。"""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ReviewAction(StrEnum):
+    """审核单所承载的拟变更类型（M2）。"""
+
+    UPDATE_ITEM = "update_item"
+    DELETE_ITEM = "delete_item"
+    MERGE_DUPLICATE = "merge_duplicate"
+    RESTORE_VERSION = "restore_version"
+
+
+class ReviewRequest(BaseModel):
+    """重要变更的审核单（M2）。
+
+    payload 承载拟变更内容（如新 title/content/status、合并目标 id、回滚版本号），
+    批准后才应用；驳回不改动数据。
+    """
+
+    id: UUID = Field(default_factory=uuid4)
+    item_id: UUID
+    action: ReviewAction
+    payload: dict = Field(default_factory=dict)
+    reason: str | None = None
+    status: ReviewStatus = ReviewStatus.PENDING
+    created_at: datetime = Field(default_factory=utcnow)
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None

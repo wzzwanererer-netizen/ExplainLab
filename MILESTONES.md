@@ -43,11 +43,23 @@
 
 验收证据见 [docs/acceptance/M1-report.md](docs/acceptance/M1-report.md)（含真实运行输出、真实模型对话与三视图截图）。
 
-## M2 · 知识关系、去重与审核 ⬜
+## M2 · 知识关系、去重与审核 ✅
 
-- 重复知识识别、知识关系推断
-- 版本管理与来源追溯落地
-- 重要知识变更审核流
+**目标**：在 M1 提取与持久化之上补齐知识治理层——去重、关系推断、版本管理、来源追溯落地、重要变更审核流，治理逻辑全部落在独立 Knowledge Core。
+
+验收标准（2026-11-14 全部通过）：
+
+- [x] 迁移 0003_m2_governance 实跑、无漂移；三张治理表就绪（knowledge_relation / knowledge_version / review_request）
+- [x] 去重（词面 char-bigram 召回 + LLM 同一知识判定）与关系推断可用且落库，origin（manual/llm/dedup）可追溯
+- [x] 版本 create/list/restore 可用；restore 先建回滚前快照，保留线性历史
+- [x] 重要变更按审核矩阵进审核；批准应用、驳回无副作用；merge 闭环（归档 + DUPLICATE_OF + 来源并入，不硬删）
+- [x] 来源追溯 attach/trace 落地
+- [x] 前端最小界面（详情关系/版本/来源、查重合并、审核队列、202 提示）真实可用
+- [x] 全量测试（Python 117 通过 + 前端 27 通过）+ ruff + 构建 + 无漂移通过；Core 独立性守护扩展到 M2 模块
+- [x] 真实 DeepSeek 联调（仅 generate，无 embed）：查重 0.98、关系落库、合并闭环、生效编辑门禁
+- [x] 联调发现并修复 2 个真实缺陷（合并来源主键冲突；SQLite 外键级联 + 删除批准自毁），均补回归测试
+
+验收证据见 [docs/acceptance/M2-report.md](docs/acceptance/M2-report.md)（含真实运行输出、真实模型治理闭环证据与界面截图）。
 
 ## M3 · 跨会话混合检索 ⬜
 

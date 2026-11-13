@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import json
-import re
 from collections.abc import Sequence
 
 from knowledge_core.domain.entities import (
@@ -19,6 +17,7 @@ from knowledge_core.domain.entities import (
 from knowledge_core.extraction import ExtractionService
 from knowledge_core.model_adapter.base import ModelAdapter
 from knowledge_core.model_adapter.types import ModelMessage, ModelRequest
+from knowledge_core.parsing import extract_json
 
 _SYSTEM_PROMPT = """你是一个知识提取引擎。请从给定对话中提取值得长期保存的知识点。
 
@@ -33,12 +32,7 @@ _EXCERPT_LIMIT = 300
 
 def _parse_items(text: str) -> list[dict]:
     """健壮解析模型输出：兼容代码围栏、前后多余文本、直接数组。失败返回空列表。"""
-    cleaned = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", cleaned, re.DOTALL)
-    if fence:
-        cleaned = fence.group(1).strip()
-
-    data = _loads_or_extract(cleaned)
+    data = extract_json(text)
     if isinstance(data, dict):
         items = data.get("items", [])
     elif isinstance(data, list):
@@ -46,28 +40,6 @@ def _parse_items(text: str) -> list[dict]:
     else:
         return []
     return [it for it in items if isinstance(it, dict)]
-
-
-def _loads_or_extract(text: str) -> object:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    start = text.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(text[start : i + 1])
-                except json.JSONDecodeError:
-                    return None
-    return None
 
 
 class LLMExtractionService(ExtractionService):

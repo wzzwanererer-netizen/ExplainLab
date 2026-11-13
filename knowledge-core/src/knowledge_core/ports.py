@@ -9,7 +9,15 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from knowledge_core.domain.entities import KnowledgeItem
+from knowledge_core.domain.entities import (
+    KnowledgeItem,
+    KnowledgeRelation,
+    KnowledgeVersion,
+    RelationType,
+    ReviewRequest,
+    ReviewStatus,
+    SourceRef,
+)
 
 
 class KnowledgeRepository(Protocol):
@@ -40,6 +48,68 @@ class KnowledgeRepository(Protocol):
         """更新一条知识，返回更新后的条目。"""
         ...
 
+    def add_source_ref(self, item_id: UUID, source: SourceRef) -> SourceRef:
+        """为条目追加一个来源追溯记录，返回持久化后的来源。"""
+        ...
+
     def delete(self, item_id: UUID) -> bool:
         """删除一条知识；返回是否删除成功。"""
+        ...
+
+
+class RelationRepository(Protocol):
+    """知识关系持久化端口（M2）。"""
+
+    def save_relation(self, relation: KnowledgeRelation) -> KnowledgeRelation:
+        """新增一条关系，返回持久化后的关系。"""
+        ...
+
+    def list_relations(self, item_id: UUID) -> list[KnowledgeRelation]:
+        """列出与条目相关的全部关系（作为 source 或 target）。"""
+        ...
+
+    def find_relation(
+        self, source_id: UUID, target_id: UUID, relation_type: RelationType
+    ) -> KnowledgeRelation | None:
+        """按 (source, target, type) 查找关系；不存在返回 None。"""
+        ...
+
+    def delete_relation(self, relation_id: UUID) -> bool:
+        """删除一条关系；返回是否删除成功。"""
+        ...
+
+
+class VersionRepository(Protocol):
+    """知识版本持久化端口（M2）。"""
+
+    def save_version(self, version: KnowledgeVersion) -> KnowledgeVersion:
+        """新增一个版本快照，返回持久化后的版本。"""
+        ...
+
+    def list_versions(self, item_id: UUID) -> list[KnowledgeVersion]:
+        """按版本号升序列出条目的全部历史版本。"""
+        ...
+
+    def get_version(self, item_id: UUID, version: int) -> KnowledgeVersion | None:
+        """按 (item, version) 获取版本；不存在返回 None。"""
+        ...
+
+
+class ReviewRepository(Protocol):
+    """审核单持久化端口（M2）。"""
+
+    def save_review(self, review: ReviewRequest) -> ReviewRequest:
+        """新增一张审核单，返回持久化后的审核单。"""
+        ...
+
+    def get_review(self, review_id: UUID) -> ReviewRequest | None:
+        """按 ID 获取审核单；不存在返回 None。"""
+        ...
+
+    def list_reviews(self, status: ReviewStatus | None = None) -> list[ReviewRequest]:
+        """列出审核单；status 为 None 时返回全部。"""
+        ...
+
+    def update_review(self, review: ReviewRequest) -> ReviewRequest:
+        """更新审核单（状态/决议），返回更新后的审核单。"""
         ...

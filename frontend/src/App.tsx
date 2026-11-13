@@ -2,17 +2,19 @@ import { useState } from "react";
 import { ChatView } from "./components/ChatView";
 import { HealthPanel } from "./components/HealthPanel";
 import { KnowledgeView } from "./components/KnowledgeView";
+import { ReviewQueue } from "./components/ReviewQueue";
 
-type Tab = "chat" | "knowledge" | "status";
+type Tab = "chat" | "knowledge" | "reviews" | "status";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "对话" },
   { id: "knowledge", label: "知识库" },
+  { id: "reviews", label: "审核" },
   { id: "status", label: "系统状态" },
 ];
 
 /**
- * M1 首页：对话 / 知识库 / 系统状态三个视图。
+ * M2 首页：对话 / 知识库 / 审核 / 系统状态四个视图。
  * 所有数据来自后端真实 API；模型未配置时如实提示，不以假数据冒充。
  */
 export default function App() {
@@ -41,13 +43,14 @@ export default function App() {
             ))}
           </nav>
           <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
-            M1 · 对话与知识提取
+            M2 · 知识治理
           </span>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">
         {tab === "chat" && <ChatView />}
         {tab === "knowledge" && <KnowledgeView />}
+        {tab === "reviews" && <ReviewQueue />}
         {tab === "status" && (
           <div className="max-w-3xl">
             <p className="mb-6 text-sm text-slate-400">

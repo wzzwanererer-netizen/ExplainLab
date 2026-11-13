@@ -3,7 +3,11 @@ from knowledge_core.domain.entities import (
     KnowledgeRelation,
     KnowledgeStatus,
     KnowledgeVersion,
+    RelationOrigin,
     RelationType,
+    ReviewAction,
+    ReviewRequest,
+    ReviewStatus,
     SourceRef,
     SourceType,
 )
@@ -13,7 +17,11 @@ __all__ = [
     "KnowledgeRelation",
     "KnowledgeStatus",
     "KnowledgeVersion",
+    "RelationOrigin",
     "RelationType",
+    "ReviewAction",
+    "ReviewRequest",
+    "ReviewStatus",
     "SourceRef",
     "SourceType",
 ]

@@ -2,6 +2,7 @@
 
 持久化经由 Knowledge Core 的 KnowledgeRepository 端口实现，
 来源追溯随条目一并落库；提取结果为模型真实输出，解析失败时如实返回空列表。
+M2：active 条目的改 / 删经 ReviewService 门禁，返回 202 + 审核单；草稿直接应用。
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -18,16 +19,23 @@ from app.api.schemas import (
     KnowledgeCreate,
     KnowledgeOut,
     KnowledgeUpdate,
+    ReviewOut,
 )
 from app.db.session import get_session
 from app.dependencies import get_model_adapter
 from app.services.errors import NotFoundError
+from app.services.governance import build_review_service
 from app.services.knowledge import (
     SQLAlchemyKnowledgeRepository,
     extract_conversation_knowledge,
 )
 from app.services.spaces import get_space
-from knowledge_core.domain.entities import KnowledgeItem, SourceRef, SourceType
+from knowledge_core.domain.entities import (
+    KnowledgeItem,
+    ReviewAction,
+    SourceRef,
+    SourceType,
+)
 from knowledge_core.model_adapter import ModelAdapter, ModelAdapterError
 
 router = APIRouter(tags=["knowledge"])
@@ -77,31 +85,50 @@ def get_knowledge(
     return KnowledgeOut.model_validate(item)
 
 
-@router.patch("/knowledge/{item_id}", response_model=KnowledgeOut)
-def update_knowledge(
+@router.patch("/knowledge/{item_id}")
+async def update_knowledge(
     item_id: UUID,
     payload: KnowledgeUpdate,
     session: Annotated[Session, Depends(get_session)],
-) -> KnowledgeOut:
+    response: Response,
+) -> KnowledgeOut | ReviewOut:
     repository = SQLAlchemyKnowledgeRepository(session)
     current = repository.get(item_id)
     if current is None:
         raise HTTPException(status_code=404, detail=f"知识条目不存在: {item_id}")
-    updated = current.model_copy(update=payload.model_dump(exclude_unset=True))
-    saved = repository.update(updated)
+    # active 的编辑属重要变更：仅生成 pending 审核单（202），批准后才应用
+    service = build_review_service(session)
+    review = await service.submit(
+        item_id,
+        ReviewAction.UPDATE_ITEM,
+        payload.model_dump(exclude_unset=True, mode="json"),
+    )
     session.commit()
-    return KnowledgeOut.model_validate(saved)
+    if review is not None:
+        response.status_code = 202
+        return ReviewOut.model_validate(review)
+    updated = repository.get(item_id)
+    assert updated is not None
+    return KnowledgeOut.model_validate(updated)
 
 
-@router.delete("/knowledge/{item_id}", status_code=204)
-def delete_knowledge(
+@router.delete("/knowledge/{item_id}")
+async def delete_knowledge(
     item_id: UUID,
     session: Annotated[Session, Depends(get_session)],
-) -> None:
-    deleted = SQLAlchemyKnowledgeRepository(session).delete(item_id)
-    if not deleted:
+    response: Response,
+) -> ReviewOut | None:
+    repository = SQLAlchemyKnowledgeRepository(session)
+    if repository.get(item_id) is None:
         raise HTTPException(status_code=404, detail=f"知识条目不存在: {item_id}")
+    service = build_review_service(session)
+    review = await service.submit(item_id, ReviewAction.DELETE_ITEM)
     session.commit()
+    if review is not None:
+        response.status_code = 202
+        return ReviewOut.model_validate(review)
+    response.status_code = 204
+    return None
 
 
 @router.post(

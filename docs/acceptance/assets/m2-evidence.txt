@@ -1,0 +1,68 @@
+== M2 真实模型联调（DeepSeek generate，无 embed）==
+原始条目: 10edfbcd-0e47-43e5-8fd4-b6f31258ac6e 知识图谱的定义
+新增近似条目: b54c600f-0355-4036-97d2-22cc1ae8b89a 知识图谱的概念
+GET /duplicates -> 200
+[
+  {
+    "item_id": "b54c600f-0355-4036-97d2-22cc1ae8b89a",
+    "score": 0.98,
+    "title": "知识图谱的概念"
+  }
+]
+POST /analyze -> 200
+{
+  "duplicates": [
+    {
+      "item_id": "b54c600f-0355-4036-97d2-22cc1ae8b89a",
+      "score": 0.98,
+      "title": "知识图谱的概念"
+    }
+  ],
+  "relations": [
+    {
+      "id": "76c726a0-0238-4cee-bd4b-683c82f669e0",
+      "source_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+      "target_id": "b54c600f-0355-4036-97d2-22cc1ae8b89a",
+      "relation_type": "related",
+      "confidence": 0.98,
+      "origin": "llm",
+      "created_at": "2026-11-13T16:57:24.869819Z"
+    }
+  ]
+}
+落库关系数: 1
+[
+  {
+    "id": "76c726a0-0238-4cee-bd4b-683c82f669e0",
+    "source_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+    "target_id": "b54c600f-0355-4036-97d2-22cc1ae8b89a",
+    "relation_type": "related",
+    "confidence": 0.98,
+    "origin": "llm",
+    "created_at": "2026-11-13T16:57:24.869819"
+  }
+]
+
+== 合并重复审核闭环（submit -> approve）==
+POST /reviews merge -> 201
+审核单: b040b459-c7cf-4624-b6f9-021d995eb914 status= pending
+批准前源条目状态: draft (应仍为 draft，未应用)
+POST /approve -> 200 status= approved
+批准后源条目状态: archived (应为 archived，非硬删)
+DUPLICATE_OF 关系: [{"id": "57370867-a6fa-47c7-b5c4-10cee0ae250e", "source_id": "b54c600f-0355-4036-97d2-22cc1ae8b89a", "target_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e", "relation_type": "duplicate_of", "confidence": 1.0, "origin": "dedup", "created_at": "2026-11-13T16:57:43.500436"}]
+目标来源数: 3 (原始 manual + 并入的 document)
+并入来源含 example.com: True
+源条目版本快照: ['合并前快照']
+
+== 生效知识编辑门禁（active -> 202 -> approve）==
+PATCH active 条目 -> 202 (应为 202)
+审核单 action: update_item status: pending
+批准前内容未变: 知识图谱是一种用“实体—关系—实体”的网 ...
+POST /approve -> 200
+批准后内容已更新: 知识图谱是以“实体—关系—实体”网络结构 ...
+编辑前快照: ['编辑前快照', '编辑前快照']
+
+== 审核队列统计 ==
+  pending: 0
+  approved: 4
+  rejected: 0

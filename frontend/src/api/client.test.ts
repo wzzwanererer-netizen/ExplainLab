@@ -128,3 +128,104 @@ describe("api client M1", () => {
     expect(result.title).toBe("标题");
   });
 });
+
+describe("api client M2", () => {
+  const review = {
+    id: "r1",
+    item_id: "k1",
+    action: "update_item",
+    payload: { title: "新" },
+    reason: null,
+    status: "pending",
+    created_at: "2026-11-14T00:00:00Z",
+    resolved_at: null,
+    resolution_note: null,
+  };
+
+  it("updateKnowledge 收到 202 时返回审核单而非条目", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => review }),
+    );
+
+    const result = await api.updateKnowledge("k1", { title: "新" });
+
+    expect(result.kind).toBe("review");
+    if (result.kind === "review") {
+      expect(result.review.id).toBe("r1");
+      expect(result.review.status).toBe("pending");
+    }
+  });
+
+  it("updateKnowledge 收到 200 时返回已应用条目", async () => {
+    const item = { id: "k1", title: "新" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => item }),
+    );
+
+    const result = await api.updateKnowledge("k1", { title: "新" });
+
+    expect(result.kind).toBe("applied");
+  });
+
+  it("deleteKnowledge 处理 204 直接删除与 202 审核", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 204, json: vi.fn() }),
+    );
+    await expect(api.deleteKnowledge("k1")).resolves.toMatchObject({ kind: "applied" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => review }),
+    );
+    await expect(api.deleteKnowledge("k1")).resolves.toMatchObject({ kind: "review" });
+  });
+
+  it("submitReview 以 POST 提交审核动作", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({ applied: false, review }),
+    });
+
+    const result = await api.submitReview({
+      item_id: "k1",
+      action: "merge_duplicate",
+      payload: { target_id: "k2" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reviews",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          item_id: "k1",
+          action: "merge_duplicate",
+          payload: { target_id: "k2" },
+        }),
+      }),
+    );
+    expect(result.applied).toBe(false);
+    expect(result.review?.id).toBe("r1");
+  });
+
+  it("restoreVersion 收到 202 时返回审核单", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 202, json: async () => review });
+
+    const result = await api.restoreVersion("k1", 2);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/knowledge/k1/versions/2/restore",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result.kind).toBe("review");
+  });
+
+  it("listReviews 携带状态筛选参数", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => [] });
+    await api.listReviews("pending");
+    expect(fetchMock).toHaveBeenCalledWith("/api/reviews?status=pending", expect.anything());
+  });
+});
