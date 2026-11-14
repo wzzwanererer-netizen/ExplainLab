@@ -18,6 +18,11 @@ from knowledge_core.domain.entities import (
     ReviewStatus,
     SourceRef,
 )
+from knowledge_core.experiments.entities import (
+    ExperimentAttempt,
+    ExperimentKind,
+    ExperimentSession,
+)
 from knowledge_core.model_adapter import (
     ModelAdapter,
     ModelCapability,
@@ -176,6 +181,59 @@ class InMemoryReviewRepository:
     def update_review(self, review: ReviewRequest) -> ReviewRequest:
         self.reviews[review.id] = review
         return review
+
+
+class InMemoryExperimentRepository:
+    """内存实验仓库，实现 ExperimentRepository 端口。"""
+
+    def __init__(self) -> None:
+        self.sessions: dict[UUID, ExperimentSession] = {}
+        self.attempts: dict[UUID, ExperimentAttempt] = {}
+
+    def save_session(self, session: ExperimentSession) -> ExperimentSession:
+        self.sessions[session.id] = session
+        return session
+
+    def get_session(self, session_id: UUID) -> ExperimentSession | None:
+        return self.sessions.get(session_id)
+
+    def list_sessions(
+        self,
+        *,
+        kind: ExperimentKind | None = None,
+        space_id: str | None = None,
+    ) -> list[ExperimentSession]:
+        return sorted(
+            (
+                s
+                for s in self.sessions.values()
+                if (kind is None or s.kind == kind)
+                and (space_id is None or s.space_id == space_id)
+            ),
+            key=lambda s: s.created_at,
+            reverse=True,
+        )
+
+    def update_session(self, session: ExperimentSession) -> ExperimentSession:
+        self.sessions[session.id] = session
+        return session
+
+    def delete_session(self, session_id: UUID) -> bool:
+        removed = self.sessions.pop(session_id, None) is not None
+        self.attempts = {
+            aid: a for aid, a in self.attempts.items() if a.session_id != session_id
+        }
+        return removed
+
+    def save_attempt(self, attempt: ExperimentAttempt) -> ExperimentAttempt:
+        self.attempts[attempt.id] = attempt
+        return attempt
+
+    def list_attempts(self, session_id: UUID) -> list[ExperimentAttempt]:
+        return sorted(
+            (a for a in self.attempts.values() if a.session_id == session_id),
+            key=lambda a: a.created_at,
+        )
 
 
 class InMemoryFullTextIndex:

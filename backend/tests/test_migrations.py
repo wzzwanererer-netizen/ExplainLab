@@ -37,7 +37,7 @@ def test_upgrade_head_creates_version_table(tmp_path, monkeypatch: pytest.Monkey
                 }
         finally:
             engine.dispose()
-        assert version == "0004_m3_retrieval"
+        assert version == "0005_m5_experiments"
         assert {
             "knowledge_space",
             "conversation",
@@ -49,6 +49,8 @@ def test_upgrade_head_creates_version_table(tmp_path, monkeypatch: pytest.Monkey
             "review_request",
             "knowledge_vector",
             "knowledge_fts",
+            "experiment_session",
+            "experiment_attempt",
         } <= tables
     finally:
         get_settings.cache_clear()

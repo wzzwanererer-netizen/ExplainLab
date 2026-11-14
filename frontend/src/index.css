@@ -45,3 +45,44 @@
 *::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* M5 实验：入场 / 反馈 / 得分环动效，配合 slate 暗色与三模式强调色。 */
+@keyframes exp-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.exp-fade-in {
+  animation: exp-fade-in 0.28s ease-out both;
+}
+@keyframes exp-pop {
+  0% {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.exp-pop {
+  animation: exp-pop 0.24s ease-out;
+}
+.exp-ring {
+  transition: stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .exp-fade-in,
+  .exp-pop {
+    animation: none;
+  }
+  .exp-ring {
+    transition: none;
+  }
+}

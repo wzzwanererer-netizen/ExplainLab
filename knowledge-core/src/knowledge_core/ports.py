@@ -7,7 +7,7 @@ Knowledge Core 通过端口依赖持久化能力，具体实现由应用层（�
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from knowledge_core.domain.entities import (
@@ -19,6 +19,14 @@ from knowledge_core.domain.entities import (
     ReviewStatus,
     SourceRef,
 )
+
+if TYPE_CHECKING:
+    # 仅用于类型注解（字符串化），避免与 experiments 包初始化形成运行时循环导入。
+    from knowledge_core.experiments.entities import (
+        ExperimentAttempt,
+        ExperimentKind,
+        ExperimentSession,
+    )
 
 
 class KnowledgeRepository(Protocol):
@@ -117,6 +125,43 @@ class ReviewRepository(Protocol):
 
     def update_review(self, review: ReviewRequest) -> ReviewRequest:
         """更新审核单（状态/决议），返回更新后的审核单。"""
+        ...
+
+
+class ExperimentRepository(Protocol):
+    """实验会话与作答持久化端口（M5）。"""
+
+    def save_session(self, session: ExperimentSession) -> ExperimentSession:
+        """新增一次实验会话，返回持久化后的会话。"""
+        ...
+
+    def get_session(self, session_id: UUID) -> ExperimentSession | None:
+        """按 ID 获取实验会话；不存在返回 None。"""
+        ...
+
+    def list_sessions(
+        self,
+        *,
+        kind: ExperimentKind | None = None,
+        space_id: str | None = None,
+    ) -> list[ExperimentSession]:
+        """列出实验会话，可按模式与知识空间过滤；按创建时间倒序。"""
+        ...
+
+    def update_session(self, session: ExperimentSession) -> ExperimentSession:
+        """更新实验会话（状态/内容），返回更新后的会话。"""
+        ...
+
+    def delete_session(self, session_id: UUID) -> bool:
+        """删除实验会话（连同作答记录）；返回是否删除成功。"""
+        ...
+
+    def save_attempt(self, attempt: ExperimentAttempt) -> ExperimentAttempt:
+        """新增一次作答记录，返回持久化后的记录。"""
+        ...
+
+    def list_attempts(self, session_id: UUID) -> list[ExperimentAttempt]:
+        """列出某会话的全部作答记录；按创建时间升序。"""
         ...
 
 

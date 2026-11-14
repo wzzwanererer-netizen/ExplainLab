@@ -4,6 +4,7 @@ UUID 以 String(36) 存储，兼容 SQLite 与 PostgreSQL。
 领域实体（knowledge_core.domain）与 ORM 的映射由仓库层负责。
 M2 引入关系 / 版本 / 审核三张治理表。
 M3 引入向量表 knowledge_vector（全文 FTS5 虚表 knowledge_fts 由迁移 raw SQL 创建）。
+M5 引入实验会话 experiment_session 与作答记录 experiment_attempt（JSON 字段以 Text 存储）。
 """
 
 from __future__ import annotations
@@ -193,3 +194,48 @@ class KnowledgeVectorORM(Base):
     dim: Mapped[int] = mapped_column(Integer)
     vector: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExperimentSessionORM(Base):
+    """交互式知识实验会话（M5）。item_ids / payload 以 JSON 文本存储。"""
+
+    __tablename__ = "experiment_session"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(500))
+    space_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("knowledge_space.id", ondelete="SET NULL"), nullable=True
+    )
+    item_ids: Mapped[str] = mapped_column(Text, default="[]")
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    attempts: Mapped[list[ExperimentAttemptORM]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="ExperimentAttemptORM.created_at",
+    )
+
+
+class ExperimentAttemptORM(Base):
+    """实验作答记录（M5）。answers 以 JSON 文本存储，判分汇总在服务端。"""
+
+    __tablename__ = "experiment_attempt"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiment_session.id", ondelete="CASCADE"), nullable=False
+    )
+    answers: Mapped[str] = mapped_column(Text, default="[]")
+    correct_count: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    session: Mapped[ExperimentSessionORM] = relationship(back_populates="attempts")

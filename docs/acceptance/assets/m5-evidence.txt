@@ -1,0 +1,249 @@
+======================================================================
+ExplainLab M5 交互式知识实验 · 真实联调证据
+后端: http://127.0.0.1:8000  模型: 真实 DeepSeek (openai-compatible)
+======================================================================
+
+[0] GET /api/health -> 200
+model_adapter=openai-compatible embed_adapter=configured
+
+[1] 建立先修关系 POST /api/knowledge/{应用}/relations (depends_on -> 定义) -> 201
+{
+  "id": "0c2df821-e517-423e-bbec-ea1c018f734e",
+  "source_id": "944fce20-2617-460c-8130-7f20d9ba6f87",
+  "target_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+  "relation_type": "depends_on",
+  "confidence": 0.9,
+  "origin": "manual",
+  "created_at": "2026-11-14T18:29:24.784238Z"
+}
+
+[2] 测验创建 POST /api/experiments/sessions (quiz, count=3) -> 201
+{
+  "id": "17e6d719-3e5e-4f40-a556-d6658b5a0cb3",
+  "kind": "quiz",
+  "title": "知识测验 · 知识图谱的定义",
+  "space_id": "df4f4fd8-c9c0-498c-8d84-e9bed41bb288",
+  "item_ids": [
+    "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e"
+  ],
+  "payload": {
+    "questions": [
+      {
+        "index": 0,
+        "prompt": "知识图谱以哪种结构来组织与表示知识？",
+        "kind": "single_choice",
+        "options": [
+          "实体—关系—实体网络结构",
+          "树形层级结构",
+          "线性列表结构",
+          "键值对结构"
+        ],
+        "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e"
+      },
+      {
+        "index": 1,
+        "prompt": "知识图谱常用于搜索引擎语义理解与智能问答。",
+        "kind": "true_false",
+        "options": [
+          "正确",
+          "错误"
+        ],
+        "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e"
+      },
+      {
+        "index": 2,
+        "prompt": "关于知识图谱，下列说法正确的是？",
+        "kind": "single_choice",
+        "options": [
+          "它是一种以实体和关系构成网络的数据模型",
+          "它只能用于存储图片数据",
+          "它不涉及实体之间的关系",
+          "它仅用于数值计算"
+        ],
+        "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e"
+      }
+    ]
+  },
+  "status": "active",
+  "created_at": "2026-11-14T18:29:27.014940Z",
+  "updated_at": "2026-11-14T18:29:27.014940Z"
+}
+>> 题目数=3  作答前正确答案/解析全部隐藏=True
+
+[2.1] 作答 index=0 value=0 -> 200  feedback={
+  "correct": true,
+  "correct_value": 0,
+  "explanation": "知识图谱的核心是以“实体—关系—实体”网络结构组织与表示知识。"
+}
+
+[2.2] 作答 index=1 value=0 -> 200  feedback={
+  "correct": true,
+  "correct_value": 0,
+  "explanation": "知识内容明确指出知识图谱常用于搜索引擎语义理解与智能问答。"
+}
+
+[2.3] 作答 index=2 value=0 -> 200  feedback={
+  "correct": true,
+  "correct_value": 0,
+  "explanation": "知识图谱是以“实体—关系—实体”网络结构组织知识的数据模型。"
+}
+
+[3] 测验完成 POST .../complete -> 200
+{
+  "session": {
+    "id": "17e6d719-3e5e-4f40-a556-d6658b5a0cb3",
+    "kind": "quiz",
+    "title": "知识测验 · 知识图谱的定义",
+    "space_id": "df4f4fd8-c9c0-498c-8d84-e9bed41bb288",
+    "item_ids": [
+      "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e"
+    ],
+    "payload": {
+      "questions": [
+        {
+          "index": 0,
+          "prompt": "知识图谱以哪种结构来组织与表示知识？",
+          "kind": "single_choice",
+          "options": [
+            "实体—关系—实体网络结构",
+            "树形层级结构",
+            "线性列表结构",
+            "键值对结构"
+          ],
+          "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+          "correct_index": 0,
+          "explanation": "知识图谱的核心是以“实体—关系—实体”网络结构组织与表示知识。"
+        },
+        {
+          "index": 1,
+          "prompt": "知识图谱常用于搜索引擎语义理解与智能问答。",
+          "kind": "true_false",
+          "options": [
+            "正确",
+            "错误"
+          ],
+          "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+          "correct_index": 0,
+          "explanation": "知识内容明确指出知识图谱常用于搜索引擎语义理解与智能问答。"
+        },
+        {
+          "index": 2,
+          "prompt": "关于知识图谱，下列说法正确的是？",
+          "kind": "single_choice",
+          "options": [
+            "它是一种以实体和关系构成网络的数据模型",
+            "它只能用于存储图片数据",
+            "它不涉及实体之间的关系",
+            "它仅用于数值计算"
+          ],
+          "source_item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+          "correct_index": 0,
+          "explanation": "知识图谱是以“实体—关系—实体”网络结构组织知识的数据模型。"
+        }
+      ]
+    },
+    "status": "completed",
+    "created_at": "2026-11-14T18:29:27.014940",
+    "updated_at": "2026-11-14T18:29:27.059613"
+  },
+  "attempt": {
+    "id": "035138e4-dd6f-4c99-b33f-d2ba0a25c7bf",
+    "session_id": "17e6d719-3e5e-4f40-a556-d6658b5a0cb3",
+    "answers": [
+      {
+        "index": 0,
+        "value": 0,
+        "correct": true
+      },
+      {
+        "index": 1,
+        "value": 0,
+        "correct": true
+      },
+      {
+        "index": 2,
+        "value": 0,
+        "correct": true
+      }
+    ],
+    "correct_count": 3,
+    "total": 3,
+    "score": 1.0,
+    "created_at": "2026-11-14T18:29:27.056586Z"
+  }
+}
+>> 得分=1.00 答对=3/3  完成后答案揭示=True  会话状态=completed
+
+[4] 对比创建 POST /api/experiments/sessions (compare: 定义 ↔ 典型应用) -> 201
+{
+  "id": "139b7db6-023d-4f08-9a9e-ce0afe7c7e68",
+  "kind": "compare",
+  "title": "知识对比 · 知识图谱的定义 ↔ 知识图谱的典型用途",
+  "space_id": "df4f4fd8-c9c0-498c-8d84-e9bed41bb288",
+  "item_ids": [
+    "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+    "944fce20-2617-460c-8130-7f20d9ba6f87"
+  ],
+  "payload": {
+    "compare": {
+      "item_a_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+      "item_b_id": "944fce20-2617-460c-8130-7f20d9ba6f87",
+      "similarities": [
+        "都涉及搜索引擎语义理解与智能问答",
+        "都围绕知识图谱这一主题"
+      ],
+      "differences": [
+        "A侧重知识图谱的定义与数据模型结构",
+        "B侧重知识图谱的典型用途与应用示例",
+        "A描述实体—关系—实体的网络结构，B给出关系链路问答的具体例子"
+      ],
+      "relationship": "B所描述的典型用途以A所定义的知识图谱数据模型为基础。",
+      "relation_type": "depends_on"
+    }
+  },
+  "status": "active",
+  "created_at": "2026-11-14T18:29:28.664434Z",
+  "updated_at": "2026-11-14T18:29:28.664434Z"
+}
+>> 相同点=2 不同点=3 关系类型=depends_on
+
+[5] 学习路径创建 POST /api/experiments/sessions (chain, seed=典型应用) -> 201
+{
+  "id": "30147ab3-cad4-4adf-9804-9f8aa7dc3cb8",
+  "kind": "chain",
+  "title": "学习路径 · 知识图谱的典型用途",
+  "space_id": "df4f4fd8-c9c0-498c-8d84-e9bed41bb288",
+  "item_ids": [
+    "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+    "944fce20-2617-460c-8130-7f20d9ba6f87"
+  ],
+  "payload": {
+    "steps": [
+      {
+        "item_id": "10edfbcd-0e47-43e5-8fd4-b6f31258ac6e",
+        "title": "知识图谱的定义",
+        "relation_from_prev": null,
+        "position": 0
+      },
+      {
+        "item_id": "944fce20-2617-460c-8130-7f20d9ba6f87",
+        "title": "知识图谱的典型用途",
+        "relation_from_prev": "depends_on",
+        "position": 1
+      }
+    ]
+  },
+  "status": "active",
+  "created_at": "2026-11-14T18:29:28.702476Z",
+  "updated_at": "2026-11-14T18:29:28.702476Z"
+}
+>> 步数=2  顺序=知识图谱的定义 -> 知识图谱的典型用途
+>> 末步为目标知识=True
+
+[6] 实验列表 GET /api/experiments/sessions -> 200
+  - chain | active | 学习路径 · 知识图谱的典型用途 | 2条知识
+  - compare | active | 知识对比 · 知识图谱的定义 ↔ 知识图谱的典型用途 | 2条知识
+  - quiz | completed | 知识测验 · 知识图谱的定义 | 1条知识
+
+======================================================================
+证据结束

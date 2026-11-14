@@ -350,3 +350,106 @@ describe("api client M4", () => {
     expect(url).not.toContain("include_archived");
   });
 });
+
+describe("api client M5", () => {
+  const session = {
+    id: "e1",
+    kind: "quiz",
+    title: "知识测验 · 知识图谱",
+    space_id: null,
+    item_ids: ["k1"],
+    payload: {
+      questions: [
+        { index: 0, prompt: "Q1", kind: "single_choice", options: ["A", "B"], source_item_id: "k1" },
+      ],
+    },
+    status: "active",
+    created_at: "2026-11-15T00:00:00Z",
+    updated_at: "2026-11-15T00:00:00Z",
+  };
+
+  it("createExperiment 以 POST 提交模式与知识 id", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 201, json: async () => session });
+    const result = await api.createExperiment({ kind: "quiz", item_ids: ["k1"], count: 5 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/experiments/sessions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ kind: "quiz", item_ids: ["k1"], count: 5 }),
+      }),
+    );
+    expect(result.kind).toBe("quiz");
+    expect(result.payload.questions?.[0].prompt).toBe("Q1");
+  });
+
+  it("listExperiments 默认不带参数", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => [session] });
+    const result = await api.listExperiments();
+    expect(fetchMock).toHaveBeenCalledWith("/api/experiments/sessions", expect.anything());
+    expect(result).toHaveLength(1);
+  });
+
+  it("listExperiments 携带 kind 与 space_id 参数", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => [] });
+    await api.listExperiments({ kind: "chain", spaceId: "s1" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("/api/experiments/sessions?");
+    expect(url).toContain("kind=chain");
+    expect(url).toContain("space_id=s1");
+  });
+
+  it("getExperiment 请求单个会话", async () => {
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => session });
+    const result = await api.getExperiment("e1");
+    expect(fetchMock).toHaveBeenCalledWith("/api/experiments/sessions/e1", expect.anything());
+    expect(result.id).toBe("e1");
+  });
+
+  it("answerExperiment 以 POST 提交题目序号与选项", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ correct: true, correct_value: 1, explanation: "因为B" }),
+    });
+    const result = await api.answerExperiment("e1", 0, 1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/experiments/sessions/e1/answer",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ index: 0, value: 1 }) }),
+    );
+    expect(result.correct).toBe(true);
+    expect(result.correct_value).toBe(1);
+  });
+
+  it("completeExperiment 以 POST 提交作答列表", async () => {
+    const completeResult = {
+      session: { ...session, status: "completed" },
+      attempt: {
+        id: "a1",
+        session_id: "e1",
+        answers: [{ index: 0, value: 1, correct: true }],
+        correct_count: 1,
+        total: 1,
+        score: 1,
+        created_at: "2026-11-15T00:00:00Z",
+      },
+    };
+    const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => completeResult });
+    const result = await api.completeExperiment("e1", [{ index: 0, value: 1 }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/experiments/sessions/e1/complete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ answers: [{ index: 0, value: 1 }] }),
+      }),
+    );
+    expect(result.attempt.score).toBe(1);
+    expect(result.session.status).toBe("completed");
+  });
+
+  it("deleteExperiment 处理 204 无响应体", async () => {
+    const jsonSpy = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204, json: jsonSpy }));
+    await expect(api.deleteExperiment("e1")).resolves.toBeUndefined();
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+});

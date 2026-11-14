@@ -36,3 +36,11 @@ def get_embedder(
 ) -> Embedder | None:
     """M3 向量化器（可选）。未配置返回 None，向量通道如实关闭，不报 503。"""
     return build_embed_adapter(settings)
+
+
+def get_model_adapter_optional(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ModelAdapter | None:
+    """M5 实验用可选适配器。未配置返回 None：学习路径仍可用，
+    测验/对比由 Core 抛 ModelRequiredError，路由层翻译为 503。"""
+    return build_model_adapter(settings)

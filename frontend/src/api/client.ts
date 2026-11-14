@@ -1,8 +1,14 @@
 import type {
   AnalyzeResponse,
+  AnswerFeedback,
   Conversation,
   ConversationDetail,
   DuplicateCandidate,
+  ExperimentAnswerInput,
+  ExperimentCompleteResult,
+  ExperimentCreateInput,
+  ExperimentListOptions,
+  ExperimentSession,
   ExtractResponse,
   GraphOptions,
   GraphResponse,
@@ -227,4 +233,34 @@ export const api = {
     const qs = params.toString();
     return request<GraphResponse>(`/api/graph${qs ? `?${qs}` : ""}`);
   },
+
+  // M5 交互式知识实验：测验 / 对比 / 学习路径
+  createExperiment: (input: ExperimentCreateInput) =>
+    request<ExperimentSession>("/api/experiments/sessions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listExperiments: (options: ExperimentListOptions = {}) => {
+    const params = new URLSearchParams();
+    if (options.kind) params.set("kind", options.kind);
+    if (options.spaceId) params.set("space_id", options.spaceId);
+    const qs = params.toString();
+    return request<ExperimentSession[]>(
+      `/api/experiments/sessions${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getExperiment: (id: string) =>
+    request<ExperimentSession>(`/api/experiments/sessions/${id}`),
+  answerExperiment: (id: string, index: number, value: number) =>
+    request<AnswerFeedback>(`/api/experiments/sessions/${id}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ index, value }),
+    }),
+  completeExperiment: (id: string, answers: ExperimentAnswerInput[]) =>
+    request<ExperimentCompleteResult>(`/api/experiments/sessions/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
+  deleteExperiment: (id: string) =>
+    request<void>(`/api/experiments/sessions/${id}`, { method: "DELETE" }),
 };

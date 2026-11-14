@@ -246,3 +246,93 @@ export interface GraphOptions {
   spaceId?: string | null;
   includeArchived?: boolean;
 }
+
+/** 以下与后端 M5 交互式知识实验 DTO 对应。 */
+
+export type ExperimentKind = "quiz" | "compare" | "chain";
+export type ExperimentStatus = "active" | "completed";
+export type QuizQuestionKind = "single_choice" | "true_false";
+
+/** 测验题对外视图：correct_index / explanation 仅在会话完成后出现。 */
+export interface QuizQuestionPublic {
+  index: number;
+  prompt: string;
+  kind: QuizQuestionKind;
+  options: string[];
+  source_item_id: string;
+  correct_index?: number;
+  explanation?: string;
+}
+
+export interface CompareResult {
+  item_a_id: string;
+  item_b_id: string;
+  similarities: string[];
+  differences: string[];
+  relationship: string;
+  relation_type: RelationType | null;
+}
+
+export interface ChainStep {
+  item_id: string;
+  title: string;
+  relation_from_prev: RelationType | null;
+  position: number;
+}
+
+export interface ExperimentPayload {
+  questions?: QuizQuestionPublic[];
+  compare?: CompareResult;
+  steps?: ChainStep[];
+}
+
+export interface ExperimentSession {
+  id: string;
+  kind: ExperimentKind;
+  title: string;
+  space_id: string | null;
+  item_ids: string[];
+  payload: ExperimentPayload;
+  status: ExperimentStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperimentCreateInput {
+  kind: ExperimentKind;
+  item_ids: string[];
+  space_id?: string | null;
+  count?: number;
+  seed_id?: string | null;
+}
+
+export interface AnswerFeedback {
+  correct: boolean;
+  correct_value: number;
+  explanation: string;
+}
+
+export interface ExperimentAnswerInput {
+  index: number;
+  value: number;
+}
+
+export interface ExperimentAttempt {
+  id: string;
+  session_id: string;
+  answers: { index: number; value: number; correct?: boolean }[];
+  correct_count: number;
+  total: number;
+  score: number;
+  created_at: string;
+}
+
+export interface ExperimentCompleteResult {
+  session: ExperimentSession;
+  attempt: ExperimentAttempt;
+}
+
+export interface ExperimentListOptions {
+  kind?: ExperimentKind;
+  spaceId?: string | null;
+}

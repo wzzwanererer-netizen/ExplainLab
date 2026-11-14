@@ -18,6 +18,7 @@ from knowledge_core.domain.entities import (
     ReviewAction,
     SourceType,
 )
+from knowledge_core.experiments.entities import ExperimentKind
 
 
 class SpaceOut(BaseModel):
@@ -250,3 +251,63 @@ class SearchResponse(BaseModel):
 class ReindexResponse(BaseModel):
     indexed: int
     embed_capability: str
+
+
+class ExperimentCreate(BaseModel):
+    """创建实验会话：quiz/compare 需模型，chain 确定性无需模型。"""
+
+    kind: ExperimentKind
+    item_ids: list[UUID] = Field(min_length=1)
+    space_id: str | None = None
+    count: int = Field(default=5, ge=1, le=20)
+    seed_id: UUID | None = None
+
+
+class ExperimentAnswer(BaseModel):
+    index: int = Field(ge=0)
+    value: int = Field(ge=0)
+
+
+class ExperimentComplete(BaseModel):
+    answers: list[ExperimentAnswer] = Field(default_factory=list)
+
+
+class ExperimentOut(BaseModel):
+    """实验会话对外视图。测验未完成时 payload 不含正确答案与解析。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    kind: str
+    title: str
+    space_id: str | None
+    item_ids: list[UUID]
+    payload: dict
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnswerFeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    correct: bool
+    correct_value: int
+    explanation: str
+
+
+class AttemptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    session_id: UUID
+    answers: list[dict]
+    correct_count: int
+    total: int
+    score: float
+    created_at: datetime
+
+
+class ExperimentCompleteResult(BaseModel):
+    session: ExperimentOut
+    attempt: AttemptOut
