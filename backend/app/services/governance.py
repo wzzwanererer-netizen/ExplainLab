@@ -105,6 +105,10 @@ class SQLAlchemyRelationRepository:
         )
         return [_to_relation(row) for row in self._session.scalars(stmt)]
 
+    def list_all_relations(self) -> list[KnowledgeRelation]:
+        stmt = select(KnowledgeRelationORM).order_by(KnowledgeRelationORM.created_at)
+        return [_to_relation(row) for row in self._session.scalars(stmt)]
+
     def find_relation(
         self, source_id: UUID, target_id: UUID, relation_type: RelationType
     ) -> KnowledgeRelation | None:

@@ -218,3 +218,31 @@ export interface SearchOptions {
   limit?: number;
   mode?: SearchMode;
 }
+
+/** 以下与后端 M4 知识地图 DTO 对应。 */
+
+export interface GraphNode {
+  id: string;
+  title: string;
+  status: KnowledgeStatus;
+  space_id: string | null;
+}
+
+export interface GraphEdge {
+  id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: RelationType;
+  confidence: number;
+  origin: RelationOrigin;
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface GraphOptions {
+  spaceId?: string | null;
+  includeArchived?: boolean;
+}

@@ -128,6 +128,31 @@ class RelationOut(BaseModel):
     created_at: datetime
 
 
+class GraphNodeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    status: str
+    space_id: str | None
+
+
+class GraphEdgeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    target_id: UUID
+    relation_type: str
+    confidence: float
+    origin: str
+
+
+class GraphOut(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+
+
 class RelationCreate(BaseModel):
     target_id: UUID
     relation_type: RelationType

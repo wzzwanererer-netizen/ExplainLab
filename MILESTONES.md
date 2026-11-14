@@ -77,10 +77,22 @@
 
 验收证据见 [docs/acceptance/M3-report.md](docs/acceptance/M3-report.md)（含真实运行输出、真实 embed 双通道证据与检索/系统状态截图）。
 
-## M4 · 动态知识地图 ⬜
+## M4 · 动态知识地图 ✅
 
-- React Flow + ELK.js 知识地图渲染
-- 地图与知识条目 / 关系实时联动
+**目标**：在 M2 关系 / M3 检索之上提供可视化层——Knowledge Core 装配「节点 + 边」图结构，后端只读图 API，前端 React Flow + ELK 自动布局渲染，地图与知识条目 / 关系实时联动。
+
+验收标准（2026-11-15 全部通过）：
+
+- [x] Knowledge Core 图服务（graph/，纯数据装配、无坐标、仅依赖端口）+ RelationRepository.list_all_relations 端口；独立性守护扩展到 M4
+- [x] GET /api/graph（space_id 过滤 + include_archived 开关 + 个人空间聚合未归属 + 未知空间 404）；无新增迁移、alembic 无漂移
+- [x] 图装配口径：archived 默认不入图、悬空边丢弃、自环跳过、(source,target,type) 去重
+- [x] 前端「地图」页签（React Flow + ELK 分层自动布局）：节点 / 边 / 图例 / 计数 / 空间筛选 / 显示归档 / 刷新
+- [x] 边视觉语义（related 灰无箭头 / depends_on 蓝 / refines 绿 / duplicate_of 红虚线箭头 / contradicts 红箭头）；归档节点灰显虚线
+- [x] 点击节点→治理详情（关系 / 版本 / 来源）；切页签 / 刷新 / 治理变更重取，实时联动实测（改标题→地图同步）
+- [x] 全量测试（Python 162 通过 + 前端 52 通过）+ ruff + 构建 + 无漂移通过
+- [x] 真实浏览器联调 + 三张验收截图；联调发现并修复 3 个真实缺陷（自定义节点缺 Handle / 窄视口画布塌缩 / 默认白色控件与暗色冲突），均复验
+
+验收证据见 [docs/acceptance/M4-report.md](docs/acceptance/M4-report.md)（含真实图 API 输出、边视觉语义实测与默认 / 含归档 / 详情三张截图）。
 
 ## M5 · 交互式知识实验 ⬜
 

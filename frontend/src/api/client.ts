@@ -4,6 +4,8 @@ import type {
   ConversationDetail,
   DuplicateCandidate,
   ExtractResponse,
+  GraphOptions,
+  GraphResponse,
   HealthResponse,
   KnowledgeCreateInput,
   KnowledgeItem,
@@ -216,4 +218,13 @@ export const api = {
   },
   reindex: () =>
     request<ReindexResponse>("/api/search/reindex", { method: "POST" }),
+
+  // M4 知识地图：节点 + 边只读视图
+  getGraph: (options: GraphOptions = {}) => {
+    const params = new URLSearchParams();
+    if (options.spaceId) params.set("space_id", options.spaceId);
+    if (options.includeArchived) params.set("include_archived", "true");
+    const qs = params.toString();
+    return request<GraphResponse>(`/api/graph${qs ? `?${qs}` : ""}`);
+  },
 };

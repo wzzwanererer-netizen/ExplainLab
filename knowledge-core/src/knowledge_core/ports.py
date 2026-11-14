@@ -69,6 +69,10 @@ class RelationRepository(Protocol):
         """列出与条目相关的全部关系（作为 source 或 target）。"""
         ...
 
+    def list_all_relations(self) -> list[KnowledgeRelation]:
+        """列出全部关系（M4 全图装配用）。"""
+        ...
+
     def find_relation(
         self, source_id: UUID, target_id: UUID, relation_type: RelationType
     ) -> KnowledgeRelation | None:

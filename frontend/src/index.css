@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+/* React Flow 暗色主题：缩放控件 / 归属信息与全局 slate 调色板一致，避免默认白色块。 */
+.react-flow__controls {
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.react-flow__controls-button {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  color: #cbd5e1;
+}
+.react-flow__controls-button:hover {
+  background: #1e293b;
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+.react-flow__attribution {
+  background: rgba(15, 23, 42, 0.85);
+}
+.react-flow__attribution a {
+  color: #64748b;
+}
+
+/* 全局滚动条：暗色轨道 + slate 拇指，悬停提亮。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 6px;
+  border: 2px solid #0f172a;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

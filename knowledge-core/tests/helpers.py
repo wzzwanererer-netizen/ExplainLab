@@ -132,6 +132,9 @@ class InMemoryRelationRepository:
             if r.source_id == item_id or r.target_id == item_id
         ]
 
+    def list_all_relations(self) -> list[KnowledgeRelation]:
+        return list(self.relations.values())
+
     def find_relation(
         self, source_id: UUID, target_id: UUID, relation_type: RelationType
     ) -> KnowledgeRelation | None:

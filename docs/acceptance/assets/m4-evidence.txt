@@ -1,0 +1,76 @@
+ExplainLab M4 知识地图 · 真实联调证据（UTF-8）
+采集时间：2026-11-15（后端重启加载 /api/graph 后；前端 Vite [::1]:5173，HMR）
+说明：以下 API 输出为 curl 真实响应；DOM/视觉结论来自内置浏览器 evaluate_script 实测与截图读回。
+
+====================================================================
+1) GET /api/graph（默认：跨全部空间、排除归档）
+====================================================================
+{"nodes":[{"id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","title":"知识图谱的定义","status":"active","space_id":null},{"id":"944fce20-2617-460c-8130-7f20d9ba6f87","title":"知识图谱的典型用途","status":"draft","space_id":null}],"edges":[]}
+→ 2 节点 / 0 边。两条关系均连接归档节点 b54c600f，隐藏归档时按设计丢弃悬空边。
+
+====================================================================
+2) GET /api/graph?include_archived=true
+====================================================================
+{"nodes":[{"id":"b54c600f-0355-4036-97d2-22cc1ae8b89a","title":"知识图谱的概念","status":"archived","space_id":null},{"id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","title":"知识图谱的定义","status":"active","space_id":null},{"id":"944fce20-2617-460c-8130-7f20d9ba6f87","title":"知识图谱的典型用途","status":"draft","space_id":null}],"edges":[{"id":"76c726a0-0238-4cee-bd4b-683c82f669e0","source_id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","target_id":"b54c600f-0355-4036-97d2-22cc1ae8b89a","relation_type":"related","confidence":0.98,"origin":"llm"},{"id":"57370867-a6fa-47c7-b5c4-10cee0ae250e","source_id":"b54c600f-0355-4036-97d2-22cc1ae8b89a","target_id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","relation_type":"duplicate_of","confidence":1.0,"origin":"dedup"}]}
+→ 3 节点 / 2 边：related(定义→概念, 0.98, llm) + duplicate_of(概念→定义, 1.0, dedup)，定义↔概念成环（合并闭环）。
+
+====================================================================
+3) GET /api/graph?space_id=<personal>&include_archived=true（个人空间聚合未归属）
+====================================================================
+space_id=df4f4fd8-c9c0-498c-8d84-e9bed41bb288
+→ 与 (2) 相同：3 节点 / 2 边（三条知识 space_id=null，被个人总知识库聚合，include_unassigned=True）。
+
+====================================================================
+4) GET /api/graph?space_id=does-not-exist（未知空间）
+====================================================================
+{"detail":"知识空间不存在: does-not-exist"} [HTTP 404]
+
+====================================================================
+5) GET /api/health
+====================================================================
+{"status":"ok","app":"ExplainLab","version":"0.1.0","environment":"development","database":{"connected":true,"dialect":"sqlite","error":null},"model_adapter":"openai-compatible","embed_adapter":"configured","timestamp":"2026-11-14T17:41:06.661821Z"}
+
+====================================================================
+6) 内置浏览器 DOM / 视觉实测（evaluate_script + 截图读回）
+====================================================================
+默认态：计数「节点 2 · 边 0」；节点=[知识图谱的定义·生效, 知识图谱的典型用途·草稿]；edge-path=0。
+勾选显示归档：计数「节点 3 · 边 2」；节点新增「知识图谱的概念·归档」；edge-path=2；
+  边标签=["相关 98%","重复 100%"]。
+边计算样式（getComputedStyle）：
+  related：stroke=rgb(148,163,184)(#94a3b8 灰)、stroke-dasharray=none、无 marker（相关无箭头）。
+  duplicate_of：stroke=rgb(248,113,113)(#f87171 红)、stroke-dasharray="6px, 3px"(虚线)、
+    marker-end=url('#1__color=#f87171&type=arrowclosed')(红色闭合箭头)。
+归档节点：opacity=0.5、border-top-style=dashed（灰显虚线框）。
+fitView 生效：viewport transform=translate(34.49px,1.72px) scale(1.60662)（窄视口自动缩放）。
+点击节点「定义」→ 治理详情：关系（2）[→相关·b54c600f·模型推断·98% / ←重复·b54c600f·去重·100%]、
+  版本（2）[v1/v2 编辑前快照·回滚]、来源（3）[对话·会话d58f3882 / 手动 / 文档·https://example.com/kg]。
+实时联动：在「知识库」编辑草稿标题→直接应用（提示「已更新知识条目。」，非审核）→切回「地图」
+  节点标签同步为新标题；验证后已复原标题「知识图谱的典型用途」。
+
+====================================================================
+7) 联调期间发现并修复的真实缺陷（复验通过）
+====================================================================
+a. 自定义节点缺少 React Flow 必需 <Handle>：补 target=Top / source=Bottom（契合 ELK 自上而下），
+   边得以连接渲染。
+b. 窄视口响应式塌缩：外层 flex-col 时画布 flex-1(flex-basis:0) 覆盖 h-[480px] 致高度 0；
+   改为列模式 w-full+h-[480px]、仅 lg 行模式 lg:flex-1，窄视口画布恢复 461×479。
+c. React Flow 默认白色 Controls / 灰色 attribution 与暗色主题冲突：index.css 增加暗色覆盖
+   （controls 按钮 #0f172a/#1e293b、attribution 半透明暗底）+ 全局暗色滚动条。
+
+====================================================================
+8) 自动化验证（全量）
+====================================================================
+backend pytest：79 passed
+knowledge-core pytest：83 passed（含 test_interfaces 独立性守护 + test_graph 8）
+frontend vitest：52 passed（8 文件：client 21 / KnowledgeMap 5 / graphLayout 8 / SearchView 5 /
+  ReviewQueue 4 / KnowledgeView 4 / ChatView 3 / HealthPanel 2）
+ruff check backend knowledge-core：All checks passed
+frontend tsc -b：通过；vite build：成功（单 chunk ~1910kB，分包警告为已知项）
+alembic check：No new upgrade operations detected（M4 无新增迁移，无漂移）
+
+====================================================================
+9) 验收截图（docs/acceptance/assets/）
+====================================================================
+m4-map-default.png   默认地图：2 节点 0 边、暗色 Controls、图例、计数
+m4-map-archived.png  含归档：3 节点 2 边、duplicate_of 红虚线箭头、归档灰显虚线
+m4-map-detail.png    节点详情联动：关系/版本/来源三分区（真实数据）

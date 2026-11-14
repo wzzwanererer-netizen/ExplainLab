@@ -307,3 +307,46 @@ describe("api client M3", () => {
     expect(result.title).toBe("知识图谱的定义");
   });
 });
+
+describe("api client M4", () => {
+  const graphResponse = {
+    nodes: [{ id: "k1", title: "定义", status: "active", space_id: null }],
+    edges: [],
+  };
+
+  it("getGraph 默认请求全部空间（不带参数）", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => graphResponse,
+    });
+    const result = await api.getGraph();
+    expect(fetchMock).toHaveBeenCalledWith("/api/graph", expect.anything());
+    expect(result.nodes[0].title).toBe("定义");
+  });
+
+  it("getGraph 携带 space_id 与 include_archived 参数", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => graphResponse,
+    });
+    await api.getGraph({ spaceId: "s1", includeArchived: true });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("/api/graph?");
+    expect(url).toContain("space_id=s1");
+    expect(url).toContain("include_archived=true");
+  });
+
+  it("getGraph 仅空间筛选时不带 include_archived", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => graphResponse,
+    });
+    await api.getGraph({ spaceId: "s1" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("space_id=s1");
+    expect(url).not.toContain("include_archived");
+  });
+});
