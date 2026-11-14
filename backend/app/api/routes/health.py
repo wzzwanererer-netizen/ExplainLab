@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
+from app.services.model import build_embed_adapter
 
 router = APIRouter(tags=["health"])
 
@@ -29,6 +30,10 @@ class HealthResponse(BaseModel):
     environment: str
     database: DatabaseHealth
     model_adapter: str
+    # M3 向量来源配置态（与 model_adapter 同为配置态，不做每次网络探测）：
+    # configured / not_configured。端点是否真正支持 /embeddings（supported/unsupported）
+    # 由只读探测脚本 scripts/probe_embed.py、/api/search/reindex 与检索降级如实判定。
+    embed_adapter: str
     timestamp: datetime
 
 
@@ -53,5 +58,6 @@ def health(
         environment=settings.environment,
         database=database,
         model_adapter=settings.model_provider or "not_configured",
+        embed_adapter="configured" if build_embed_adapter(settings) else "not_configured",
         timestamp=datetime.now(UTC),
     )

@@ -61,10 +61,21 @@
 
 验收证据见 [docs/acceptance/M2-report.md](docs/acceptance/M2-report.md)（含真实运行输出、真实模型治理闭环证据与界面截图）。
 
-## M3 · 跨会话混合检索 ⬜
+## M3 · 跨会话混合检索 ✅
 
-- SQLite FTS5 全文检索 + 向量检索（PostgreSQL 阶段迁移方案）
-- 跨会话、跨知识空间混合检索 API 与前端检索入口
+**目标**：在 M2 治理之上提供检索层——SQLite FTS5 全文 + 真实语义向量 + RRF 融合排序，跨会话/跨知识空间检索 API 与前端检索入口，检索编排落在独立 Knowledge Core。
+
+验收标准（2026-11-14 全部通过）：
+
+- [x] 迁移 0004_m3_retrieval 实跑、无漂移；FTS 虚表（trigram）+ 向量表就绪，触发器同步生效
+- [x] 中文全文检索（trigram + 短查询 LIKE 回退）与向量检索可用，混合 RRF（k=60）排序正确
+- [x] 跨会话/跨空间检索 API 与前端「检索」页签真实可用；space 过滤与 archived 排除正确
+- [x] 索引随治理变更同步；backfill（reindex）可用；embed 能力如实上报/降级（not_configured/supported/unsupported）
+- [x] 全量测试（Python 149 通过 + 前端 36 通过）+ ruff + 构建 + 无漂移通过；Core 独立性守护扩展到 M3
+- [x] 真实 embed 联调（SiliconFlow BAAI/bge-m3，1024 维）：3 条知识建向量，hybrid 双通道命中 + 融合排序，干净 UTF-8 证据
+- [x] 向量来源独立 EMBED_* 配置（方案 A），密钥仅 backend/.env，不进入前端；直连真实 base_url 无代理
+
+验收证据见 [docs/acceptance/M3-report.md](docs/acceptance/M3-report.md)（含真实运行输出、真实 embed 双通道证据与检索/系统状态截图）。
 
 ## M4 · 动态知识地图 ⬜
 

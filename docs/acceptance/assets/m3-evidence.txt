@@ -1,0 +1,38 @@
+ExplainLab M3 真实联调证据（2026-11-14）
+向量来源：SiliconFlow（硅基流动） https://api.siliconflow.cn/v1  模型 BAAI/bge-m3（非 Pro，官方价格页免费）
+说明：以下均为真实运行输出，未使用假数据。EMBED_API_KEY 仅存于 backend/.env（gitignore），不出现在本文件与前端。
+查询词「知识图谱」的 UTF-8 百分号编码：%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1（避免 Windows 控制台码页转码）。
+
+[1] embed 能力探测（uv run python backend/scripts/probe_embed.py）
+embed 能力: supported
+端点: https://api.siliconflow.cn/v1  模型: BAAI/bge-m3
+向量维度: 1024
+
+[2] 健康上报 GET /api/health
+{"status":"ok","app":"ExplainLab","version":"0.1.0","environment":"development","database":{"connected":true,"dialect":"sqlite","error":null},"model_adapter":"openai-compatible","embed_adapter":"configured","timestamp":"2026-11-14T06:37:55.020391Z"}
+
+[3] 重建索引 POST /api/search/reindex（对存量 3 条知识建真实 bge-m3 向量）
+{"indexed":3,"embed_capability":"supported"}
+
+[4] 混合检索 GET /api/search?query=知识图谱&mode=hybrid
+{"query":"知识图谱","mode":"hybrid","count":2,"embed_capability":"supported","results":[{"item_id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","score":0.03252247488101534,"snippet":"知识图谱是以“实体—关系—实体”网络结构组织与表示知识的数据模型，常用于搜索引擎语义理解与智能问答。","title":"知识图谱的定义","space_id":null,"status":"active","channels":{"fts":-1.3414073919398623e-6,"vector":0.7469252500135476}},{"item_id":"944fce20-2617-460c-8130-7f20d9ba6f87","score":0.031746031746031744,"snippet":"知识图谱的典型用途是支撑搜索引擎的语义理解与智能问答，例如根据关系链路直接回答“某人的导师是谁”。","title":"知识图谱的典型用途","space_id":null,"status":"draft","channels":{"fts":-1.333887043189369e-6,"vector":0.6992002273336699}}]}
+
+[5] 仅全文 GET /api/search?query=知识图谱&mode=fts
+{"query":"知识图谱","mode":"fts","count":2,"embed_capability":"configured","results":[{"item_id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","score":0.016129032258064516,"snippet":"知识图谱是以“实体—关系—实体”网络结构组织与表示知识的数据模型，常用于搜索引擎语义理解与智能问答。","title":"知识图谱的定义","space_id":null,"status":"active","channels":{"fts":-1.3414073919398623e-6}},{"item_id":"944fce20-2617-460c-8130-7f20d9ba6f87","score":0.015873031746031744,"snippet":"知识图谱的典型用途是支撑搜索引擎的语义理解与智能问答，例如根据关系链路直接回答“某人的导师是谁”。","title":"知识图谱的典型用途","space_id":null,"status":"draft","channels":{"fts":-1.333887043189369e-6}}]}
+
+[6] 仅向量 GET /api/search?query=知识图谱&mode=vector
+{"query":"知识图谱","mode":"vector","count":2,"embed_capability":"supported","results":[{"item_id":"10edfbcd-0e47-43e5-8fd4-b6f31258ac6e","score":0.01639344262295082,"snippet":"知识图谱是以“实体—关系—实体”网络结构组织与表示知识的数据模型，常用于搜索引擎语义理解与智能问答。","title":"知识图谱的定义","space_id":null,"status":"active","channels":{"vector":0.747090538760381}},{"item_id":"944fce20-2617-460c-8130-7f20d9ba6f87","score":0.015873031746031744,"snippet":"知识图谱的典型用途是支撑搜索引擎的语义理解与智能问答，例如根据关系链路直接回答“某人的导师是谁”。","title":"知识图谱的典型用途","space_id":null,"status":"draft","channels":{"vector":0.6994038336173346}}]}
+
+[7] 结论核对
+- 双通道：hybrid 每条命中 channels 同时含 fts 与 vector；embed_capability=supported。
+- RRF 融合（k=60）：score=Σ 1/(k+rank)。active=1/62(fts)+1/61(vector)=0.0325224749；draft=1/63+1/63=0.0317460317。与返回一致。
+- 归档排除：archived 条目 b54c600f-0355-4036-97d2-22cc1ae8b89a 未出现在任何模式结果中（查询期排除）。
+- 通道对照：fts 模式仅 fts 通道（bm25 负值，越小越靠前）；vector 模式仅 vector 通道（余弦 0.747/0.699）。
+- 降级如实：embed 未配置→embed_capability=not_configured 且 hybrid/vector 自动回退仅全文；embed 调用失败→unsupported 回退仅全文（见 backend/tests/test_search.py）。fts 模式不探测 embed，上报 configured。
+
+[8] 自动化验证（M3-T7，代码此后未变更）
+- Python：149 passed（backend 74 + knowledge-core 75）
+- 前端：36 passed；tsc -b + vite build 通过
+- ruff check backend knowledge-core：All checks passed
+- alembic check：No new upgrade operations detected（head=0004_m3_retrieval）
+- Knowledge Core 独立性闭包守护：通过（不依赖 fastapi/starlette/flask/django）

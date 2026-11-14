@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -193,3 +194,34 @@ class SourceAttach(BaseModel):
     uri: str | None = None
     conversation_id: str | None = None
     excerpt: str | None = None
+
+
+SearchMode = Literal["hybrid", "fts", "vector"]
+
+
+class SearchHitOut(BaseModel):
+    """一条检索命中（映射 Knowledge Core SearchResult）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: UUID
+    score: float
+    snippet: str
+    title: str
+    space_id: str | None
+    status: str
+    channels: dict[str, float]
+
+
+class SearchResponse(BaseModel):
+    query: str
+    mode: str
+    count: int
+    # 向量通道能力：not_configured / configured / supported / unsupported（如实上报）
+    embed_capability: str
+    results: list[SearchHitOut]
+
+
+class ReindexResponse(BaseModel):
+    indexed: int
+    embed_capability: str

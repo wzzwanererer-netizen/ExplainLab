@@ -13,6 +13,7 @@ export interface HealthResponse {
   environment: string;
   database: DatabaseHealth;
   model_adapter: string;
+  embed_adapter: string;
   timestamp: string;
 }
 
@@ -177,3 +178,43 @@ export interface SourceAttachInput {
 export type MutationResult<T> =
   | { kind: "applied"; data: T }
   | { kind: "review"; review: ReviewRequest };
+
+/** 以下与后端 M3 检索 DTO 对应。 */
+
+export type SearchMode = "hybrid" | "fts" | "vector";
+
+/** 向量通道能力（后端如实上报）：未配置 / 已配置 / 支持 / 不支持。 */
+export type EmbedCapability =
+  | "not_configured"
+  | "configured"
+  | "supported"
+  | "unsupported";
+
+export interface SearchHit {
+  item_id: string;
+  score: number;
+  snippet: string;
+  title: string;
+  space_id: string | null;
+  status: KnowledgeStatus;
+  channels: Record<string, number>;
+}
+
+export interface SearchResponse {
+  query: string;
+  mode: SearchMode;
+  count: number;
+  embed_capability: EmbedCapability;
+  results: SearchHit[];
+}
+
+export interface ReindexResponse {
+  indexed: number;
+  embed_capability: EmbedCapability;
+}
+
+export interface SearchOptions {
+  spaceId?: string | null;
+  limit?: number;
+  mode?: SearchMode;
+}

@@ -22,13 +22,14 @@ from app.api.schemas import (
     ReviewOut,
 )
 from app.db.session import get_session
-from app.dependencies import get_model_adapter
+from app.dependencies import get_embedder, get_model_adapter
 from app.services.errors import NotFoundError
 from app.services.governance import build_review_service
 from app.services.knowledge import (
     SQLAlchemyKnowledgeRepository,
     extract_conversation_knowledge,
 )
+from app.services.retrieval import sync_index
 from app.services.spaces import get_space
 from knowledge_core.domain.entities import (
     KnowledgeItem,
@@ -37,6 +38,7 @@ from knowledge_core.domain.entities import (
     SourceType,
 )
 from knowledge_core.model_adapter import ModelAdapter, ModelAdapterError
+from knowledge_core.ports import Embedder
 
 router = APIRouter(tags=["knowledge"])
 
@@ -59,9 +61,10 @@ def list_knowledge(
 
 
 @router.post("/knowledge", response_model=KnowledgeOut, status_code=201)
-def create_knowledge(
+async def create_knowledge(
     payload: KnowledgeCreate,
     session: Annotated[Session, Depends(get_session)],
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> KnowledgeOut:
     item = KnowledgeItem(
         title=payload.title,
@@ -70,6 +73,8 @@ def create_knowledge(
         source_refs=[SourceRef(source_type=SourceType.MANUAL)],
     )
     saved = SQLAlchemyKnowledgeRepository(session).save(item)
+    session.commit()
+    await sync_index(session, embedder, index_ids=[saved.id])
     session.commit()
     return KnowledgeOut.model_validate(saved)
 
@@ -91,6 +96,7 @@ async def update_knowledge(
     payload: KnowledgeUpdate,
     session: Annotated[Session, Depends(get_session)],
     response: Response,
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> KnowledgeOut | ReviewOut:
     repository = SQLAlchemyKnowledgeRepository(session)
     current = repository.get(item_id)
@@ -109,6 +115,8 @@ async def update_knowledge(
         return ReviewOut.model_validate(review)
     updated = repository.get(item_id)
     assert updated is not None
+    await sync_index(session, embedder, index_ids=[item_id])
+    session.commit()
     return KnowledgeOut.model_validate(updated)
 
 
@@ -117,6 +125,7 @@ async def delete_knowledge(
     item_id: UUID,
     session: Annotated[Session, Depends(get_session)],
     response: Response,
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> ReviewOut | None:
     repository = SQLAlchemyKnowledgeRepository(session)
     if repository.get(item_id) is None:
@@ -127,6 +136,8 @@ async def delete_knowledge(
     if review is not None:
         response.status_code = 202
         return ReviewOut.model_validate(review)
+    await sync_index(session, embedder, remove_ids=[item_id])
+    session.commit()
     response.status_code = 204
     return None
 
@@ -140,6 +151,7 @@ async def extract_knowledge(
     payload: ExtractRequest,
     session: Annotated[Session, Depends(get_session)],
     adapter: Annotated[ModelAdapter, Depends(get_model_adapter)],
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> ExtractResponse:
     try:
         items = await extract_conversation_knowledge(
@@ -149,6 +161,8 @@ async def extract_knowledge(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ModelAdapterError as exc:
         raise HTTPException(status_code=502, detail=f"模型调用失败: {exc}") from exc
+    session.commit()
+    await sync_index(session, embedder, index_ids=[i.id for i in items])
     session.commit()
     return ExtractResponse(
         count=len(items),

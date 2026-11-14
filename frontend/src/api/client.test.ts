@@ -9,6 +9,7 @@ const healthPayload: HealthResponse = {
   environment: "development",
   database: { connected: true, dialect: "sqlite", error: null },
   model_adapter: "not_configured",
+  embed_adapter: "not_configured",
   timestamp: "2026-11-12T12:00:00Z",
 };
 
@@ -227,5 +228,82 @@ describe("api client M2", () => {
     const fetchMock = mockFetchOnce({ ok: true, status: 200, json: async () => [] });
     await api.listReviews("pending");
     expect(fetchMock).toHaveBeenCalledWith("/api/reviews?status=pending", expect.anything());
+  });
+});
+
+describe("api client M3", () => {
+  const searchResponse = {
+    query: "知识图谱",
+    mode: "fts",
+    count: 1,
+    embed_capability: "not_configured",
+    results: [
+      {
+        item_id: "k1",
+        score: 0.016,
+        snippet: "知识图谱是…",
+        title: "知识图谱的定义",
+        space_id: null,
+        status: "active",
+        channels: { fts: -0.0000013 },
+      },
+    ],
+  };
+
+  it("search 携带 query / space_id / mode 查询参数", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => searchResponse,
+    });
+
+    const result = await api.search("知识图谱", { spaceId: "s1", mode: "hybrid" });
+
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("/api/search?");
+    expect(url).toContain("query=%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1");
+    expect(url).toContain("space_id=s1");
+    expect(url).toContain("mode=hybrid");
+    expect(result.embed_capability).toBe("not_configured");
+    expect(result.results[0].title).toBe("知识图谱的定义");
+  });
+
+  it("search 默认仅携带 query（跨全部空间）", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => searchResponse,
+    });
+    await api.search("知识图谱");
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).not.toContain("space_id");
+    expect(url).not.toContain("mode");
+  });
+
+  it("reindex 以 POST 重建索引", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ indexed: 3, embed_capability: "not_configured" }),
+    });
+
+    const result = await api.reindex();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/search/reindex",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result.indexed).toBe(3);
+  });
+
+  it("getKnowledge 请求单条知识详情", async () => {
+    const fetchMock = mockFetchOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "k1", title: "知识图谱的定义" }),
+    });
+    const result = await api.getKnowledge("k1");
+    expect(fetchMock).toHaveBeenCalledWith("/api/knowledge/k1", expect.anything());
+    expect(result.title).toBe("知识图谱的定义");
   });
 });

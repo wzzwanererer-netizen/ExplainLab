@@ -27,7 +27,7 @@ from app.api.schemas import (
     VersionOut,
 )
 from app.db.session import get_session
-from app.dependencies import get_model_adapter
+from app.dependencies import get_embedder, get_model_adapter
 from app.services.governance import (
     SQLAlchemyRelationRepository,
     SQLAlchemyReviewRepository,
@@ -37,6 +37,7 @@ from app.services.governance import (
     build_review_service,
 )
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
+from app.services.retrieval import sync_index
 from knowledge_core.domain.entities import (
     KnowledgeItem,
     KnowledgeRelation,
@@ -47,6 +48,7 @@ from knowledge_core.domain.entities import (
     SourceRef,
 )
 from knowledge_core.model_adapter import ModelAdapter, ModelAdapterError
+from knowledge_core.ports import Embedder
 from knowledge_core.relations import DuplicateMatch
 from knowledge_core.relations.llm import LLMRelationService
 
@@ -181,6 +183,7 @@ async def restore_version(
     version: int,
     session: Annotated[Session, Depends(get_session)],
     response: Response,
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> KnowledgeOut | ReviewOut:
     item = _get_item(session, item_id)
     if SQLAlchemyVersionRepository(session).get_version(item_id, version) is None:
@@ -195,6 +198,8 @@ async def restore_version(
         return ReviewOut.model_validate(review)
     restored = SQLAlchemyKnowledgeRepository(session).get(item.id)
     assert restored is not None
+    await sync_index(session, embedder, index_ids=[item.id])
+    session.commit()
     return KnowledgeOut.model_validate(restored)
 
 
@@ -235,6 +240,7 @@ async def submit_review(
     payload: ReviewSubmit,
     session: Annotated[Session, Depends(get_session)],
     response: Response,
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> ReviewSubmitResult:
     repository = SQLAlchemyKnowledgeRepository(session)
     if repository.get(payload.item_id) is None:
@@ -265,6 +271,8 @@ async def submit_review(
     if review is not None:
         response.status_code = 201
         return ReviewSubmitResult(applied=False, review=ReviewOut.model_validate(review))
+    await _sync_applied_action(session, embedder, payload.item_id, payload.action, payload.payload)
+    session.commit()
     return ReviewSubmitResult(applied=True)
 
 
@@ -277,10 +285,32 @@ def _pending_review(session: Session, review_id: UUID) -> ReviewRequest:
     return review
 
 
+async def _sync_applied_action(
+    session: Session,
+    embedder: Embedder | None,
+    item_id: UUID,
+    action: ReviewAction,
+    payload: dict,
+) -> None:
+    """变更已应用（草稿直改或审核批准）后同步检索索引。
+
+    删除→移除索引；合并→重算目标索引（源转 archived，查询期过滤，与 backfill 一致）；
+    编辑 / 回滚→重算该条目索引。
+    """
+    if action == ReviewAction.DELETE_ITEM:
+        await sync_index(session, embedder, remove_ids=[item_id])
+    elif action == ReviewAction.MERGE_DUPLICATE:
+        target_id = UUID(str(payload["target_id"]))
+        await sync_index(session, embedder, index_ids=[target_id])
+    else:  # UPDATE_ITEM / RESTORE_VERSION
+        await sync_index(session, embedder, index_ids=[item_id])
+
+
 @router.post("/reviews/{review_id}/approve", response_model=ReviewOut)
 async def approve_review(
     review_id: UUID,
     session: Annotated[Session, Depends(get_session)],
+    embedder: Annotated[Embedder | None, Depends(get_embedder)],
     payload: ReviewResolve | None = None,
 ) -> ReviewOut:
     _pending_review(session, review_id)
@@ -289,6 +319,10 @@ async def approve_review(
         review = await service.approve(review_id, payload.note if payload else None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.commit()
+    await _sync_applied_action(
+        session, embedder, review.item_id, review.action, review.payload
+    )
     session.commit()
     return ReviewOut.model_validate(review)
 

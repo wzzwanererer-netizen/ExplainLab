@@ -39,3 +39,8 @@ def create_space(
 
 def get_space(session: Session, space_id: str) -> KnowledgeSpace | None:
     return session.get(KnowledgeSpace, space_id)
+
+
+def get_personal_space(session: Session) -> KnowledgeSpace | None:
+    """只读返回个人总知识库（不创建）；供检索聚合未归属条目时注入 personal_space_id。"""
+    return session.scalar(select(KnowledgeSpace).where(KnowledgeSpace.kind == "personal"))

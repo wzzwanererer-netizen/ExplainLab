@@ -40,6 +40,7 @@ def test_core_has_no_web_framework_dependency():
         "import knowledge_core.provenance\n"
         "import knowledge_core.relations\n"
         "import knowledge_core.retrieval\n"
+        "import knowledge_core.retrieval.hybrid\n"
         "import knowledge_core.versioning\n"
         "import knowledge_core.parsing\n"
         "import knowledge_core.services\n"

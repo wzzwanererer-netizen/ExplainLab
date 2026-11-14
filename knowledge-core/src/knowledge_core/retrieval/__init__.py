@@ -13,11 +13,19 @@ from pydantic import BaseModel, Field
 
 
 class SearchResult(BaseModel):
-    """一条检索命中。"""
+    """一条检索命中。
+
+    M3 扩展（向后兼容，均可选）：title/space_id/status 便于展示，
+    channels 记录各通道原始分数（fts=bm25 rank 越小越相关；vector=余弦越大越相关）。
+    """
 
     item_id: UUID
     score: float = Field(ge=0.0)
     snippet: str = ""
+    title: str = ""
+    space_id: str | None = None
+    status: str = ""
+    channels: dict[str, float] = Field(default_factory=dict)
 
 
 class RetrievalService(ABC):

@@ -10,6 +10,7 @@ const healthPayload: HealthResponse = {
   environment: "development",
   database: { connected: true, dialect: "sqlite", error: null },
   model_adapter: "not_configured",
+  embed_adapter: "not_configured",
   timestamp: "2026-11-12T12:00:00Z",
 };
 
@@ -33,7 +34,8 @@ describe("HealthPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("正在连接后端");
     expect(await screen.findByText("正常")).toBeInTheDocument();
     expect(screen.getByText(/sqlite · 已连接/)).toBeInTheDocument();
-    expect(screen.getByText(/未配置/)).toBeInTheDocument();
+    expect(screen.getByText(/未配置（对话与提取不可用）/)).toBeInTheDocument();
+    expect(screen.getByText(/未配置（仅全文检索）/)).toBeInTheDocument();
     expect(screen.getByText(/ExplainLab v0\.1\.0/)).toBeInTheDocument();
   });
 

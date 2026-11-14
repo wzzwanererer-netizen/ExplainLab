@@ -13,10 +13,13 @@ import type {
   Message,
   MutationResult,
   RelationCreateInput,
+  ReindexResponse,
   ReviewRequest,
   ReviewStatus,
   ReviewSubmitInput,
   ReviewSubmitResult,
+  SearchOptions,
+  SearchResponse,
   SourceAttachInput,
   SourceRef,
   Space,
@@ -126,6 +129,7 @@ export const api = {
   // 知识条目
   listKnowledge: (spaceId?: string) =>
     request<KnowledgeItem[]>(`/api/knowledge${spaceQuery(spaceId)}`),
+  getKnowledge: (id: string) => request<KnowledgeItem>(`/api/knowledge/${id}`),
   createKnowledge: (input: KnowledgeCreateInput) =>
     request<KnowledgeItem>("/api/knowledge", {
       method: "POST",
@@ -201,4 +205,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ note: note ?? null }),
     }),
+
+  // M3 检索：跨会话 / 跨空间混合检索 + 索引重建
+  search: (query: string, options: SearchOptions = {}) => {
+    const params = new URLSearchParams({ query });
+    if (options.spaceId) params.set("space_id", options.spaceId);
+    if (options.limit !== undefined) params.set("limit", String(options.limit));
+    if (options.mode) params.set("mode", options.mode);
+    return request<SearchResponse>(`/api/search?${params.toString()}`);
+  },
+  reindex: () =>
+    request<ReindexResponse>("/api/search/reindex", { method: "POST" }),
 };

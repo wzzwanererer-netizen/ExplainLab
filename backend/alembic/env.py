@@ -26,6 +26,11 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
+def _include_name(name: str | None, type_: str, parent_names: dict) -> bool:
+    """FTS5 虚表及其影子表由迁移 raw SQL 管理，不参与 autogenerate 比对。"""
+    return not (type_ == "table" and name is not None and name.startswith("knowledge_fts"))
+
+
 def _configure(connection: Connection | None = None, *, url: str | None = None) -> None:
     context.configure(
         connection=connection,
@@ -33,6 +38,7 @@ def _configure(connection: Connection | None = None, *, url: str | None = None) 
         target_metadata=target_metadata,
         render_as_batch=settings.is_sqlite,
         compare_type=True,
+        include_name=_include_name,
     )
 
 

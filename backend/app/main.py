@@ -16,6 +16,7 @@ from app.api.routes.conversations import router as conversations_router
 from app.api.routes.governance import router as governance_router
 from app.api.routes.health import router as health_router
 from app.api.routes.knowledge import router as knowledge_router
+from app.api.routes.search import router as search_router
 from app.api.routes.spaces import router as spaces_router
 from app.core.config import Settings, get_settings
 from app.db.session import dispose_db, init_db, session_scope
@@ -57,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(conversations_router, prefix="/api")
     application.include_router(knowledge_router, prefix="/api")
     application.include_router(governance_router, prefix="/api")
+    application.include_router(search_router, prefix="/api")
     # 允许测试注入独立配置
     application.dependency_overrides[get_settings] = lambda: settings
     return application

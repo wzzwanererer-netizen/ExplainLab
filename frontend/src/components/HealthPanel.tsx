@@ -101,6 +101,13 @@ export function HealthPanel() {
               state.data.model_adapter
             )}
           </Row>
+          <Row name="向量来源（M3）">
+            {state.data.embed_adapter === "not_configured" ? (
+              <span className="text-slate-400">未配置（仅全文检索）</span>
+            ) : (
+              <StatusBadge ok label="已配置" />
+            )}
+          </Row>
           <Row name="版本">
             {state.data.app} v{state.data.version}（{state.data.environment}）
           </Row>

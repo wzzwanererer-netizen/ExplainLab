@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -172,3 +173,64 @@ class InMemoryReviewRepository:
     def update_review(self, review: ReviewRequest) -> ReviewRequest:
         self.reviews[review.id] = review
         return review
+
+
+class InMemoryFullTextIndex:
+    """内存全文索引替身：子串匹配，出现次数越多 rank 越靠前（越小）。"""
+
+    def __init__(self) -> None:
+        self.docs: dict[UUID, str] = {}
+
+    def upsert(self, item_id: UUID, title: str, content: str) -> None:
+        self.docs[item_id] = f"{title}\n{content}"
+
+    def remove(self, item_id: UUID) -> None:
+        self.docs.pop(item_id, None)
+
+    def search(self, query: str, limit: int) -> list[tuple[UUID, float]]:
+        if not query:
+            return []
+        hits = [
+            (item_id, -float(text.count(query)))
+            for item_id, text in self.docs.items()
+            if query in text
+        ]
+        hits.sort(key=lambda kv: kv[1])
+        return hits[:limit]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+class InMemoryVectorStore:
+    """内存向量存储替身：余弦相似度检索。"""
+
+    def __init__(self) -> None:
+        self.vecs: dict[UUID, list[float]] = {}
+
+    def upsert(self, item_id: UUID, vector: list[float], model: str) -> None:
+        self.vecs[item_id] = list(vector)
+
+    def remove(self, item_id: UUID) -> None:
+        self.vecs.pop(item_id, None)
+
+    def query(self, vector: list[float], limit: int) -> list[tuple[UUID, float]]:
+        hits = [(i, _cosine(vector, v)) for i, v in self.vecs.items()]
+        hits.sort(key=lambda kv: kv[1], reverse=True)
+        return hits[:limit]
+
+
+class FakeEmbedder:
+    """返回预设向量的假向量化器，用于检索编排测试。"""
+
+    def __init__(self, vector: list[float] | None = None) -> None:
+        self._vector = vector or [1.0, 0.0]
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return [list(self._vector) for _ in texts]

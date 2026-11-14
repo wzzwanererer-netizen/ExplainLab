@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     model_api_key: str | None = None
     model_name: str | None = None
 
+    # M3 向量来源（独立于聊天配置）：支持 /embeddings 的 OpenAI 兼容端点。
+    # 未配置时向量通道如实关闭（仅全文检索），不造假。
+    embed_base_url: str | None = None
+    embed_api_key: str | None = None
+    embed_model: str | None = None
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")

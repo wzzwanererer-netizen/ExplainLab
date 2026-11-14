@@ -3,6 +3,7 @@
 UUID 以 String(36) 存储，兼容 SQLite 与 PostgreSQL。
 领域实体（knowledge_core.domain）与 ORM 的映射由仓库层负责。
 M2 引入关系 / 版本 / 审核三张治理表。
+M3 引入向量表 knowledge_vector（全文 FTS5 虚表 knowledge_fts 由迁移 raw SQL 创建）。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db import fts as _fts  # noqa: F401  注册 FTS create_all 兜底事件（M3）
 from app.db.base import Base
 from knowledge_core.domain.entities import utcnow
 
@@ -173,3 +175,21 @@ class ReviewRequestORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class KnowledgeVectorORM(Base):
+    """知识向量（M3）。vector 以 JSON 文本存储，开发期余弦在 Python 计算。
+
+    全文索引 knowledge_fts 为 FTS5 虚表，由迁移 raw SQL 创建、触发器同步，
+    不在 ORM  metadata 中（env.py 已将其排除出 autogenerate）。
+    """
+
+    __tablename__ = "knowledge_vector"
+
+    item_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("knowledge_item.id", ondelete="CASCADE"), primary_key=True
+    )
+    model: Mapped[str] = mapped_column(String(100))
+    dim: Mapped[int] = mapped_column(Integer)
+    vector: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

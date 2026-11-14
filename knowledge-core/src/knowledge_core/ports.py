@@ -6,6 +6,7 @@ Knowledge Core 通过端口依赖持久化能力，具体实现由应用层（�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
@@ -112,4 +113,44 @@ class ReviewRepository(Protocol):
 
     def update_review(self, review: ReviewRequest) -> ReviewRequest:
         """更新审核单（状态/决议），返回更新后的审核单。"""
+        ...
+
+
+class FullTextIndex(Protocol):
+    """全文索引端口（M3）。实现如 SQLite FTS5 / PostgreSQL pg_trgm。"""
+
+    def upsert(self, item_id: UUID, title: str, content: str) -> None:
+        """新增或更新一条知识的全文索引。"""
+        ...
+
+    def remove(self, item_id: UUID) -> None:
+        """移除一条知识的全文索引。"""
+        ...
+
+    def search(self, query: str, limit: int) -> list[tuple[UUID, float]]:
+        """全文检索，返回 (item_id, rank) 列表，rank 越小越相关。"""
+        ...
+
+
+class VectorStore(Protocol):
+    """向量存储与检索端口（M3）。实现如 SQLite JSON 余弦 / pgvector。"""
+
+    def upsert(self, item_id: UUID, vector: list[float], model: str) -> None:
+        """新增或更新一条知识的向量。"""
+        ...
+
+    def remove(self, item_id: UUID) -> None:
+        """移除一条知识的向量。"""
+        ...
+
+    def query(self, vector: list[float], limit: int) -> list[tuple[UUID, float]]:
+        """余弦相似度检索，返回 (item_id, cosine) 列表，cosine 越大越相关。"""
+        ...
+
+
+class Embedder(Protocol):
+    """文本向量化端口（M3）。与 ModelAdapter.embed 同形，可注入适配器或本地实现。"""
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        """文本向量化，返回与输入等长的向量列表。"""
         ...

@@ -25,3 +25,19 @@ def build_model_adapter(settings: Settings) -> ModelAdapter | None:
             provider_name=settings.model_provider,
         )
     return None
+
+
+def build_embed_adapter(settings: Settings) -> ModelAdapter | None:
+    """M3 向量适配器：独立 EMBED_* 配置，复用 OpenAI 兼容适配器（embed_model 注入）。
+
+    未配置返回 None，向量通道如实关闭；base_url 原样使用，不替换代理。
+    """
+    if settings.embed_base_url and settings.embed_api_key and settings.embed_model:
+        return OpenAICompatibleAdapter(
+            base_url=settings.embed_base_url,
+            api_key=settings.embed_api_key,
+            default_model=settings.embed_model,
+            embed_model=settings.embed_model,
+            provider_name="embed",
+        )
+    return None
