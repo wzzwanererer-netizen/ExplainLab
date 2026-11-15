@@ -113,6 +113,31 @@
 
 验收证据见 [docs/acceptance/M5-report.md](docs/acceptance/M5-report.md)（含真实模型实验证据、判分/揭示口径与六张交互截图）。
 
+## M0 准入修复与 M5 回归修复 ✅（2026-11-15，等待独立审计）
+
+**依据**：《ExplainLab M0 独立技术审计报告》（2026-11-15）。**范围**：仅修复/测试/文档同步，**未进入 M1 之后新里程碑**。分支 `fix/m0-admission-and-m5-regressions`，基线 `59068e2`，M0 初始提交 `2d2b634` 完整保留。
+
+M0 准入项（全部完成并真实验证）：
+
+- [x] M0-01 Alembic 百分号编码 URL（`%`→`%%` 转义，引擎用原始 URL）；`test_alembic_url.py` 6 通过
+- [x] M0-02 健康接口脱敏（稳定码 `database_timeout`/`database_unavailable`，日志仅记异常类型）+ `SecretStr`；`test_health.py` 6 通过
+- [x] M0-03 Node 22.23.2 基线（engines + README + development.md 一致）
+- [x] M0-04 Model Adapter 公共失败契约（可重试/不可重试 + `is_retryable`，STREAM 不虚假声明）；契约 14 + 适配器 15 通过
+- [x] M0-05 锁定安装（`uv sync --locked` + `npm ci`）+ 干净副本从零安装验证
+- [x] M0-06 新建 `AGENTS.md`；核心 README/`__init__` 抽象接口 vs 具体实现分层同步
+- [x] M0-07 配置路径锚定 backend + 空串→None；`test_config.py` 15 通过
+
+M5 回归项（全部完成并真实验证）：
+
+- [x] ZIP-01 PG/SQLite 检索方言适配（PG 原生 tsvector/GIN/触发器/级联，无 FTS5·MATCH·bm25·rowid；CJK ILIKE 回退已记录局限）；**真实 PG 16.8** `test_retrieval_pg.py` 12 通过
+- [x] ZIP-02 根级 pytest 收集冲突（importlib + pythonpath，未排除测试目录）；根级 258+12，含 PG 270 通过
+- [x] ZIP-03 文档与真实架构同步（architecture/development/README/knowledge-core/AGENTS）
+- [x] ZIP-04 前端按需加载（React.lazy + Suspense）；初始 JS 1,937.83→256.45 kB（−86.8%），真实浏览器懒加载实测
+
+**全量证据**：默认根级 258 passed/12 skipped；含真实 PG 270 passed；核心 136 passed；ruff All checks passed；前端 72 passed + 构建初始 256.45 kB/gzip 78.26 kB；干净副本从零锁定安装+测试+构建一致通过。
+
+**结论：本修复批次全部通过**（附已记录局限：PG 中文分词回退、elkjs 懒加载块体积）。验收证据见 [docs/acceptance/M0-M5-REMEDIATION-REPORT.md](docs/acceptance/M0-M5-REMEDIATION-REPORT.md)。**不自行宣布进入 M1，停止等待独立审计。**
+
 ---
 
 ## V1.0 完成

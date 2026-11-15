@@ -1,7 +1,9 @@
 """跨会话混合检索接口。
 
-M0 仅定义接口；实现见 M3（SQLite FTS5 + 向量检索，PostgreSQL 阶段迁移）。
-检索不依赖前端页面，可纯 Python 调用。
+接口（RetrievalService ABC + SearchResult）在此定义；实现见
+knowledge_core.retrieval.hybrid.HybridRetrievalService（全文 + 向量双通道，RRF 融合）。
+检索不依赖前端页面，可纯 Python 调用；全文/向量存储经 ports.py 的
+FullTextIndex / VectorStore 端口由应用层注入，核心不绑定具体数据库方言。
 """
 
 from __future__ import annotations

@@ -1,6 +1,8 @@
 """知识关系与去重接口。
 
-M0 仅定义接口；实现见 M2。
+接口（RelationService ABC + DuplicateMatch）在此定义；实现见
+knowledge_core.relations.llm.LLMRelationService（模型判定）与
+knowledge_core.relations.lexical（词面召回纯函数）。
 """
 
 from __future__ import annotations

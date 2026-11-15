@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.services.model import build_embed_adapter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -48,7 +52,14 @@ def health(
         database = DatabaseHealth(connected=True, dialect=dialect)
         status = "ok"
     except Exception as exc:  # noqa: BLE001 - 健康检查必须吞掉所有连接异常并如实上报
-        database = DatabaseHealth(connected=False, dialect=dialect, error=str(exc))
+        # 对外只返回稳定、明确的错误码，绝不外泄 str(exc)（可能含主机/端口/密码/DSN）。
+        # 服务端保留脱敏诊断日志：仅记录异常类型名，不记录可能含敏感信息的消息文本。
+        if isinstance(exc, (TimeoutError, PoolTimeoutError)):
+            error_code = "database_timeout"
+        else:
+            error_code = "database_unavailable"
+        logger.warning("健康检查数据库探测失败（异常类型=%s）", type(exc).__name__)
+        database = DatabaseHealth(connected=False, dialect=dialect, error=error_code)
         status = "degraded"
 
     return HealthResponse(

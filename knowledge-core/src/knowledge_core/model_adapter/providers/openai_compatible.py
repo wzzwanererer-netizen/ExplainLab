@@ -12,7 +12,14 @@ from collections.abc import Sequence
 import httpx
 
 from knowledge_core.model_adapter.base import ModelAdapter
-from knowledge_core.model_adapter.errors import ModelAdapterError
+from knowledge_core.model_adapter.errors import (
+    AuthenticationError,
+    MalformedResponseError,
+    ModelAdapterError,
+    ModelTimeoutError,
+    ProviderUnavailableError,
+    RateLimitError,
+)
 from knowledge_core.model_adapter.types import (
     ModelCapability,
     ModelRequest,
@@ -92,7 +99,7 @@ class OpenAICompatibleAdapter(ModelAdapter):
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise ModelAdapterError(f"模型响应结构异常: {str(data)[:500]}") from exc
+            raise MalformedResponseError(f"模型响应结构异常: {str(data)[:500]}") from exc
 
         usage = None
         raw_usage = data.get("usage")
@@ -118,17 +125,32 @@ class OpenAICompatibleAdapter(ModelAdapter):
             ordered = sorted(data["data"], key=lambda d: d["index"])
             return [item["embedding"] for item in ordered]
         except (KeyError, TypeError) as exc:
-            raise ModelAdapterError(f"向量响应结构异常: {str(data)[:500]}") from exc
+            raise MalformedResponseError(f"向量响应结构异常: {str(data)[:500]}") from exc
 
     async def _post(self, path: str, payload: dict) -> dict:
         async with self._client() as client:
             try:
                 response = await client.post(path, json=payload)
                 response.raise_for_status()
+            except httpx.TimeoutException as exc:
+                raise ModelTimeoutError(f"模型接口请求超时: {exc}") from exc
             except httpx.HTTPStatusError as exc:
-                raise ModelAdapterError(
-                    f"模型接口返回错误 {exc.response.status_code}: {exc.response.text[:500]}"
-                ) from exc
+                status = exc.response.status_code
+                detail = exc.response.text[:500]
+                if status == 429:
+                    raise RateLimitError(f"模型接口限流 429: {detail}") from exc
+                if status in (401, 403):
+                    raise AuthenticationError(
+                        f"模型接口鉴权失败 {status}: {detail}"
+                    ) from exc
+                if status >= 500:
+                    raise ProviderUnavailableError(
+                        f"模型接口返回错误 {status}: {detail}"
+                    ) from exc
+                raise ModelAdapterError(f"模型接口返回错误 {status}: {detail}") from exc
             except httpx.HTTPError as exc:
-                raise ModelAdapterError(f"模型接口请求失败: {exc}") from exc
-            return response.json()
+                raise ProviderUnavailableError(f"模型接口请求失败: {exc}") from exc
+            try:
+                return response.json()
+            except ValueError as exc:
+                raise MalformedResponseError(f"模型响应结构异常: 非法 JSON: {exc}") from exc

@@ -1,8 +1,18 @@
-"""统一模型适配层抽象接口。
+"""统一模型适配层抽象接口与公共失败契约。
 
 所有模型供应商必须实现 ModelAdapter 才能接入 ExplainLab / Nesti。
-业务代码只依赖本接口，不依赖任何供应商 SDK。
-M0 不提供具体供应商实现；API Key 由实现方从后端环境变量读取。
+业务代码只依赖本接口，不依赖任何供应商 SDK。已实现 OpenAI 兼容适配器。
+
+失败契约（所有供应商一致，详见 errors.py）：
+- 请求超时 → ModelTimeoutError（可重试）
+- 供应商不可用 / 网络故障 / 5xx → ProviderUnavailableError（可重试）
+- 限流 429 → RateLimitError（可重试）
+- 鉴权失败 401/403 → AuthenticationError（不可重试）
+- 响应格式错误（非法 JSON / 缺字段）→ MalformedResponseError（不可重试）
+- 不支持所请求能力 → CapabilityNotSupportedError（不可重试）
+- STREAM 未实现时不得在 capabilities() 声明 STREAM，也不得虚假返回成功。
+
+API Key 由实现方从后端环境变量读取，绝不进入前端与 Git。
 """
 
 from __future__ import annotations

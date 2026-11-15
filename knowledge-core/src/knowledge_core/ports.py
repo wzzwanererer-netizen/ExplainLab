@@ -166,7 +166,7 @@ class ExperimentRepository(Protocol):
 
 
 class FullTextIndex(Protocol):
-    """全文索引端口（M3）。实现如 SQLite FTS5 / PostgreSQL pg_trgm。"""
+    """全文索引端口（M3）。实现如 SQLite FTS5（trigram）/ PostgreSQL 原生 tsvector/tsquery（GIN）。"""
 
     def upsert(self, item_id: UUID, title: str, content: str) -> None:
         """新增或更新一条知识的全文索引。"""
@@ -182,7 +182,7 @@ class FullTextIndex(Protocol):
 
 
 class VectorStore(Protocol):
-    """向量存储与检索端口（M3）。实现如 SQLite JSON 余弦 / pgvector。"""
+    """向量存储与检索端口（M3）。实现为 JSON 文本 + Python 余弦（SQLite/PostgreSQL 通用，不依赖 pgvector）。"""
 
     def upsert(self, item_id: UUID, vector: list[float], model: str) -> None:
         """新增或更新一条知识的向量。"""

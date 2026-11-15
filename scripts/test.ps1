@@ -1,4 +1,4 @@
-# 全量质量检查：Python 测试 + lint + 前端测试 + 类型检查与构建
+﻿# 全量质量检查：Python 测试 + lint + 前端测试 + 类型检查与构建
 # 用法：powershell -ExecutionPolicy Bypass -File scripts/test.ps1
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)

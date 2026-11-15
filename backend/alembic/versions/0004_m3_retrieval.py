@@ -1,19 +1,21 @@
-"""M3 retrieval: knowledge_fts (FTS5 trigram) + sync triggers + knowledge_vector
+"""M3 retrieval: knowledge_fts（按方言）+ 同步机制 + knowledge_vector
 
 Revision ID: 0004_m3_retrieval
 Revises: 0003_m2_governance
 Create Date: 2026-11-14
 
-全文索引为 FTS5 虚表（trigram 分词，中文子串可命中），用触发器与
-knowledge_item 保持同步（rowid 对齐，删除按 rowid）。虚表不在 ORM metadata，
-env.py 已将其及影子表排除出 autogenerate。向量表为标准 ORM 表。
+全文索引按方言创建（ZIP-01）：
+- SQLite：FTS5 虚表（trigram 分词，中文子串可命中）+ rowid 对齐同步触发器；
+- PostgreSQL：原生 tsvector 表 + GIN 索引 + 触发器维护 tsv，删除经外键级联。
+索引表不在 ORM metadata，env.py 已将其排除出 autogenerate。向量表为标准 ORM 表，
+双方言通用。DDL 与 create_all 兜底共用 app.db.fts 的方言 DDL（单一来源，幂等）。
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
-from app.db.fts import FTS_DDL
+from app.db.fts import FTS_DDL, PG_FTS_DDL
 
 revision: str = "0004_m3_retrieval"
 down_revision: Union[str, None] = "0003_m2_governance"
@@ -32,15 +34,28 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["item_id"], ["knowledge_item.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("item_id"),
     )
-    # FTS5 虚表（trigram 分词，中文子串可命中）+ rowid 对齐同步触发器。
-    # DDL 与 create_all 兜底共用 app.db.fts.FTS_DDL（单一来源，幂等）。
-    for statement in FTS_DDL:
-        op.execute(statement)
+    # 按方言创建全文索引（DDL 单一来源，幂等）。
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        for statement in PG_FTS_DDL:
+            op.execute(statement)
+    elif dialect == "sqlite":
+        for statement in FTS_DDL:
+            op.execute(statement)
+    else:
+        raise ValueError(f"不支持的数据库方言: {dialect}")
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS knowledge_item_ad")
-    op.execute("DROP TRIGGER IF EXISTS knowledge_item_au")
-    op.execute("DROP TRIGGER IF EXISTS knowledge_item_ai")
-    op.execute("DROP TABLE IF EXISTS knowledge_fts")
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS knowledge_item_au ON knowledge_item")
+        op.execute("DROP TRIGGER IF EXISTS knowledge_item_ai ON knowledge_item")
+        op.execute("DROP FUNCTION IF EXISTS knowledge_fts_sync()")
+        op.execute("DROP TABLE IF EXISTS knowledge_fts")
+    elif dialect == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS knowledge_item_ad")
+        op.execute("DROP TRIGGER IF EXISTS knowledge_item_au")
+        op.execute("DROP TRIGGER IF EXISTS knowledge_item_ai")
+        op.execute("DROP TABLE IF EXISTS knowledge_fts")
     op.drop_table("knowledge_vector")

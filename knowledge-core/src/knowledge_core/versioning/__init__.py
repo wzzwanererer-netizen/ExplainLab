@@ -1,6 +1,8 @@
 """知识版本管理接口。
 
-M0 仅定义接口；实现见 M2。重要变更的审核流在接口之上由应用层编排。
+接口（VersionService ABC）在此定义；实现见
+knowledge_core.versioning.service.RepositoryVersionService。
+重要变更的审核流在接口之上由 review 模块编排。
 """
 
 from __future__ import annotations

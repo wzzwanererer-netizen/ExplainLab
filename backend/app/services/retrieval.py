@@ -1,8 +1,14 @@
-"""M3 检索装配：SQLite FTS5 / 向量存储实现 + 索引同步 + 混合检索服务。
+"""M3 / ZIP-01 检索装配：按方言的全文索引 + 通用向量存储 + 索引同步 + 混合检索。
 
-FullTextIndex / VectorStore 端口的 SQLite 实现。FTS 日常同步由迁移触发器完成，
-这里的 upsert/remove 主要用于 backfill 与兜底；向量同步由 RetrievalIndexer 在
-条目变更后调用（embed 为异步，故在路由层 await）。Core 不绑定数据库。
+FullTextIndex / VectorStore 端口的数据库适配实现：
+- 全文：SQLite 用 FTS5（trigram），PostgreSQL 用原生 tsvector / tsquery（GIN）。
+  方言差异封装在本适配层（SQLiteFullTextIndex / PostgresFullTextIndex）与 app/db/fts.py，
+  编排逻辑（RetrievalIndexer / sync_index / build_retrieval_service）不含任何方言 SQL。
+- 向量：JSON 存储 + Python 余弦，双方言通用（不依赖 pgvector 扩展）。
+
+FTS 日常同步由迁移触发器完成，这里的 upsert/remove 主要用于 backfill 与兜底；
+向量同步由 RetrievalIndexer 在条目变更后调用（embed 为异步，故在路由层 await）。
+Core 不绑定数据库。
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ from app.models import KnowledgeVectorORM
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
 from knowledge_core.domain.entities import KnowledgeItem, utcnow
 from knowledge_core.model_adapter import ModelAdapterError
-from knowledge_core.ports import Embedder
+from knowledge_core.ports import Embedder, FullTextIndex, VectorStore
 from knowledge_core.retrieval.hybrid import HybridRetrievalService
 
 logger = logging.getLogger(__name__)
@@ -36,7 +42,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 class SQLiteFullTextIndex:
-    """FTS5（trigram）全文索引。短查询（<3 字符）回退 LIKE。"""
+    """SQLite FTS5（trigram）全文索引。短查询（<3 字符）回退 LIKE。"""
 
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -94,8 +100,72 @@ class SQLiteFullTextIndex:
         return [(UUID(r[0]), 0.0) for r in rows]
 
 
-class SQLiteVectorStore:
-    """向量表（JSON）+ Python 余弦。本地规模足够；PG 阶段换 pgvector。"""
+class PostgresFullTextIndex:
+    """PostgreSQL 原生全文索引（tsvector / tsquery + GIN）。
+
+    不使用 FTS5 / MATCH / bm25 / rowid。tsv 由迁移触发器维护；upsert/remove 用于
+    backfill 与兜底。ts_rank 越大越相关，故返回 -ts_rank（越小越相关，与 SQLite
+    bm25 契约一致），并按相关性降序返回。原生 'simple' 分词对无空格中文不成词，
+    此类查询无 tsvector 命中时回退 ILIKE 子串匹配（真实匹配，不造假）。
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def upsert(self, item_id: UUID, title: str, content: str) -> None:
+        exists = self._session.execute(
+            text("SELECT 1 FROM knowledge_item WHERE id = :id"), {"id": str(item_id)}
+        ).first()
+        if exists is None:
+            return
+        self._session.execute(
+            text(
+                "INSERT INTO knowledge_fts(item_id, tsv) "
+                "VALUES (:id, to_tsvector('simple', :t || ' ' || :c)) "
+                "ON CONFLICT (item_id) DO UPDATE SET tsv = EXCLUDED.tsv"
+            ),
+            {"id": str(item_id), "t": title, "c": content},
+        )
+
+    def remove(self, item_id: UUID) -> None:
+        self._session.execute(
+            text("DELETE FROM knowledge_fts WHERE item_id = :id"), {"id": str(item_id)}
+        )
+
+    def search(self, query: str, limit: int) -> list[tuple[UUID, float]]:
+        q = query.strip()
+        if not q or limit <= 0:
+            return []
+        rows = self._session.execute(
+            text(
+                "SELECT item_id, ts_rank(tsv, q) AS r "
+                "FROM knowledge_fts, plainto_tsquery('simple', :query) AS q "
+                "WHERE tsv @@ q ORDER BY r DESC LIMIT :lim"
+            ),
+            {"query": q, "lim": limit},
+        ).all()
+        if rows:
+            return [(UUID(r[0]), -float(r[1])) for r in rows]
+        # 原生 tsvector 对无空格中文等不成词查询无命中：回退 ILIKE 子串匹配。
+        # JOIN knowledge_fts 限定「已索引」集合，使 remove() 后回退同样不再命中，
+        # 与 tsvector 主路径的成员资格语义一致（索引是可搜索集合的唯一来源）。
+        like = f"%{q}%"
+        rows = self._session.execute(
+            text(
+                "SELECT k.id FROM knowledge_item k "
+                "JOIN knowledge_fts f ON f.item_id = k.id "
+                "WHERE k.title ILIKE :pat OR k.content ILIKE :pat LIMIT :lim"
+            ),
+            {"pat": like, "lim": limit},
+        ).all()
+        return [(UUID(r[0]), 0.0) for r in rows]
+
+
+class JsonVectorStore:
+    """向量表（JSON 文本）+ Python 余弦。SQLite 与 PostgreSQL 通用，不依赖 pgvector。
+
+    本地规模足够；如需数据库内向量检索可未来引入 pgvector，但非本轮必需依赖。
+    """
 
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -126,8 +196,27 @@ class SQLiteVectorStore:
         return hits[:limit]
 
 
+# 向后兼容别名：既有测试与文档以 SQLiteVectorStore 引用该通用实现。
+SQLiteVectorStore = JsonVectorStore
+
+
+def build_full_text_index(session: Session) -> FullTextIndex:
+    """按会话绑定的方言选择全文索引实现（方言差异封装于此适配层）。"""
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        return PostgresFullTextIndex(session)
+    if dialect == "sqlite":
+        return SQLiteFullTextIndex(session)
+    raise ValueError(f"不支持的数据库方言: {dialect}")
+
+
+def build_vector_store(session: Session) -> VectorStore:
+    """向量存储：JSON + Python 余弦，双方言通用。"""
+    return JsonVectorStore(session)
+
+
 class RetrievalIndexer:
-    """条目变更后的索引同步：FTS 兜底 + 向量重算（embed 异步）。"""
+    """条目变更后的索引同步：FTS 兜底 + 向量重算（embed 异步）。方言由工厂选择。"""
 
     def __init__(
         self,
@@ -136,8 +225,8 @@ class RetrievalIndexer:
         *,
         model: str = "none",
     ) -> None:
-        self._fts = SQLiteFullTextIndex(session)
-        self._vectors = SQLiteVectorStore(session)
+        self._fts = build_full_text_index(session)
+        self._vectors = build_vector_store(session)
         self._embedder = embedder
         self._model = model
         self._items = SQLAlchemyKnowledgeRepository(session)
@@ -173,8 +262,8 @@ def build_retrieval_service(
 ) -> HybridRetrievalService:
     return HybridRetrievalService(
         SQLAlchemyKnowledgeRepository(session),
-        SQLiteFullTextIndex(session),
-        SQLiteVectorStore(session),
+        build_full_text_index(session),
+        build_vector_store(session),
         embedder,
         personal_space_id=personal_space_id,
     )

@@ -12,15 +12,18 @@ from knowledge_core.model_adapter import ModelAdapter, OpenAICompatibleAdapter
 
 def build_model_adapter(settings: Settings) -> ModelAdapter | None:
     """按配置构建适配器；当前支持 openai-compatible。"""
+    api_key = (
+        settings.model_api_key.get_secret_value() if settings.model_api_key else None
+    )
     if (
         settings.model_provider == "openai-compatible"
         and settings.model_base_url
-        and settings.model_api_key
+        and api_key
         and settings.model_name
     ):
         return OpenAICompatibleAdapter(
             base_url=settings.model_base_url,
-            api_key=settings.model_api_key,
+            api_key=api_key,
             default_model=settings.model_name,
             provider_name=settings.model_provider,
         )
@@ -32,10 +35,13 @@ def build_embed_adapter(settings: Settings) -> ModelAdapter | None:
 
     未配置返回 None，向量通道如实关闭；base_url 原样使用，不替换代理。
     """
-    if settings.embed_base_url and settings.embed_api_key and settings.embed_model:
+    embed_key = (
+        settings.embed_api_key.get_secret_value() if settings.embed_api_key else None
+    )
+    if settings.embed_base_url and embed_key and settings.embed_model:
         return OpenAICompatibleAdapter(
             base_url=settings.embed_base_url,
-            api_key=settings.embed_api_key,
+            api_key=embed_key,
             default_model=settings.embed_model,
             embed_model=settings.embed_model,
             provider_name="embed",

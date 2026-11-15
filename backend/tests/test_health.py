@@ -46,3 +46,67 @@ def test_health_reports_configured_provider(client: TestClient):
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
     body = client.get("/api/health").json()
     assert body["model_adapter"] == "dummy-provider"
+
+
+def test_health_timeout_returns_stable_code(client: TestClient):
+    """M0-02：数据库连接超时 → 稳定错误码 database_timeout，不外泄异常文本。"""
+    from types import SimpleNamespace
+
+    from app.db.session import get_session
+
+    class _TimeoutSession:
+        bind = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
+        def execute(self, *args, **kwargs):
+            raise TimeoutError("connection timed out")
+
+    client.app.dependency_overrides[get_session] = lambda: _TimeoutSession()  # type: ignore[attr-defined]
+    try:
+        body = client.get("/api/health").json()
+    finally:
+        client.app.dependency_overrides.pop(get_session, None)  # type: ignore[attr-defined]
+    assert body["status"] == "degraded"
+    assert body["database"]["connected"] is False
+    assert body["database"]["error"] == "database_timeout"
+    assert "timed out" not in client.get("/api/health").text
+
+
+def test_health_unavailable_returns_stable_code():
+    """M0-02：数据库不可用 → 稳定错误码 database_unavailable（非 str(exc)）。"""
+    settings = Settings(
+        database_url="postgresql+psycopg://u:p@127.0.0.1:1/nodb?connect_timeout=1",
+        _env_file=None,
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        body = client.get("/api/health").json()
+    assert body["status"] == "degraded"
+    assert body["database"]["error"] == "database_unavailable"
+
+
+def test_health_error_does_not_leak_sensitive_details():
+    """M0-02：响应不得包含主机、端口、密码、用户名或底层异常文本。"""
+    settings = Settings(
+        database_url=(
+            "postgresql+psycopg://secretuser:SuperSecret123@127.0.0.1:1/nodb"
+            "?connect_timeout=1"
+        ),
+        _env_file=None,
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        resp = client.get("/api/health")
+    assert resp.status_code == 200
+    text = resp.text
+    body = resp.json()
+    assert body["database"]["error"] == "database_unavailable"
+    for leak in (
+        "SuperSecret123",  # 密码
+        "secretuser",  # 用户名
+        "127.0.0.1",  # 主机
+        "127.0.0.1:1",  # 主机:端口
+        "OperationalError",  # 底层异常类型
+        "could not connect",  # 底层异常文本
+        "Traceback",
+    ):
+        assert leak not in text, f"健康响应泄露敏感信息: {leak}"

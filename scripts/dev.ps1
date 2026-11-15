@@ -1,4 +1,4 @@
-# 在两个独立窗口中分别启动前后端开发服务；关闭对应窗口即停止服务。
+﻿# 在两个独立窗口中分别启动前后端开发服务；关闭对应窗口即停止服务。
 # 用法：powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent

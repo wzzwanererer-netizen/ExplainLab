@@ -1,6 +1,8 @@
 """知识来源追溯接口。
 
-M0 仅定义接口；实现见 M1/M2。每条知识必须能追溯到产生它的对话或文档。
+接口（ProvenanceService ABC）在此定义；实现见
+knowledge_core.provenance.service.RepositoryProvenanceService。
+每条知识必须能追溯到产生它的对话或文档。
 """
 
 from __future__ import annotations

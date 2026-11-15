@@ -1,11 +1,20 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { ChatView } from "./components/ChatView";
-import { ExperimentsView } from "./components/ExperimentsView";
 import { HealthPanel } from "./components/HealthPanel";
-import { KnowledgeMap } from "./components/KnowledgeMap";
 import { KnowledgeView } from "./components/KnowledgeView";
 import { ReviewQueue } from "./components/ReviewQueue";
 import { SearchView } from "./components/SearchView";
+
+// ZIP-04 按需加载：知识地图（React Flow + ELK 布局，体积最大）与实验页（三 Runner）
+// 经动态 import 拆为独立异步 chunk，仅在切到对应页签时加载，显著降低首屏初始 JS。
+// 二者为命名导出，故用 .then 映射为 React.lazy 所需的 default。功能不牺牲：
+// Suspense 在加载期展示占位，加载完成后与原 eager 行为一致。
+const KnowledgeMap = lazy(() =>
+  import("./components/KnowledgeMap").then((m) => ({ default: m.KnowledgeMap })),
+);
+const ExperimentsView = lazy(() =>
+  import("./components/ExperimentsView").then((m) => ({ default: m.ExperimentsView })),
+);
 
 type Tab = "chat" | "knowledge" | "search" | "map" | "experiments" | "reviews" | "status";
 
@@ -54,20 +63,28 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">
-        {tab === "chat" && <ChatView />}
-        {tab === "knowledge" && <KnowledgeView />}
-        {tab === "search" && <SearchView />}
-        {tab === "map" && <KnowledgeMap />}
-        {tab === "experiments" && <ExperimentsView />}
-        {tab === "reviews" && <ReviewQueue />}
-        {tab === "status" && (
-          <div className="max-w-3xl">
-            <p className="mb-6 text-sm text-slate-400">
-              以下面板展示来自后端 API 的真实运行状态。
+        <Suspense
+          fallback={
+            <p role="status" className="text-sm text-slate-400">
+              正在加载视图…
             </p>
-            <HealthPanel />
-          </div>
-        )}
+          }
+        >
+          {tab === "chat" && <ChatView />}
+          {tab === "knowledge" && <KnowledgeView />}
+          {tab === "search" && <SearchView />}
+          {tab === "map" && <KnowledgeMap />}
+          {tab === "experiments" && <ExperimentsView />}
+          {tab === "reviews" && <ReviewQueue />}
+          {tab === "status" && (
+            <div className="max-w-3xl">
+              <p className="mb-6 text-sm text-slate-400">
+                以下面板展示来自后端 API 的真实运行状态。
+              </p>
+              <HealthPanel />
+            </div>
+          )}
+        </Suspense>
       </main>
     </div>
   );

@@ -21,7 +21,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Alembic 的 Config 基于 ConfigParser，会对 % 做插值：含百分号编码（如 %40 / %25）
+# 的 PostgreSQL URL 原样写入会触发 InterpolationSyntaxError。写入前转义 % -> %%，
+# ConfigParser 读回时自动还原为原值；下方传给 configure / engine 的 URL 仍用原值，
+# 不经 ConfigParser，不受影响。此处不记录 URL（可能含密码），避免敏感信息进入日志。
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

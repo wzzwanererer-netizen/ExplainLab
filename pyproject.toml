@@ -21,6 +21,11 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "knowledge-core/tests"]
-addopts = "-q"
+# ZIP-02：backend/tests 与 knowledge-core/tests 存在同名模块（test_graph.py），
+# 默认 prepend 导入模式会因 basename 冲突报 "import file mismatch"。
+# 改用 importlib 导入模式按路径唯一导入，根级 pytest 可一次性收集两个目录；
+# pythonpath 保留 knowledge-core/tests 以支持其测试的 `from helpers import ...` 顶层导入。
+addopts = "-q --import-mode=importlib"
+pythonpath = ["knowledge-core/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
