@@ -257,7 +257,7 @@
 - **提交内容**：32 修改 + 4 新增源码/测试 + 本报告 + MILESTONES.md，单批提交。
 - **提交信息**：`fix: M0 准入修复（01–07）与 M5 回归修复（ZIP-01–04）`（语义清晰，附验收证据指向本报告）。
 - **排除入库**：`release/ExplainLab-V1.0-review.zip`（审计产物）、`backend/.env`（真实密钥）、`*.db`、`node_modules/`、`.venv/`（均 gitignore 或显式不 add）。
-- **提交哈希**：本报告随该批提交入库，哈希可经 `git log` 核验（提交后于交付说明中附记）。
+- **修复批次提交**：`4557d2e`（38 文件，+1781/−174；含本报告与 MILESTONES 更新）。M0 初始提交 `2d2b634` 经 `git log` 核验完整保留，历史未重写。
 - 未 `push --force`、未 `reset --hard`、未跳过 hooks。
 
 ## 14. 遗留问题与已知局限
