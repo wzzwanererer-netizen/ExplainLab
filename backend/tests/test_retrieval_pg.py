@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
 from app.core.config import get_settings
+from app.db.fts import PG_FTS_BACKFILL
 from app.db.session import create_engine_from_url
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
 from app.services.retrieval import (
@@ -278,3 +279,143 @@ async def test_pg_hybrid_search_end_to_end(pg_session: Session) -> None:
 def test_pg_dialect_dispatch(pg_session: Session) -> None:
     """工厂按方言分派：PG 会话返回 PostgresFullTextIndex。"""
     assert isinstance(build_full_text_index(pg_session), PostgresFullTextIndex)
+
+
+# --- 复审修复回归：迁移 0004 必须回填历史 knowledge_item（真实 PG）---
+# 缺陷：0004 只建 tsvector 表 + 触发器，未回填迁移前已存在的知识，历史知识检索
+# 不到（触发器只对建索引之后的变更生效；CJK 的 ILIKE 回退也 JOIN knowledge_fts，
+# 同样依赖回填）。下列测试先把库停在 0003 插入历史知识，再 upgrade 到 head，
+# **不调用 reindex**，直接检索；并验证幂等、downgrade→upgrade、触发器不破坏。
+
+PG_ITEM_A = ("quantum entanglement", "entanglement correlates particles across distance")
+PG_ITEM_B = ("classical mechanics", "newtonian motion describes macroscopic bodies")
+PG_ITEM_C = ("知识图谱的定义", "知识图谱是一种网络结构数据模型")
+
+
+@pytest.fixture()
+def pg_hist(pg_engine) -> Iterator[dict]:
+    """真实 downgrade 到 0003 并插入历史知识（此时无 FTS 表/触发器），yield 上下文。
+
+    teardown 恢复 head 并清空 knowledge_item，保证模块状态不影响其它测试。
+    """
+    cfg = _alembic_cfg()
+    factory = sessionmaker(bind=pg_engine, autoflush=False, expire_on_commit=False)
+    sess = factory()
+    sess.execute(text("DELETE FROM knowledge_item"))
+    sess.commit()
+    command.downgrade(cfg, "0003_m2_governance")
+    try:
+        assert "knowledge_fts" not in set(inspect(pg_engine).get_table_names())
+        a = _make_item(sess, *PG_ITEM_A)
+        b = _make_item(sess, *PG_ITEM_B)
+        c = _make_item(sess, *PG_ITEM_C)
+        sess.close()
+        yield {"cfg": cfg, "engine": pg_engine, "a": a.id, "b": b.id, "c": c.id}
+    finally:
+        command.upgrade(cfg, "head")
+        cleanup = factory()
+        cleanup.execute(text("DELETE FROM knowledge_item"))
+        cleanup.commit()
+        cleanup.close()
+
+
+def _pg_sess(engine) -> Session:
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
+
+
+def _pg_fts_count(session: Session) -> int:
+    return session.execute(text("SELECT count(*) FROM knowledge_fts")).scalar_one()
+
+
+def test_pg_migration_backfills_historical_items(pg_hist) -> None:
+    """先有知识再 upgrade 0004：不 reindex，原生 tsvector 直接检索命中历史知识。"""
+    ctx = pg_hist
+    command.upgrade(ctx["cfg"], "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        fts = build_full_text_index(sess)
+        assert isinstance(fts, PostgresFullTextIndex)
+        assert [h[0] for h in fts.search("entanglement", 10)] == [ctx["a"]]
+        assert [h[0] for h in fts.search("newtonian", 10)] == [ctx["b"]]
+        assert _pg_fts_count(sess) == 3  # A/B/C 全部回填
+        assert sess.execute(text("SELECT count(*) FROM knowledge_item")).scalar_one() == 3
+    finally:
+        sess.close()
+
+
+def test_pg_backfill_idempotent(pg_hist) -> None:
+    """重复执行回填不产生重复索引行（item_id 主键 ON CONFLICT 收敛）。"""
+    ctx = pg_hist
+    command.upgrade(ctx["cfg"], "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        assert _pg_fts_count(sess) == 3
+        for statement in PG_FTS_BACKFILL:
+            sess.execute(text(statement))
+        sess.commit()
+        assert _pg_fts_count(sess) == 3
+        assert [h[0] for h in PostgresFullTextIndex(sess).search("entanglement", 10)] == [ctx["a"]]
+    finally:
+        sess.close()
+
+
+def test_pg_downgrade_upgrade_keeps_history_searchable(pg_hist) -> None:
+    """downgrade 删除索引表后重新 upgrade，历史知识仍可检索（再次回填，无重复）。"""
+    ctx = pg_hist
+    cfg = ctx["cfg"]
+    command.upgrade(cfg, "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        assert [h[0] for h in PostgresFullTextIndex(sess).search("entanglement", 10)] == [ctx["a"]]
+    finally:
+        sess.close()
+    command.downgrade(cfg, "0003_m2_governance")
+    assert "knowledge_fts" not in set(inspect(ctx["engine"]).get_table_names())
+    command.upgrade(cfg, "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        assert [h[0] for h in PostgresFullTextIndex(sess).search("entanglement", 10)] == [ctx["a"]]
+        assert [h[0] for h in PostgresFullTextIndex(sess).search("newtonian", 10)] == [ctx["b"]]
+        assert _pg_fts_count(sess) == 3
+    finally:
+        sess.close()
+
+
+def test_pg_cjk_history_backfill_searchable(pg_hist) -> None:
+    """历史中文知识回填后，CJK 的 ILIKE 回退（JOIN knowledge_fts）也能命中。"""
+    ctx = pg_hist
+    command.upgrade(ctx["cfg"], "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        # 无空格中文不成词，走 ILIKE 回退；回退 JOIN 索引表，故必须已回填才命中。
+        assert ctx["c"] in [h[0] for h in PostgresFullTextIndex(sess).search("知识图谱", 10)]
+    finally:
+        sess.close()
+
+
+def test_pg_triggers_still_work_after_backfill(pg_hist) -> None:
+    """回填不破坏 INSERT/UPDATE 触发器与 DELETE 外键级联（迁移后新变更仍同步）。"""
+    ctx = pg_hist
+    command.upgrade(ctx["cfg"], "head")
+    sess = _pg_sess(ctx["engine"])
+    try:
+        fts = PostgresFullTextIndex(sess)
+        assert [h[0] for h in fts.search("entanglement", 10)] == [ctx["a"]]
+        # INSERT 触发器：迁移后新增条目自动入索引。
+        d = _make_item(sess, "thermodynamics entropy", "entropy measures disorder in systems")
+        assert [h[0] for h in fts.search("entropy", 10)] == [d.id]
+        # UPDATE 触发器：改写 A 后旧词消失、新词命中。
+        sess.execute(
+            text("UPDATE knowledge_item SET title='photon optics', content='photon interference patterns' WHERE id=:id"),
+            {"id": str(ctx["a"])},
+        )
+        sess.commit()
+        assert fts.search("entanglement", 10) == []
+        assert [h[0] for h in fts.search("photon", 10)] == [ctx["a"]]
+        # DELETE 外键级联：删除 D 后索引同步移除。
+        sess.execute(text("DELETE FROM knowledge_item WHERE id=:id"), {"id": str(d.id)})
+        sess.commit()
+        assert fts.search("entropy", 10) == []
+        assert _pg_fts_count(sess) == 3  # A(改写)+B+C 仍在，D 已删
+    finally:
+        sess.close()

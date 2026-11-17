@@ -9,13 +9,17 @@ Create Date: 2026-11-14
 - PostgreSQL：原生 tsvector 表 + GIN 索引 + 触发器维护 tsv，删除经外键级联。
 索引表不在 ORM metadata，env.py 已将其排除出 autogenerate。向量表为标准 ORM 表，
 双方言通用。DDL 与 create_all 兜底共用 app.db.fts 的方言 DDL（单一来源，幂等）。
+
+历史数据回填（复审修复）：建索引+触发器后执行幂等回填（FTS_BACKFILL /
+PG_FTS_BACKFILL），把迁移前已存在的 knowledge_item 初始化进索引，否则历史知识
+检索不到。downgrade 删除索引表，重新 upgrade 会再次回填，原有知识仍可检索。
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
-from app.db.fts import FTS_DDL, PG_FTS_DDL
+from app.db.fts import FTS_BACKFILL, FTS_DDL, PG_FTS_BACKFILL, PG_FTS_DDL
 
 revision: str = "0004_m3_retrieval"
 down_revision: Union[str, None] = "0003_m2_governance"
@@ -34,13 +38,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["item_id"], ["knowledge_item.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("item_id"),
     )
-    # 按方言创建全文索引（DDL 单一来源，幂等）。
+    # 按方言创建全文索引（DDL 单一来源，幂等），随后回填历史知识记录。
     dialect = op.get_bind().dialect.name
     if dialect == "postgresql":
-        for statement in PG_FTS_DDL:
+        for statement in (*PG_FTS_DDL, *PG_FTS_BACKFILL):
             op.execute(statement)
     elif dialect == "sqlite":
-        for statement in FTS_DDL:
+        for statement in (*FTS_DDL, *FTS_BACKFILL):
             op.execute(statement)
     else:
         raise ValueError(f"不支持的数据库方言: {dialect}")

@@ -8,11 +8,18 @@ to_tsvector('simple', title||content) 维护 tsv，删除经外键 ON DELETE CAS
 全程使用原生 tsvector / tsquery，不使用 FTS5 / MATCH / bm25 / rowid。
 
 两种方言的索引表均不在 ORM metadata，env.py 已将 knowledge_fts* 排除出 autogenerate。
-两条建表路径共用同一份方言 DDL：
+两条建表路径共用同一份方言 DDL + 回填：
 - Alembic 迁移 0004 按方言显式执行（生产 / 迁移测试）；
 - Base.metadata.create_all（API 测试夹具）经 after_create 事件按方言兜底创建，
   保证不经迁移的测试库同样具备全文索引与触发器。
 DDL 均带 IF NOT EXISTS / OR REPLACE / DROP IF EXISTS，重复执行安全。
+
+历史数据回填（复审修复）：索引表与同步触发器只对「建索引之后」的变更生效，
+迁移前已存在的 knowledge_item 不会自动进入索引。故两条路径在建索引+触发器后
+都执行幂等回填（FTS_BACKFILL / PG_FTS_BACKFILL），把历史知识初始化进索引：
+- SQLite 按 rowid 对齐，NOT EXISTS 跳过已索引行，重复执行不产生重复文档；
+- PostgreSQL 以 item_id 主键 ON CONFLICT 收敛，tsv 表达式与触发器完全一致。
+回填直接写索引表，不触发 knowledge_item 上的 INSERT/UPDATE/DELETE 同步触发器。
 """
 
 from __future__ import annotations
@@ -60,14 +67,31 @@ PG_FTS_DDL: tuple[str, ...] = (
     "FOR EACH ROW EXECUTE FUNCTION knowledge_fts_sync()",
 )
 
+# --- 历史数据回填（幂等；迁移 0004 与 create_all 兜底共用单一来源）---
+# SQLite：rowid 与 knowledge_item.rowid 对齐；NOT EXISTS 跳过已索引行，
+# 重复执行不产生重复 FTS5 文档。直接写虚表，不触发 knowledge_item 同步触发器。
+FTS_BACKFILL: tuple[str, ...] = (
+    "INSERT INTO knowledge_fts(rowid, item_id, title, content) "
+    "SELECT k.rowid, k.id, k.title, k.content FROM knowledge_item k "
+    "WHERE NOT EXISTS (SELECT 1 FROM knowledge_fts f WHERE f.rowid = k.rowid)",
+)
+# PostgreSQL：tsv 表达式与 knowledge_fts_sync() 触发器完全一致；
+# item_id 主键 ON CONFLICT 收敛，重复执行不产生重复索引行。
+PG_FTS_BACKFILL: tuple[str, ...] = (
+    "INSERT INTO knowledge_fts(item_id, tsv) "
+    "SELECT id, to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')) "
+    "FROM knowledge_item "
+    "ON CONFLICT (item_id) DO UPDATE SET tsv = EXCLUDED.tsv",
+)
+
 
 def create_fts(connection: Connection) -> None:
-    """按方言在给定连接上创建全文索引与同步机制（幂等）。"""
+    """按方言在给定连接上创建全文索引与同步机制并回填历史数据（幂等）。"""
     dialect = connection.dialect.name
     if dialect == "postgresql":
-        ddl = PG_FTS_DDL
+        ddl = PG_FTS_DDL + PG_FTS_BACKFILL
     elif dialect == "sqlite":
-        ddl = FTS_DDL
+        ddl = FTS_DDL + FTS_BACKFILL
     else:
         raise ValueError(f"不支持的数据库方言: {dialect}")
     for statement in ddl:

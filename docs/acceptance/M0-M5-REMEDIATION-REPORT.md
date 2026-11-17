@@ -277,3 +277,49 @@
 本批次（M0-01–07 + ZIP-01–04）已全部完成并经真实运行验证，结论**全部通过**（附第 14 节已记录局限）。
 
 **不自行宣布进入 M1 或任何新里程碑。修复到此停止，等待独立审计裁定准入。** 架构保护红线全程遵守：未重写 Knowledge Core、未使其耦合 UI、核心无 FastAPI/React 依赖、业务逻辑无方言 SQL、未删除有效测试、未修改 M0 初始提交、未擅自增加大型依赖、未用假数据替代真实数据库测试、未虚报 PostgreSQL 成功、未将离线 SQL 当真实验证。
+
+---
+
+## 附录 A · 独立复审专项修复（2026-11-17）：迁移 0004 历史数据回填
+
+> 本节为第一轮修复提交（`4557d2e`/`3c9b28b`）之后，针对**独立复审新发现缺陷**的专项修复。仅改 backend 全文索引基础设施与迁移，未开发 M1、未动无关模块、未改 Knowledge Core 上层检索接口。
+
+### A.1 复审发现的缺陷
+
+迁移 `0004_m3_retrieval` 创建全文索引表与同步触发器，但**未将迁移前已存在的 `knowledge_item` 回填进索引**。触发器只对「建索引之后」的 INSERT/UPDATE/DELETE 生效，故历史知识检索不到。**SQLite FTS5 与 PostgreSQL tsvector 两种实现均缺回填。**
+
+### A.2 修复内容
+
+- `backend/app/db/fts.py` 新增幂等回填常量（单一来源）：
+  - `FTS_BACKFILL`（SQLite）：`INSERT INTO knowledge_fts(rowid,item_id,title,content) SELECT k.rowid,k.id,k.title,k.content FROM knowledge_item k WHERE NOT EXISTS (SELECT 1 FROM knowledge_fts f WHERE f.rowid=k.rowid)`——rowid 与源表对齐，`NOT EXISTS` 跳过已索引行。
+  - `PG_FTS_BACKFILL`（PostgreSQL）：`INSERT INTO knowledge_fts(item_id,tsv) SELECT id, to_tsvector('simple', coalesce(title,'')||' '||coalesce(content,'')) FROM knowledge_item ON CONFLICT (item_id) DO UPDATE SET tsv=EXCLUDED.tsv`——tsv 表达式与 `knowledge_fts_sync()` 触发器**完全一致**，主键 `ON CONFLICT` 收敛。
+- `create_fts()` 与迁移 `0004 upgrade()` 在建索引+触发器**之后**执行对应回填（两条建表路径共用）。回填直接写索引表，**不触发** `knowledge_item` 上的同步触发器。
+- `downgrade()` 不变（删除索引表）；重新 `upgrade` 会再次回填，原有知识仍可检索。
+
+### A.3 要求逐条核对
+
+| 要求 | 落实 | 验证 |
+|---|---|---|
+| 1 SQLite 缺回填 | 已补 `FTS_BACKFILL` | `test_fts_backfill.py` |
+| 2 PG 缺回填 | 已补 `PG_FTS_BACKFILL` | `test_retrieval_pg.py` 新增 5 用例 |
+| 3 建索引+触发器后初始化历史 | upgrade/create_fts 末尾回填 | 先插数据再迁移即可检索 |
+| 4 重复执行不产生重复索引 | `NOT EXISTS` / `ON CONFLICT` 幂等 | 重复回填后计数不变 |
+| 5 downgrade→upgrade 仍可检索 | 删表后重升级再次回填 | down/up 后检索命中、计数无重复 |
+| 6 不破坏 INSERT/UPDATE/DELETE 触发器 | 回填直写索引表，触发器未改 | 迁移后新增/改写/删除仍同步 |
+| 7 不改 Core 上层检索接口 | 仅 backend `fts.py`/迁移；Core 零改动 | `FullTextIndex` 端口与 `HybridRetrievalService` 不变 |
+
+### A.4 新增回归测试（先建记录→再迁移→不 reindex→直接检索）
+
+- **SQLite** `backend/tests/test_fts_backfill.py`（4 用例，默认套件必跑）：库停 0003 插入历史知识（此时无 FTS 表/触发器）→ upgrade head → **不调用 reindex**，以 ≥3 字符查询走 FTS5 `MATCH` 直接命中历史；幂等（重复执行 `FTS_BACKFILL` 计数不变）；downgrade→upgrade 仍可检索；回填后 INSERT/UPDATE/DELETE 触发器仍同步。
+- **PostgreSQL** `backend/tests/test_retrieval_pg.py` 追加 5 用例（`EXPLAINLAB_PG_TEST_URL` 门控，真实实例）：回填命中（原生 tsvector）、幂等（重复 `PG_FTS_BACKFILL`）、downgrade→upgrade 仍可检索、**历史中文**回填后 CJK 的 `ILIKE`（JOIN `knowledge_fts`）回退命中、回填后触发器/级联不破坏。
+
+### A.5 真实运行证据（2026-11-17）
+
+- SQLite 回填回归：**4 passed**。
+- 真实 PostgreSQL 16.8 检索测试：**17 passed**（12 既有 + 5 新回填）。
+- 全量含真实 PG：**279 passed**；默认无 PG：**262 passed, 17 skipped**；`ruff check`：**All checks passed!**
+- 改动文件：`backend/app/db/fts.py`、`backend/alembic/versions/0004_m3_retrieval.py`、`backend/tests/test_fts_backfill.py`（新增）、`backend/tests/test_retrieval_pg.py`。前端与 Knowledge Core 未改动。
+
+### A.6 状态
+
+专项修复完成并经真实运行验证（SQLite + 真实 PostgreSQL 双方言）。**等待独立复审**；未进入 M1，未顺带开发无关功能。

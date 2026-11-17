@@ -138,6 +138,17 @@ M5 回归项（全部完成并真实验证）：
 
 **结论：本修复批次全部通过**（附已记录局限：PG 中文分词回退、elkjs 懒加载块体积）。验收证据见 [docs/acceptance/M0-M5-REMEDIATION-REPORT.md](docs/acceptance/M0-M5-REMEDIATION-REPORT.md)。**不自行宣布进入 M1，停止等待独立审计。**
 
+### 独立复审专项修复：迁移 0004 历史数据回填 ✅（2026-11-17，等待复审）
+
+**复审发现**：0004 建全文索引表+触发器，但未回填迁移前已存在的 `knowledge_item`，历史知识检索不到（SQLite FTS5 与 PG tsvector 均缺）。
+
+- [x] `fts.py` 新增幂等回填 `FTS_BACKFILL`（rowid 对齐 + NOT EXISTS）/ `PG_FTS_BACKFILL`（tsv 同触发器 + 主键 ON CONFLICT）；`create_fts` 与迁移 0004 upgrade 建索引+触发器后回填
+- [x] 重复执行不产生重复索引；downgrade→upgrade 再次回填仍可检索；不破坏 INSERT/UPDATE/DELETE 触发器；不改 Knowledge Core 上层检索接口
+- [x] 新增回归：`test_fts_backfill.py`（SQLite 4 用例）+ `test_retrieval_pg.py` 追加 5 用例（真实 PG）——先建记录→再迁移→**不 reindex**→直接检索历史
+- [x] 真实运行：SQLite 回填 4 通过；真实 PG 16.8 检索 17 通过；全量含 PG **279 通过**、默认 **262 通过/17 跳过**；ruff 通过
+
+仅改 backend `fts.py`/迁移 0004/两个测试文件，未动前端与 Core，未开发 M1。证据见报告附录 A。**等待独立复审。**
+
 ---
 
 ## V1.0 完成
