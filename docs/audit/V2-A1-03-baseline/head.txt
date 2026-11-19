@@ -1,0 +1,1 @@
+6d91718 fix: 迁移 0004 回填历史 knowledge_item 到全文索引（SQLite FTS5 + PG tsvector）

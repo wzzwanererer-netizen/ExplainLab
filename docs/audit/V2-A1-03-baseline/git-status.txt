@@ -1,0 +1,23 @@
+ M backend/app/models.py
+ M backend/tests/test_fts_backfill.py
+ M backend/tests/test_migrations.py
+ M backend/tests/test_retrieval_pg.py
+ M knowledge-core/src/knowledge_core/domain/__init__.py
+ M knowledge-core/src/knowledge_core/domain/entities.py
+ M knowledge-core/src/knowledge_core/ports.py
+ M knowledge-core/tests/test_interfaces.py
+?? backend/alembic/versions/0006_v2_markdown_kb.py
+?? backend/tests/test_v2_models.py
+?? backend/tests/test_v2_models_pg.py
+?? docs/acceptance/V2-A1-01-data-model-and-migration.md
+?? docs/acceptance/V2-A1-02-markdown-codec-and-frontmatter.md
+?? docs/audit/
+?? docs/plans/V2-batch-A-design.md
+?? docs/plans/V2-dependency-selection.md
+?? docs/plans/V2-plan.md
+?? knowledge-core/src/knowledge_core/markdown/
+?? knowledge-core/tests/test_markdown_canonical.py
+?? knowledge-core/tests/test_markdown_codec.py
+?? knowledge-core/tests/test_markdown_frontmatter.py
+?? knowledge-core/tests/test_v2_entities.py
+?? release/
