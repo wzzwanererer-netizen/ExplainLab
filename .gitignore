@@ -42,3 +42,6 @@ Thumbs.db
 *.log
 tmp/
 .tmp/
+
+# --- 审计交接构建产物（ZIP/bundle/log，体积大，不入库） ---
+release/
