@@ -7,17 +7,25 @@ Knowledge Core 通过端口依赖持久化能力，具体实现由应用层（�
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from knowledge_core.domain.entities import (
+    Attachment,
+    GcStatus,
+    GcTask,
+    ImportOrigin,
     KnowledgeItem,
+    KnowledgeLink,
     KnowledgeRelation,
     KnowledgeVersion,
     RelationType,
     ReviewRequest,
     ReviewStatus,
     SourceRef,
+    StorageLease,
+    TagChangeRecord,
 )
 
 if TYPE_CHECKING:
@@ -202,4 +210,250 @@ class Embedder(Protocol):
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """文本向量化，返回与输入等长的向量列表。"""
+        ...
+
+
+class LinkRepository(Protocol):
+    """双向链接持久化端口（V2 A1，设计 §2.4）。
+
+    身份键 normalized_link_key 非空，(source_id, normalized_link_key) 唯一；
+    target_id 绑定稳定 UUID，改名不断链；target_title/alias 保留原始字面。
+    """
+
+    def save_link(self, link: KnowledgeLink) -> KnowledgeLink:
+        """新增一条链接，返回持久化后的链接。"""
+        ...
+
+    def get_link(self, link_id: UUID) -> KnowledgeLink | None:
+        """按 ID 获取链接；不存在返回 None。"""
+        ...
+
+    def list_links(self, source_id: UUID) -> list[KnowledgeLink]:
+        """列出某条知识的全部出链（按创建时间升序）。"""
+        ...
+
+    def list_backlinks(self, target_id: UUID) -> list[KnowledgeLink]:
+        """列出指向某稳定 ID 的全部反向链接（按稳定 ID 而非标题）。"""
+        ...
+
+    def find_by_key(self, source_id: UUID, normalized_link_key: str) -> KnowledgeLink | None:
+        """按 (source, 规范化键) 查找链接；不存在返回 None。"""
+        ...
+
+    def list_by_key(self, normalized_link_key: str) -> list[KnowledgeLink]:
+        """按规范化键列出全部链接（碰撞检测 / 解析候选 / 键重建用）。"""
+        ...
+
+    def list_all_links(self) -> list[KnowledgeLink]:
+        """列出全部链接（全量重解析 / 规范化键重建用）。"""
+        ...
+
+    def update_link(self, link: KnowledgeLink) -> KnowledgeLink:
+        """更新链接（绑定优先：保留 target_id，仅重算键/状态），返回更新后的链接。"""
+        ...
+
+    def delete_link(self, link_id: UUID) -> bool:
+        """删除一条链接；返回是否删除成功。"""
+        ...
+
+    def delete_links_of_item(self, source_id: UUID) -> int:
+        """删除某条知识的全部出链（连续保存时先清后建），返回删除条数。"""
+        ...
+
+
+class AttachmentRepository(Protocol):
+    """附件元数据持久化端口（V2 A1，设计 §2.5）。
+
+    storage_key 内容寻址可共享；引用数由 COUNT 派生，不维护冗余计数列。
+    物理文件操作不经本端口（见 StorageKeyLock 与 backend 存储适配层）。
+    """
+
+    def save_attachment(self, attachment: Attachment) -> Attachment:
+        """新增一条附件引用，返回持久化后的附件。"""
+        ...
+
+    def get_attachment(self, attachment_id: UUID) -> Attachment | None:
+        """按 ID 获取附件；不存在返回 None。"""
+        ...
+
+    def list_attachments(self, item_id: UUID) -> list[Attachment]:
+        """列出某条知识的全部附件（按创建时间升序）。"""
+        ...
+
+    def find_by_hash(self, content_hash: str) -> list[Attachment]:
+        """按内容 sha256 列出附件（内容寻址去重 / 共享判定）。"""
+        ...
+
+    def count_references(self, storage_key: str) -> int:
+        """派生引用数：COUNT(attachment WHERE storage_key)。GC 持锁复核用。"""
+        ...
+
+    def list_storage_keys(self) -> list[str]:
+        """列出全部被引用的 storage_key（独立孤儿扫描的 DB 侧集合）。"""
+        ...
+
+    def delete_attachment(self, attachment_id: UUID) -> bool:
+        """删除一条附件引用（不删物理文件）；返回是否删除成功。"""
+        ...
+
+
+class TagRepository(Protocol):
+    """标签字典与条目-标签关联持久化端口（V2 A1）。
+
+    标签为低风险变更：直改 + 经 TagChangeLogRepository 留痕，不走审核。
+    """
+
+    def ensure_tag(self, name: str) -> UUID:
+        """幂等确保标签字典存在该名称，返回标签 ID。"""
+        ...
+
+    def set_item_tags(self, item_id: UUID, tags: Sequence[str]) -> list[str]:
+        """整体替换某条知识的标签关联（去重保序），返回生效标签列表。"""
+        ...
+
+    def list_item_tags(self, item_id: UUID) -> list[str]:
+        """列出某条知识的标签（按名称升序）。"""
+        ...
+
+    def list_items_by_tag(self, name: str) -> list[UUID]:
+        """列出带某标签的全部知识 ID。"""
+        ...
+
+    def list_tags(self) -> list[str]:
+        """列出标签字典全部名称（按名称升序）。"""
+        ...
+
+    def delete_tag(self, name: str) -> bool:
+        """删除标签字典项（关联经 FK CASCADE 清理）；返回是否删除成功。"""
+        ...
+
+
+class TagChangeLogRepository(Protocol):
+    """标签变更审计端口（V2 A1，append-only）。
+
+    刻意不提供 update/delete：审计记录不可被普通更新覆盖。条目删除后
+    item_id 置 NULL，身份由 item_id_snapshot / item_title_snapshot 保留。
+    """
+
+    def append(self, record: TagChangeRecord) -> TagChangeRecord:
+        """追加一条标签变更记录（含删除前快照），返回持久化后的记录。"""
+        ...
+
+    def list_for_item(self, item_id_snapshot: UUID) -> list[TagChangeRecord]:
+        """按稳定 ID 快照列出某条知识的全部标签变更（按 changed_at 升序）。"""
+        ...
+
+    def list_all(self, *, limit: int | None = None) -> list[TagChangeRecord]:
+        """列出审计记录（按 changed_at 倒序）；limit 为 None 时返回全部。"""
+        ...
+
+
+class GcTaskRepository(Protocol):
+    """附件 GC 任务持久化端口（V2 A1，设计 §2.5.2）。
+
+    认领与状态流转必须是**原子条件更新 + lease_token fencing**：
+    双 Worker 同任务仅一成功；终态 done/cancelled 不可被普通更新覆盖；
+    崩溃残留 running 靠租约过期被他人条件认领，重启不直接置 pending。
+    """
+
+    def save_task(self, task: GcTask) -> GcTask:
+        """新增一个 GC 任务，返回持久化后的任务。"""
+        ...
+
+    def get_task(self, task_id: UUID) -> GcTask | None:
+        """按 ID 获取任务；不存在返回 None。"""
+        ...
+
+    def list_tasks(
+        self,
+        *,
+        status: GcStatus | None = None,
+        storage_key: str | None = None,
+    ) -> list[GcTask]:
+        """列出任务，可按状态与 storage_key 过滤（按创建时间升序）。"""
+        ...
+
+    def claim(
+        self,
+        task_id: UUID,
+        *,
+        owner: str,
+        lease_ttl_seconds: float,
+        now: datetime | None = None,
+    ) -> GcTask | None:
+        """原子认领：pending 或租约已过期的 running → running（新 token、attempts+1）。
+
+        认领成功返回带新租约的任务；他人已认领 / 终态 / 条件不满足返回 None。
+        """
+        ...
+
+    def update_task(self, task: GcTask, *, expected_lease_token: int) -> GcTask | None:
+        """带 fencing 的状态流转：仅当 lease_token 匹配才写入。
+
+        token 失配（已被接管）或终态不可覆盖时返回 None，调用方必须中止物理操作。
+        """
+        ...
+
+
+class ImportOriginRepository(Protocol):
+    """导入来源身份持久化端口（V2 A1，设计 §2.6.3）。
+
+    权威导入历史；幂等判定比对**源** payload_hash（同 canonicalization_version
+    前提下），而非目标实例再生 hash。
+    """
+
+    def save_origin(self, origin: ImportOrigin) -> ImportOrigin:
+        """追加一条导入来源记录，返回持久化后的记录。"""
+        ...
+
+    def list_for_item(self, item_id: UUID) -> list[ImportOrigin]:
+        """列出某条知识的全部导入来源（按 imported_at 升序）。"""
+        ...
+
+    def find_by_source_payload_hash(
+        self,
+        source_payload_hash: str,
+        *,
+        source_canonicalization_version: int | None = None,
+    ) -> list[ImportOrigin]:
+        """按源 payload_hash 查来源；可限定源 canonicalization_version。"""
+        ...
+
+    def find_by_source_document(
+        self,
+        source_document_id: UUID,
+        *,
+        source_instance_id: str | None = None,
+    ) -> list[ImportOrigin]:
+        """按源文档稳定 ID（可限定源实例）查来源，跨实例重复导入判定用。"""
+        ...
+
+
+class StorageKeyLock(Protocol):
+    """storage_key 级互斥抽象（V2 A1，设计 §2.5.1）。
+
+    方言差异封装在 backend 适配层：SQLite 为租约式逻辑锁（短事务条件写入 +
+    fencing token + 心跳续租），PostgreSQL 为会话级 advisory lock。
+    业务/Core 只经本端口，不写任何方言 SQL。
+
+    诚实限制：租约式逻辑锁**降低而非消除** TOCTOU，不宣称完全并发安全；
+    每个不可逆物理步骤前须 verify/renew 校验 owner+token，失配立即中止。
+    """
+
+    def acquire(
+        self, storage_key: str, owner: str, *, ttl_seconds: float
+    ) -> StorageLease | None:
+        """获取租约（新锁或过期接管），签发单调 lease_token；被他人持有返回 None。"""
+        ...
+
+    def renew(self, lease: StorageLease, *, ttl_seconds: float) -> bool:
+        """心跳续租：仅 owner+token 匹配才延长到期时间；失配返回 False（须中止）。"""
+        ...
+
+    def verify(self, lease: StorageLease) -> bool:
+        """fencing 校验：锁行仍存在且 owner+token 匹配且未过期。"""
+        ...
+
+    def release(self, lease: StorageLease) -> bool:
+        """释放租约：仅 owner+token 匹配才释放（防误释放他人接管后的锁）。"""
         ...

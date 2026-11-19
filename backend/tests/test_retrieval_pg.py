@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from uuid import UUID, uuid4
 
 import pytest
 from alembic.config import Config
@@ -32,7 +33,7 @@ from app.services.retrieval import (
     build_retrieval_service,
     sync_index,
 )
-from knowledge_core.domain.entities import KnowledgeItem, SourceRef, SourceType
+from knowledge_core.domain.entities import KnowledgeItem, SourceRef, SourceType, utcnow
 from knowledge_core.model_adapter import ModelAdapterError
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -102,6 +103,33 @@ def _make_item(session: Session, title: str, content: str) -> KnowledgeItem:
     saved = SQLAlchemyKnowledgeRepository(session).save(item)
     session.commit()
     return saved
+
+
+def _make_legacy_item(session: Session, title: str, content: str) -> UUID:
+    """以 **0003 时期的列集合** 写入历史知识（裸 SQL，不用当前 ORM）。
+
+    V2 迁移 0006 给 knowledge_item 增列后，当前 ORM 的 INSERT 会带上新列，
+    无法写入停在 0003 的旧 schema。历史数据本就由旧版本写入，故按旧列集合插入
+    （含一条 MANUAL 来源），语义不变：0003 时已有知识、尚无 FTS 表/触发器。
+    """
+    item_id = uuid4()
+    now = utcnow()
+    session.execute(
+        text(
+            "INSERT INTO knowledge_item (id, title, content, status, created_at, updated_at) "
+            "VALUES (:id, :title, :content, 'draft', :now, :now)"
+        ),
+        {"id": str(item_id), "title": title, "content": content, "now": now},
+    )
+    session.execute(
+        text(
+            "INSERT INTO source_ref (id, item_id, source_type, created_at) "
+            "VALUES (:id, :item_id, 'manual', :now)"
+        ),
+        {"id": str(uuid4()), "item_id": str(item_id), "now": now},
+    )
+    session.commit()
+    return item_id
 
 
 def test_pg_migration_creates_native_fts(pg_engine) -> None:
@@ -306,11 +334,11 @@ def pg_hist(pg_engine) -> Iterator[dict]:
     command.downgrade(cfg, "0003_m2_governance")
     try:
         assert "knowledge_fts" not in set(inspect(pg_engine).get_table_names())
-        a = _make_item(sess, *PG_ITEM_A)
-        b = _make_item(sess, *PG_ITEM_B)
-        c = _make_item(sess, *PG_ITEM_C)
+        id_a = _make_legacy_item(sess, *PG_ITEM_A)
+        id_b = _make_legacy_item(sess, *PG_ITEM_B)
+        id_c = _make_legacy_item(sess, *PG_ITEM_C)
         sess.close()
-        yield {"cfg": cfg, "engine": pg_engine, "a": a.id, "b": b.id, "c": c.id}
+        yield {"cfg": cfg, "engine": pg_engine, "a": id_a, "b": id_b, "c": id_c}
     finally:
         command.upgrade(cfg, "head")
         cleanup = factory()

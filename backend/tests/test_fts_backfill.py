@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from alembic.config import Config
@@ -29,7 +29,7 @@ from app.db.fts import FTS_BACKFILL
 from app.db.session import create_engine_from_url
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
 from app.services.retrieval import SQLiteFullTextIndex, build_full_text_index
-from knowledge_core.domain.entities import KnowledgeItem, SourceRef, SourceType
+from knowledge_core.domain.entities import KnowledgeItem, SourceRef, SourceType, utcnow
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -55,6 +55,33 @@ def _insert(session: Session, title: str, content: str) -> UUID:
     return saved.id
 
 
+def _insert_legacy(session: Session, title: str, content: str) -> UUID:
+    """以 **0003 时期的列集合** 写入历史知识（裸 SQL，不用当前 ORM）。
+
+    V2 迁移 0006 给 knowledge_item 增列后，当前 ORM 的 INSERT 会带上新列，
+    无法写入停在 0003 的旧 schema。历史数据本就由旧版本写入，故这里按旧列集合
+    插入（含一条 MANUAL 来源），语义与原来一致：0003 时已有知识、尚无 FTS 表。
+    """
+    item_id = str(uuid4())
+    now = utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+    session.execute(
+        text(
+            "INSERT INTO knowledge_item (id, title, content, status, created_at, updated_at) "
+            "VALUES (:id, :title, :content, 'draft', :now, :now)"
+        ),
+        {"id": item_id, "title": title, "content": content, "now": now},
+    )
+    session.execute(
+        text(
+            "INSERT INTO source_ref (id, item_id, source_type, created_at) "
+            "VALUES (:id, :item_id, 'manual', :now)"
+        ),
+        {"id": str(uuid4()), "item_id": item_id, "now": now},
+    )
+    session.commit()
+    return UUID(item_id)
+
+
 @pytest.fixture()
 def hist_sqlite(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict]:
     """真实迁移到 0003，插入历史知识（此时无 FTS 表/触发器），yield 建库上下文。
@@ -73,8 +100,8 @@ def hist_sqlite(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict]:
     try:
         # 0003 尚无 knowledge_fts，插入不触发任何 FTS 同步（模拟迁移前历史数据）。
         assert "knowledge_fts" not in set(inspect(engine).get_table_names())
-        id_a = _insert(sess, *ITEM_A)
-        id_b = _insert(sess, *ITEM_B)
+        id_a = _insert_legacy(sess, *ITEM_A)
+        id_b = _insert_legacy(sess, *ITEM_B)
     finally:
         sess.close()
     try:

@@ -3,6 +3,7 @@
 import pytest
 
 from knowledge_core.extraction import ExtractionService
+from knowledge_core.markdown import MarkdownCodec
 from knowledge_core.provenance import ProvenanceService
 from knowledge_core.relations import RelationService
 from knowledge_core.retrieval import RetrievalService
@@ -14,6 +15,7 @@ SERVICES = [
     VersionService,
     ProvenanceService,
     RetrievalService,
+    MarkdownCodec,
 ]
 
 
@@ -35,6 +37,8 @@ def test_core_has_no_web_framework_dependency():
         "import sys\n"
         "import knowledge_core\n"
         "import knowledge_core.domain\n"
+        "import knowledge_core.domain.entities\n"
+        "import knowledge_core.ports\n"
         "import knowledge_core.extraction\n"
         "import knowledge_core.model_adapter\n"
         "import knowledge_core.provenance\n"
@@ -57,8 +61,41 @@ def test_core_has_no_web_framework_dependency():
         "import knowledge_core.relations.llm\n"
         "import knowledge_core.versioning.service\n"
         "import knowledge_core.provenance.service\n"
+        "import knowledge_core.markdown\n"
+        "import knowledge_core.markdown.canonical\n"
+        "import knowledge_core.markdown.frontmatter\n"
+        "import knowledge_core.markdown.codec\n"
         "forbidden = {'fastapi', 'starlette', 'flask', 'django'} & set(sys.modules)\n"
         "assert not forbidden, f'knowledge-core 引入了禁止依赖: {forbidden}'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_markdown_package_adds_no_new_third_party_dependency():
+    """V2 A1-02 零新增依赖守护：markdown 包只允许 stdlib + Pydantic 栈。
+
+    设计 §2.3 与依赖选型表要求 A1 不引入 PyYAML 等需审批依赖；
+    本测试在干净子进程中导入 markdown 全部模块，核对非标准库顶层模块白名单。
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "import knowledge_core.markdown\n"
+        "import knowledge_core.markdown.canonical\n"
+        "import knowledge_core.markdown.frontmatter\n"
+        "import knowledge_core.markdown.codec\n"
+        "tops = {name.split('.')[0] for name in sys.modules}\n"
+        "allowed = {'knowledge_core', '__main__', 'pydantic', 'pydantic_core',\n"
+        "           'annotated_types', 'typing_extensions', 'typing_inspection'}\n"
+        "extra = tops - set(sys.stdlib_module_names) - allowed\n"
+        "assert not extra, f'markdown 包引入了未审批的第三方依赖: {sorted(extra)}'\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
