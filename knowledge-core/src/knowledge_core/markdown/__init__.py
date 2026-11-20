@@ -47,12 +47,18 @@ __all__ = [
     "PERSONAL_SPACE_TOKEN",
     "PROJECT_SPACE_PREFIX",
     "RESERVED_META_KEYS",
+    "BacklinkService",
     "CanonicalizationError",
     "CodecWarning",
     "ConflictResolution",
     "DocumentHashes",
     "FrontmatterResolution",
     "FrontmatterState",
+    "LinkRebuildService",
+    "LinkReresolveService",
+    "LinkResolver",
+    "LinkRestoreService",
+    "LinkSyncService",
     "MarkdownCodec",
     "MarkdownDocument",
     "MarkdownWarningCode",
@@ -539,3 +545,125 @@ def resolve_frontmatter_conflict(
         }
     )
     return ConflictResolution(document=resolved, warnings=warnings)
+
+
+# --- V2 A1-03 追加：6 个链接服务 ABC（append-only；A1-02 公共 API 零改动）---
+# 具体实现见 knowledge_core.markdown.link_service（端口驱动，零 ORM/零文件 IO）。
+
+from typing import TYPE_CHECKING  # noqa: E402
+
+if TYPE_CHECKING:
+    from knowledge_core.domain.entities import KnowledgeItem, KnowledgeLink
+    from knowledge_core.markdown.link_service import (
+        LinkRebuildPlan,
+        LinkRestoreReport,
+        LinkSyncReport,
+    )
+    from knowledge_core.markdown.links import LinkWarning, ParsedWikilink
+
+
+class LinkResolver(ABC):
+    """标题键解析与候选发现（V2 A1-03，设计 §2.4）。
+
+    自动解析排除 archived、允许自链接（D7）；候选集必须经 Core 侧精确空间
+    等值过滤（E5/R24：``space_id=None`` 的源不得纳入 project 条目）。
+    显式绑定（bind_explicit）只在 Core 层定义与测试，A1-03 无 HTTP 写入口（D8/E3）。
+    """
+
+    @abstractmethod
+    def resolve(
+        self,
+        literal: ParsedWikilink,
+        source: KnowledgeItem,
+        candidates: Sequence[KnowledgeItem],
+    ) -> KnowledgeLink:
+        """按标题键在候选集中解析，返回**未保存**的链接实体。
+
+        唯一候选 → resolved；多候选 → ambiguous（target_id=None，不随机绑定）；
+        无候选 → missing（绝不自动跨空间）。candidates 由调用方过滤。
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def auto_candidates(self, source: KnowledgeItem) -> list[KnowledgeItem]:
+        """自动解析候选：同空间（None==None）且非 archived，含 source 自身。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def find_candidates(self, title: str) -> list[KnowledgeItem]:
+        """只读候选发现：全库标题键匹配（含 archived/跨空间，供 status 标注）。"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def bind_explicit(
+        self,
+        source: KnowledgeItem,
+        target: KnowledgeItem,
+        *,
+        title: str,
+        alias: str | None = None,
+    ) -> tuple[KnowledgeLink, list[LinkWarning]]:
+        """Core 层显式绑定（允许 archived/跨空间；按当前空间关系重算语义）。"""
+        raise NotImplementedError
+
+
+class LinkSyncService(ABC):
+    """绑定优先同步（V2 A1-03，设计 §2.4 / 计划 §6.4）。
+
+    按键匹配：绑定行不重解析、未绑定行不 churn、新键解析、消失键删除。
+    不写版本行、不改 knowledge_item.updated_at、不写 FTS/向量/关系。
+    """
+
+    @abstractmethod
+    def sync(self, item: KnowledgeItem, body: str) -> LinkSyncReport:
+        """同步正文 wikilink 到链接行（与条目写入同一事务，失败整体回滚）。"""
+        raise NotImplementedError
+
+
+class LinkRestoreService(ABC):
+    """导入绑定恢复（V2 A1-03，计划 §6.5/§6.6：先聚合再判定 + 空间重算）。"""
+
+    @abstractmethod
+    def restore(
+        self,
+        item: KnowledgeItem,
+        frontmatter_links: Sequence[Mapping[str, Any]],
+        body: str,
+    ) -> LinkRestoreReport:
+        """正文是存在性权威（D4）；frontmatter links 仅提供绑定提示。"""
+        raise NotImplementedError
+
+
+class BacklinkService(ABC):
+    """反链查询（V2 A1-03：按稳定 target_id，改名不断链）。"""
+
+    @abstractmethod
+    def backlinks(self, target_id: UUID) -> list[KnowledgeLink]:
+        """列出指向某稳定 ID 的全部反向链接。"""
+        raise NotImplementedError
+
+
+class LinkReresolveService(ABC):
+    """显式重解析（V2 A1-03：只重试 missing/ambiguous，守同一套规则）。"""
+
+    @abstractmethod
+    def reresolve(self, item: KnowledgeItem) -> LinkSyncReport:
+        """重解析悬空/歧义链接；conflict/cross_space/resolved 行不触碰。"""
+        raise NotImplementedError
+
+
+class LinkRebuildService(ABC):
+    """规范化键重建**计划**（V2 A1-03 E4：Core 只算计划，零写入零文件 IO）。
+
+    真实执行由 backend ``apply_link_key_plan()`` 单事务原子承担（十步顺序，
+    门禁 A/B/C）；Core 侧不得实现任何逐行写入版本（升级死锁论证，§8.3.5）。
+    """
+
+    @abstractmethod
+    def plan(self, target_version: int) -> LinkRebuildPlan:
+        """产出重建计划：ready / refused_collision / refused_mixed_version。
+
+        携带覆盖全表每一行（含 no-op）的 row_snapshots + observed_row_count，
+        供 apply 阶段门禁 C 逐行新鲜度比对（E6）。
+        """
+        raise NotImplementedError

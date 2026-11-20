@@ -257,7 +257,12 @@ class LinkRepository(Protocol):
         ...
 
     def delete_links_of_item(self, source_id: UUID) -> int:
-        """删除某条知识的全部出链（连续保存时先清后建），返回删除条数。"""
+        """删除某条知识的全部出链，返回删除条数。
+
+        **仅用于知识条目删除或显式重置**（V2 A1-03 D3 澄清）：常规保存必须走
+        绑定优先同步（按 normalized_link_key 匹配，保留既有绑定），不得用本方法
+        先清后建——那会丢失人工裁决的绑定并 churn 链接 ID。签名与行为不变。
+        """
         ...
 
 

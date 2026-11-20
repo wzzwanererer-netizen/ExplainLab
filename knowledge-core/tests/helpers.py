@@ -9,8 +9,10 @@ import math
 from collections.abc import Sequence
 from uuid import UUID
 
+from knowledge_core.domain import entities
 from knowledge_core.domain.entities import (
     KnowledgeItem,
+    KnowledgeLink,
     KnowledgeRelation,
     KnowledgeVersion,
     RelationType,
@@ -23,6 +25,7 @@ from knowledge_core.experiments.entities import (
     ExperimentKind,
     ExperimentSession,
 )
+from knowledge_core.markdown.link_service import check_global_version_homogeneity
 from knowledge_core.model_adapter import (
     ModelAdapter,
     ModelCapability,
@@ -295,3 +298,104 @@ class FakeEmbedder:
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         return [list(self._vector) for _ in texts]
+
+
+class InMemoryLinkRepository:
+    """LinkRepository 测试替身（V2 A1-03b）。
+
+    守卫语义与生产 backend 仓库对齐：**无缓存**，每次受守卫写入重新扫描全表
+    版本集合并调用 Core 单一事实来源纯函数 ``check_global_version_homogeneity``
+    （§8.4.3（3））；治理列豁免写入与删除不预检。``precheck_calls`` 是单调计数
+    仪表（T34 断言用），**不是版本集合缓存**。
+    """
+
+    def __init__(self) -> None:
+        self._links: dict[UUID, KnowledgeLink] = {}
+        self.precheck_calls = 0
+
+    def _precheck_global_version(self) -> None:
+        self.precheck_calls += 1
+        check_global_version_homogeneity(
+            (link.link_normalization_version for link in self._links.values()),
+            entities.LINK_NORMALIZATION_VERSION,
+        )
+
+    def save_link(self, link: KnowledgeLink) -> KnowledgeLink:
+        self._precheck_global_version()
+        if any(
+            other.source_id == link.source_id
+            and other.normalized_link_key == link.normalized_link_key
+            for other in self._links.values()
+        ):
+            raise ValueError("unique(source_id, normalized_link_key) 违反")
+        self._links[link.id] = link
+        return link
+
+    def get_link(self, link_id: UUID) -> KnowledgeLink | None:
+        return self._links.get(link_id)
+
+    def list_links(self, source_id: UUID) -> list[KnowledgeLink]:
+        return sorted(
+            (link for link in self._links.values() if link.source_id == source_id),
+            key=lambda link: (link.created_at, str(link.id)),
+        )
+
+    def list_backlinks(self, target_id: UUID) -> list[KnowledgeLink]:
+        return sorted(
+            (link for link in self._links.values() if link.target_id == target_id),
+            key=lambda link: (link.created_at, str(link.id)),
+        )
+
+    def find_by_key(
+        self, source_id: UUID, normalized_link_key: str
+    ) -> KnowledgeLink | None:
+        return next(
+            (
+                link
+                for link in self._links.values()
+                if link.source_id == source_id
+                and link.normalized_link_key == normalized_link_key
+            ),
+            None,
+        )
+
+    def list_by_key(self, normalized_link_key: str) -> list[KnowledgeLink]:
+        return sorted(
+            (
+                link
+                for link in self._links.values()
+                if link.normalized_link_key == normalized_link_key
+            ),
+            key=lambda link: (link.created_at, str(link.id)),
+        )
+
+    def list_all_links(self) -> list[KnowledgeLink]:
+        return sorted(
+            self._links.values(),
+            key=lambda link: (str(link.source_id), link.normalized_link_key, str(link.id)),
+        )
+
+    def update_link(self, link: KnowledgeLink) -> KnowledgeLink:
+        old = self._links.get(link.id)
+        if old is None:
+            raise ValueError(f"链接不存在: {link.id}")
+        if (
+            old.normalized_link_key != link.normalized_link_key
+            or old.link_normalization_version != link.link_normalization_version
+        ):
+            self._precheck_global_version()
+        self._links[link.id] = link
+        return link
+
+    def delete_link(self, link_id: UUID) -> bool:
+        return self._links.pop(link_id, None) is not None
+
+    def delete_links_of_item(self, source_id: UUID) -> int:
+        ids = [
+            link_id
+            for link_id, link in self._links.items()
+            if link.source_id == source_id
+        ]
+        for link_id in ids:
+            del self._links[link_id]
+        return len(ids)

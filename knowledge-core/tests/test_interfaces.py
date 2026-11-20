@@ -3,7 +3,15 @@
 import pytest
 
 from knowledge_core.extraction import ExtractionService
-from knowledge_core.markdown import MarkdownCodec
+from knowledge_core.markdown import (
+    BacklinkService,
+    LinkRebuildService,
+    LinkReresolveService,
+    LinkResolver,
+    LinkRestoreService,
+    LinkSyncService,
+    MarkdownCodec,
+)
 from knowledge_core.provenance import ProvenanceService
 from knowledge_core.relations import RelationService
 from knowledge_core.retrieval import RetrievalService
@@ -16,6 +24,12 @@ SERVICES = [
     ProvenanceService,
     RetrievalService,
     MarkdownCodec,
+    LinkResolver,
+    LinkSyncService,
+    LinkRestoreService,
+    BacklinkService,
+    LinkReresolveService,
+    LinkRebuildService,
 ]
 
 
@@ -65,6 +79,8 @@ def test_core_has_no_web_framework_dependency():
         "import knowledge_core.markdown.canonical\n"
         "import knowledge_core.markdown.frontmatter\n"
         "import knowledge_core.markdown.codec\n"
+        "import knowledge_core.markdown.links\n"
+        "import knowledge_core.markdown.link_service\n"
         "forbidden = {'fastapi', 'starlette', 'flask', 'django'} & set(sys.modules)\n"
         "assert not forbidden, f'knowledge-core 引入了禁止依赖: {forbidden}'\n"
     )
@@ -91,6 +107,8 @@ def test_markdown_package_adds_no_new_third_party_dependency():
         "import knowledge_core.markdown.canonical\n"
         "import knowledge_core.markdown.frontmatter\n"
         "import knowledge_core.markdown.codec\n"
+        "import knowledge_core.markdown.links\n"
+        "import knowledge_core.markdown.link_service\n"
         "tops = {name.split('.')[0] for name in sys.modules}\n"
         "allowed = {'knowledge_core', '__main__', 'pydantic', 'pydantic_core',\n"
         "           'annotated_types', 'typing_extensions', 'typing_inspection'}\n"

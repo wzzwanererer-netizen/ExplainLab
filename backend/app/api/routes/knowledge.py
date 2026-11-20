@@ -3,6 +3,8 @@
 持久化经由 Knowledge Core 的 KnowledgeRepository 端口实现，
 来源追溯随条目一并落库；提取结果为模型真实输出，解析失败时如实返回空列表。
 M2：active 条目的改 / 删经 ReviewService 门禁，返回 202 + 审核单；草稿直接应用。
+V2 A1-03：四处挂接绑定优先链接同步（save 后 commit 前；active PATCH 202 不同步），
+删除路径在直接应用前同事务降级入链（D12）；版本异写 → 409 link_version_mismatch。
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.routes.links import sync_links_or_conflict
 from app.api.schemas import (
     ExtractRequest,
     ExtractResponse,
@@ -29,6 +32,7 @@ from app.services.knowledge import (
     SQLAlchemyKnowledgeRepository,
     extract_conversation_knowledge,
 )
+from app.services.links import demote_backlinks_on_delete
 from app.services.retrieval import sync_index
 from app.services.spaces import get_space
 from knowledge_core.domain.entities import (
@@ -39,6 +43,7 @@ from knowledge_core.domain.entities import (
 )
 from knowledge_core.model_adapter import ModelAdapter, ModelAdapterError
 from knowledge_core.ports import Embedder
+from knowledge_core.review import ReviewPolicy
 
 router = APIRouter(tags=["knowledge"])
 
@@ -73,6 +78,8 @@ async def create_knowledge(
         source_refs=[SourceRef(source_type=SourceType.MANUAL)],
     )
     saved = SQLAlchemyKnowledgeRepository(session).save(item)
+    # A1-03：save 后、commit 前同步链接；版本异写 → 409，整请求零写入。
+    sync_links_or_conflict(session, saved)
     session.commit()
     await sync_index(session, embedder, index_ids=[saved.id])
     session.commit()
@@ -109,12 +116,16 @@ async def update_knowledge(
         ReviewAction.UPDATE_ITEM,
         payload.model_dump(exclude_unset=True, mode="json"),
     )
-    session.commit()
     if review is not None:
+        # active 重要变更仅生成 pending 审核单：变更未应用 → 不同步链接。
+        session.commit()
         response.status_code = 202
         return ReviewOut.model_validate(review)
     updated = repository.get(item_id)
     assert updated is not None
+    # A1-03：仅 submit 返回 None（草稿已直接应用）时，commit 前同步链接。
+    sync_links_or_conflict(session, updated)
+    session.commit()
     await sync_index(session, embedder, index_ids=[item_id])
     session.commit()
     return KnowledgeOut.model_validate(updated)
@@ -128,8 +139,14 @@ async def delete_knowledge(
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> ReviewOut | None:
     repository = SQLAlchemyKnowledgeRepository(session)
-    if repository.get(item_id) is None:
+    current = repository.get(item_id)
+    if current is None:
         raise HTTPException(status_code=404, detail=f"知识条目不存在: {item_id}")
+    # A1-03 / D12 写侧：非 active 的删除由 submit 直接应用（条目即刻删除），
+    # 须在删除前同事务降级入链为 missing（治理列-only，豁免全局守卫，
+    # 版本窗口内 DELETE 不被 409 阻断）。active 走审核（202 未应用）不提前降级。
+    if not ReviewPolicy.is_important(ReviewAction.DELETE_ITEM, current.status):
+        demote_backlinks_on_delete(session, item_id)
     service = build_review_service(session)
     review = await service.submit(item_id, ReviewAction.DELETE_ITEM)
     session.commit()
@@ -161,6 +178,9 @@ async def extract_knowledge(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ModelAdapterError as exc:
         raise HTTPException(status_code=502, detail=f"模型调用失败: {exc}") from exc
+    # A1-03：逐条同步提取条目的链接（commit 前）；版本异写 → 409，整请求零写入。
+    for extracted in items:
+        sync_links_or_conflict(session, extracted)
     session.commit()
     await sync_index(session, embedder, index_ids=[i.id for i in items])
     session.commit()

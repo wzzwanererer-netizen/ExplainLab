@@ -18,6 +18,7 @@ from app.api.routes.governance import router as governance_router
 from app.api.routes.graph import router as graph_router
 from app.api.routes.health import router as health_router
 from app.api.routes.knowledge import router as knowledge_router
+from app.api.routes.links import router as links_router
 from app.api.routes.search import router as search_router
 from app.api.routes.spaces import router as spaces_router
 from app.core.config import Settings, get_settings
@@ -58,6 +59,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(health_router, prefix="/api")
     application.include_router(spaces_router, prefix="/api")
     application.include_router(conversations_router, prefix="/api")
+    # A1-03（R11）：links 静态字面路径须先于 knowledge 的 {item_id} 动态段注册。
+    application.include_router(links_router, prefix="/api")
     application.include_router(knowledge_router, prefix="/api")
     application.include_router(governance_router, prefix="/api")
     application.include_router(search_router, prefix="/api")

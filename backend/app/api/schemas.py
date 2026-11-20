@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from knowledge_core.domain.entities import (
     KnowledgeStatus,
+    LinkResolution,
     RelationType,
     ReviewAction,
     SourceType,
@@ -115,6 +116,54 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     count: int
     items: list[KnowledgeOut]
+
+
+class LinkOut(BaseModel):
+    """出链读模型（V2 A1-03，D8 只读 GET）。target_title/alias 为原始书写字面。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    target_id: UUID | None
+    target_title: str
+    alias: str | None
+    normalized_link_key: str
+    link_normalization_version: int
+    resolution: LinkResolution
+    cross_space: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class BacklinkOut(BaseModel):
+    """反链读模型：指向本条目的链接行（source_id 为引用方条目）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    target_id: UUID | None
+    target_title: str
+    alias: str | None
+    resolution: LinkResolution
+    cross_space: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResolveCandidateOut(BaseModel):
+    """解析候选读模型（只读）：含 archived 条目并带 status 标注（D7），
+    跨空间候选同样列出；cross_space 相对查询给定的 space_id 判定
+    （None 与 None 视为同空间，§2.5 精确等值口径）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    title: str
+    space_id: str | None
+    status: KnowledgeStatus
+    cross_space: bool
 
 
 class RelationOut(BaseModel):
