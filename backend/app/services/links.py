@@ -316,9 +316,11 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
 
     K2 并发控制：步 1b 取方言写锁（``acquire_rebuild_write_lock``，持锁至提交）。
     PG 表锁关闭门禁 C 重读 → 提交窗口②（含 phantom）；SQLite 读阶段不锁保护，
-    窗口②由步 7 的 old_key/old_version 乐观前置 + rowcount 校验兜底（rowcount!=1
-    即整体回滚零写入），写阶段 RESERVED 锁 + busy_timeout 补充。门禁 A/B/C 与
-    步 8 写后复核全部保留。
+    窗口②由步 7 的 P2 乐观前置 + rowcount 校验兜底（rowcount!=1 即整体回滚零写入），
+    写阶段 RESERVED 锁 + busy_timeout 补充。P2 前置经专项审计扩至门禁 C 同口径 6 字段
+    （link_id + source_id/old_key/old_version/target_title/alias），覆盖全部影响 new_key
+    与唯一域的正确性字段，杜绝「改 title/alias/source 但键列未同步改」的过期计划应用。
+    门禁 A/B/C 与步 8 写后复核全部保留。
     """
     # 前置拒绝（零写入，不开事务）。
     if plan.status != "ready":
@@ -402,18 +404,27 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
                 stale_reasons=(LinkStaleReason(reason_code="duplicate_new_key"),),
             )
 
-        # 步 7（K2 P2 乐观前置）：批量只写 3 列（键/版本/链接行自身 updated_at），
-        # WHERE 附加 old_key/old_version 前置条件 + rowcount 校验。并发改键/版本会使
-        # rowcount=0 → 抛异常整体回滚（零写入），杜绝 blind UPDATE 覆盖过期键；
-        # 写锁正常持有时无并发修改，rowcount 恒为 1（纵深防御，不依赖锁单一手段）。
+        # 步 7（K2 P2 乐观前置；专项审计扩至门禁 C 同口径 6 字段）：批量只写 3 列
+        # （键/版本/链接行自身 updated_at），WHERE 附加 link_id 之外全部 5 个正确性字段
+        # 前置——source_id / old_key / old_version / target_title / alias——+ rowcount 校验。
+        # new_key 由 target_title+alias 派生、唯一域为 (source_id, key)，故这 5 字段任一在
+        # 窗口②被并发修改都使 rowcount=0 → 抛异常整体回滚（零写入），杜绝按过期字面/源/键/
+        # 版本应用重建计划。仅 guard old_key/old_version 不足以覆盖「改 title/alias 但键列
+        # 未同步改」的漂移（会写入与当前 title 不一致的过期键，步 8 版本同构无法发现）。
+        # 写锁正常持有时无并发修改，6 字段恒匹配 rowcount=1（纵深防御，不依赖锁单一手段）。
+        # alias=None 经 SQLAlchemy == 生成 IS NULL，双方言一致；前置字段取自计划 update
+        # 已携带的 source_id/target_title/alias（门禁 C 已校验其等于重读快照）。
         now = utcnow()
         for u in plan.updates:
             result = session.execute(
                 update(KnowledgeLinkORM)
                 .where(
                     KnowledgeLinkORM.id == str(u.link_id),
+                    KnowledgeLinkORM.source_item_id == str(u.source_id),
                     KnowledgeLinkORM.normalized_link_key == u.old_key,
                     KnowledgeLinkORM.link_normalization_version == u.old_version,
+                    KnowledgeLinkORM.target_title == u.target_title,
+                    KnowledgeLinkORM.alias == u.alias,
                 )
                 .values(
                     normalized_link_key=u.new_key,
@@ -423,7 +434,7 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
             )
             if result.rowcount != 1:
                 raise LinkRebuildPostWriteError(
-                    "重建写前置条件失配：链接行键/版本已被并发修改（rowcount!=1）"
+                    "重建写前置条件失配：链接行 source_id/键/版本/标题/别名已被并发修改（rowcount!=1）"
                 )
 
         # 步 8：写后复核（任一不符 → 抛异常 → 整体回滚，不是拒绝报告）。

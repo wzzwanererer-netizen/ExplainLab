@@ -1,0 +1,26 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- D:\ExplainLab\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+backend/tests/test_zz_diag_stale_key.py::test_diag_title_drift_commits_stale_key 
+=== DEFECT EVIDENCE (before fix) ===
+report.status             = rebuilt
+r1.target_title (current) = 'Drifted Title'
+r1.normalized_link_key    = 'targetone\x1f'
+planned new_key (old ttl) = 'targetone\x1f'
+key for CURRENT title     = 'driftedtitle\x1f'
+table versions            = {2}
+PASSED
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 1 warning in 0.48s =========================

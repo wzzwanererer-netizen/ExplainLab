@@ -11,7 +11,8 @@
 - **SQLite**（默认 rollback-journal，isolation_level=None）：**实测**读阶段
   （步 2/3 重读 SELECT）**不持阻塞写者的锁**——并发连接在重建写之前可写并提交。
   因此窗口②「重读 → 写」在 SQLite 上**不由锁保护**，而由步 7 的 P2 乐观前置
-  （``old_key``/``old_version`` + rowcount 校验）兜底：并发漂移使 rowcount=0 →
+  （门禁 C 同口径 6 字段：source_id/键/版本/标题/别名 + rowcount 校验）兜底：并发漂移
+  使 rowcount=0 →
   抛 ``LinkRebuildPostWriteError`` 整体回滚零写入（见 test_links_concurrency.py
   的 P2 故障注入与读阶段语义固化测试）。一旦进入写阶段（步 7 UPDATE 持 RESERVED），
   并发写者提交被阻（EXCLUSIVE 冲突）；写升级争用（SQLITE_BUSY）属活性问题，由引擎

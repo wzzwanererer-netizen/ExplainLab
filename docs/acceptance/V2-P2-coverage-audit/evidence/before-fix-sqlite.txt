@@ -1,0 +1,150 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- D:\ExplainLab\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 8 items
+
+backend/tests/test_links_p2_coverage.py::test_p2_source_id_drift_after_reread_rejects FAILED [ 12%]
+backend/tests/test_links_p2_coverage.py::test_p2_target_title_drift_after_reread_rejects FAILED [ 25%]
+backend/tests/test_links_p2_coverage.py::test_p2_alias_drift_after_reread_rejects FAILED [ 37%]
+backend/tests/test_links_p2_coverage.py::test_p2_combined_field_drift_after_reread_rejects FAILED [ 50%]
+backend/tests/test_links_p2_coverage.py::test_p2_no_drift_control_rebuilds_and_keys_consistent PASSED [ 62%]
+backend/tests/test_links_p2_coverage.py::test_p2_row_delete_drift_after_reread_rejects PASSED [ 75%]
+backend/tests/test_links_p2_coverage.py::test_p2_phantom_insert_drift_after_reread_rejects PASSED [ 87%]
+backend/tests/test_links_p2_coverage.py::test_p2_governance_drift_rejected_by_step8_baseline PASSED [100%]
+
+================================== FAILURES ===================================
+________________ test_p2_source_id_drift_after_reread_rejects _________________
+
+session = <sqlalchemy.orm.session.Session object at 0x000001BC8D8B5790>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC8D878D10>
+
+    def test_p2_source_id_drift_after_reread_rejects(session, monkeypatch):
+        """门禁 C 后并发漂移 source_id（键/版本/字面不变）→ P2 须拒绝 + 整体回滚零写入。
+    
+        source_id 决定唯一域 (source_id, key)；计划按旧 source 计算碰撞，漂移后计划过期。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_rebuild(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(source_item_id=str(b.id))  # a → b，键/版本/字面不变
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_p2_coverage.py:198: Failed
+_______________ test_p2_target_title_drift_after_reread_rejects _______________
+
+session = <sqlalchemy.orm.session.Session object at 0x000001BC8D77D5D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC8D878F10>
+
+    def test_p2_target_title_drift_after_reread_rejects(session, monkeypatch):
+        """门禁 C 后并发漂移 target_title（规范化不同值，键列/版本不变）→ P2 须拒绝。
+    
+        new_key 由 title 派生；若 P2 仅 guard old_key/old_version，title 漂移而键列未改
+        时 rowcount=1 → 写入按旧 title 算的过期 new_key（key-title 不一致）。此为审计核心缺陷。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_rebuild(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(target_title="Drifted Title")  # 规范化不同；键列/版本不变
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_p2_coverage.py:227: Failed
+__________________ test_p2_alias_drift_after_reread_rejects ___________________
+
+session = <sqlalchemy.orm.session.Session object at 0x000001BC8D8933D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC8D7DBAD0>
+
+    def test_p2_alias_drift_after_reread_rejects(session, monkeypatch):
+        """门禁 C 后并发漂移 alias（键列/版本不变）→ P2 须拒绝（alias 亦派生 new_key）。"""
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_rebuild(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(alias="drifted alias")  # 原 "al ias"；键列/版本不变
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_p2_coverage.py:252: Failed
+______________ test_p2_combined_field_drift_after_reread_rejects ______________
+
+session = <sqlalchemy.orm.session.Session object at 0x000001BC8D9F4890>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001BC8D93F290>
+
+    def test_p2_combined_field_drift_after_reread_rejects(session, monkeypatch):
+        """组合漂移：r1 source_id+title、r2 alias 同时变 → P2 须拒绝 + 零写入。"""
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_rebuild(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        before = _snapshot(session)
+        session.commit()
+    
+        def drift():
+            session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(source_item_id=str(b.id), target_title="Combined X")
+            )
+            session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(alias="combined alias")
+            )
+    
+        _inject_after_gate_c(monkeypatch, session, drift)
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_p2_coverage.py:281: Failed
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_links_p2_coverage.py::test_p2_source_id_drift_after_reread_rejects
+FAILED backend/tests/test_links_p2_coverage.py::test_p2_target_title_drift_after_reread_rejects
+FAILED backend/tests/test_links_p2_coverage.py::test_p2_alias_drift_after_reread_rejects
+FAILED backend/tests/test_links_p2_coverage.py::test_p2_combined_field_drift_after_reread_rejects
+=================== 4 failed, 4 passed, 1 warning in 3.04s ====================
