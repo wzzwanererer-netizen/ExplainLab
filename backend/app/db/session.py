@@ -30,10 +30,14 @@ def create_engine_from_url(database_url: str) -> Engine:
         # SQLite 默认不启用外键约束；显式开启后，模型声明的 ON DELETE CASCADE
         # 才会在删除知识条目时真正级联清理关系 / 版本 / 审核 / 来源，避免孤儿数据。
         # PostgreSQL 默认强制外键，无需此处理。
+        # busy_timeout（K2）：写锁争用（重建写阶段 RESERVED→EXCLUSIVE 升级 / 并发写）
+        # 时等待而非立即 SQLITE_BUSY，降低重建即失败概率；不改变事务隔离/日志模式等
+        # 默认语义。SQLite 读阶段不持阻塞写者的锁，窗口②安全由步 7 P2 乐观前置保证。
         @event.listens_for(engine, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
         return engine

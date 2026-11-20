@@ -1,0 +1,20 @@
+715d9e731fae88da98925bbf3c01e7c8e9fe4ffa
+feat: V2 A1-03 稳定链接与反链四层实现 + 全局版本同构守卫 + 计划新鲜度门禁 C
+
+ backend/app/api/routes/knowledge.py                |   24 +-
+ backend/app/api/routes/links.py                    |   95 +
+ backend/app/api/schemas.py                         |   49 +
+ backend/app/main.py                                |    3 +
+ backend/app/services/links.py                      |  464 +++++
+ backend/tests/test_links.py                        | 1965 +++++++++++++++++++
+ backend/tests/test_links_http.py                   |  345 ++++
+ backend/tests/test_links_pg.py                     | 2004 ++++++++++++++++++++
+ .../src/knowledge_core/markdown/__init__.py        |  130 +-
+ .../src/knowledge_core/markdown/link_service.py    | 1021 ++++++++++
+ .../src/knowledge_core/markdown/links.py           |  414 ++++
+ knowledge-core/src/knowledge_core/ports.py         |    7 +-
+ knowledge-core/tests/helpers.py                    |  106 +-
+ knowledge-core/tests/test_interfaces.py            |   20 +-
+ knowledge-core/tests/test_markdown_link_service.py | 1545 +++++++++++++++
+ knowledge-core/tests/test_markdown_links.py        |  331 ++++
+ 16 files changed, 8517 insertions(+), 6 deletions(-)

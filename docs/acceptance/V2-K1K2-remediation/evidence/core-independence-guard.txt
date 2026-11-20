@@ -1,0 +1,24 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- D:\ExplainLab\.venv\Scripts\python.exe
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[ExtractionService] PASSED [  7%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[RelationService] PASSED [ 14%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[VersionService] PASSED [ 21%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[ProvenanceService] PASSED [ 28%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[RetrievalService] PASSED [ 35%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[MarkdownCodec] PASSED [ 42%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[LinkResolver] PASSED [ 50%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[LinkSyncService] PASSED [ 57%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[LinkRestoreService] PASSED [ 64%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[BacklinkService] PASSED [ 71%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[LinkReresolveService] PASSED [ 78%]
+knowledge-core/tests/test_interfaces.py::test_service_is_abstract[LinkRebuildService] PASSED [ 85%]
+knowledge-core/tests/test_interfaces.py::test_core_has_no_web_framework_dependency PASSED [ 92%]
+knowledge-core/tests/test_interfaces.py::test_markdown_package_adds_no_new_third_party_dependency PASSED [100%]
+
+============================= 14 passed in 0.68s ==============================

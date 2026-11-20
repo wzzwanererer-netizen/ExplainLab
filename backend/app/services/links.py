@@ -32,6 +32,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.db.locking import acquire_rebuild_write_lock
 from app.models import KnowledgeItemORM, KnowledgeLinkORM
 from app.services.errors import NotFoundError
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
@@ -312,6 +313,12 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
     事务/savepoint 上抛 InvalidRequestError → 零写入，不静默接管他人提交权）。
     拒绝报告在 with 块内返回 → 事务无变更结束（零写入）；写后复核失败抛
     ``LinkRebuildPostWriteError`` → with 块退出整体回滚。
+
+    K2 并发控制：步 1b 取方言写锁（``acquire_rebuild_write_lock``，持锁至提交）。
+    PG 表锁关闭门禁 C 重读 → 提交窗口②（含 phantom）；SQLite 读阶段不锁保护，
+    窗口②由步 7 的 old_key/old_version 乐观前置 + rowcount 校验兜底（rowcount!=1
+    即整体回滚零写入），写阶段 RESERVED 锁 + busy_timeout 补充。门禁 A/B/C 与
+    步 8 写后复核全部保留。
     """
     # 前置拒绝（零写入，不开事务）。
     if plan.status != "ready":
@@ -326,6 +333,10 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
         )
 
     with session.begin():  # 步 1：独占事务边界
+        # 步 1b（K2）：获取方言写锁，持锁至提交——关闭门禁 C 重读 → 提交窗口②。
+        # PG 表锁串行化重建写者并阻并发写（含 phantom）；SQLite 读阶段不锁保护，
+        # 窗口②由步 7 P2 乐观前置兜底（写阶段 RESERVED 锁 + busy_timeout 补充）。
+        acquire_rebuild_write_lock(session)
         # 步 2：门禁 A——全表版本集合恰为 {plan.source_version}（不要求等于常量）。
         versions = set(
             session.execute(
@@ -391,18 +402,29 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
                 stale_reasons=(LinkStaleReason(reason_code="duplicate_new_key"),),
             )
 
-        # 步 7：批量只写 3 列（键/版本/链接行自身 updated_at）。
+        # 步 7（K2 P2 乐观前置）：批量只写 3 列（键/版本/链接行自身 updated_at），
+        # WHERE 附加 old_key/old_version 前置条件 + rowcount 校验。并发改键/版本会使
+        # rowcount=0 → 抛异常整体回滚（零写入），杜绝 blind UPDATE 覆盖过期键；
+        # 写锁正常持有时无并发修改，rowcount 恒为 1（纵深防御，不依赖锁单一手段）。
         now = utcnow()
         for u in plan.updates:
-            session.execute(
+            result = session.execute(
                 update(KnowledgeLinkORM)
-                .where(KnowledgeLinkORM.id == str(u.link_id))
+                .where(
+                    KnowledgeLinkORM.id == str(u.link_id),
+                    KnowledgeLinkORM.normalized_link_key == u.old_key,
+                    KnowledgeLinkORM.link_normalization_version == u.old_version,
+                )
                 .values(
                     normalized_link_key=u.new_key,
                     link_normalization_version=u.new_version,
                     updated_at=now,
                 )
             )
+            if result.rowcount != 1:
+                raise LinkRebuildPostWriteError(
+                    "重建写前置条件失配：链接行键/版本已被并发修改（rowcount!=1）"
+                )
 
         # 步 8：写后复核（任一不符 → 抛异常 → 整体回滚，不是拒绝报告）。
         versions_after = set(

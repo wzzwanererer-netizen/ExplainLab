@@ -1,0 +1,8 @@
+7e0582c  parent=715d9e7  2026-11-20  docs: V2 A1-03 验收记录 + 计划 T22–T40 状态由【待验证】更新为【已验证】
+715d9e7  parent=5d6dcf1  2026-11-20  feat: V2 A1-03 稳定链接与反链四层实现 + 全局版本同构守卫 + 计划新鲜度门禁 C
+5d6dcf1  parent=41ff761  2026-11-19  chore: gitignore 忽略 release/ 审计交接构建产物
+41ff761  parent=f847e4f  2026-11-19  docs: V2 规划与批次 A 设计、A1-01/A1-02 验收记录、独立复审报告与 A1-03 计划归档
+f847e4f  parent=6d91718  2026-11-19  feat: V2 A1-01/A1-02 开放 Markdown 知识库底座（实体/端口 + 迁移 0006 + MarkdownCodec 与三 Hash）
+6d91718  parent=3c9b28b  2026-11-17  fix: 迁移 0004 回填历史 knowledge_item 到全文索引（SQLite FTS5 + PG tsvector）
+3c9b28b  parent=4557d2e  2026-11-15  docs: 补记修复批次提交哈希 4557d2e 至验收报告与里程碑台账
+4557d2e  parent=59068e2  2026-11-15  fix: M0 准入修复（01–07）与 M5 回归修复（ZIP-01–04）

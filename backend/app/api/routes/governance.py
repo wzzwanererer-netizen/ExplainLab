@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.routes.links import sync_links_or_conflict
 from app.api.schemas import (
     AnalyzeResponse,
     DuplicateOut,
@@ -37,6 +38,7 @@ from app.services.governance import (
     build_review_service,
 )
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
+from app.services.links import demote_backlinks_on_delete
 from app.services.retrieval import sync_index
 from knowledge_core.domain.entities import (
     KnowledgeItem,
@@ -51,6 +53,7 @@ from knowledge_core.model_adapter import ModelAdapter, ModelAdapterError
 from knowledge_core.ports import Embedder
 from knowledge_core.relations import DuplicateMatch
 from knowledge_core.relations.llm import LLMRelationService
+from knowledge_core.review import ReviewPolicy
 
 router = APIRouter(tags=["governance"])
 
@@ -192,6 +195,10 @@ async def restore_version(
     review = await service.submit(
         item_id, ReviewAction.RESTORE_VERSION, payload={"version": version}
     )
+    # K1：草稿直改回滚应用后同步出链（commit 前，同事务；409 零写入）。
+    # active 回滚进审核（review 非 None），其同步在 approve 路径完成。
+    if review is None:
+        _sync_links_after_content_change(session, item.id, ReviewAction.RESTORE_VERSION)
     session.commit()
     if review is not None:
         response.status_code = 202
@@ -243,7 +250,8 @@ async def submit_review(
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> ReviewSubmitResult:
     repository = SQLAlchemyKnowledgeRepository(session)
-    if repository.get(payload.item_id) is None:
+    item = repository.get(payload.item_id)
+    if item is None:
         raise HTTPException(status_code=404, detail=f"知识条目不存在: {payload.item_id}")
     if payload.action == ReviewAction.MERGE_DUPLICATE:
         raw_target = payload.payload.get("target_id")
@@ -261,12 +269,19 @@ async def submit_review(
         ):
             raise HTTPException(status_code=404, detail=f"版本不存在: {version}")
     service = build_review_service(session)
+    # K1：草稿直改 DELETE 预降级——仅当非重要变更（将直接应用）时；active DELETE
+    # 进审核（不在此应用），其降级在 approve 路径完成。MERGE 任何状态都进审核。
+    if not ReviewPolicy.is_important(payload.action, item.status):
+        _demote_backlinks_before_delete(session, payload.item_id, payload.action)
     try:
         review = await service.submit(
             payload.item_id, payload.action, payload.payload, payload.reason
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # K1：草稿直改 UPDATE/RESTORE 应用后同步出链（commit 前，同事务；409 零写入）。
+    if review is None:
+        _sync_links_after_content_change(session, payload.item_id, payload.action)
     session.commit()
     if review is not None:
         response.status_code = 201
@@ -306,6 +321,34 @@ async def _sync_applied_action(
         await sync_index(session, embedder, index_ids=[item_id])
 
 
+def _demote_backlinks_before_delete(
+    session: Session, item_id: UUID, action: ReviewAction
+) -> None:
+    """K1：DELETE 应用前同事务降级入链（D12 写侧）。
+
+    必须在条目删除 flush **之前**调用（先按 target_id 捕获入链，再置 missing+NULL）；
+    只改治理列、键/版本不变 → 不触发全局版本守卫，版本窗口内 DELETE 不被 409 阻断。
+    MERGE 归档而非删除（入链是对存在条目的合法绑定），**不在此降级**。
+    """
+    if action == ReviewAction.DELETE_ITEM:
+        demote_backlinks_on_delete(session, item_id)
+
+
+def _sync_links_after_content_change(
+    session: Session, item_id: UUID, action: ReviewAction
+) -> None:
+    """K1：UPDATE / RESTORE 应用后、commit 前同步出链（绑定优先）。
+
+    content 变更 → wikilink 集合变化，须同步出链；DELETE 出链随 CASCADE 清理、
+    MERGE 双方 content 未改，均不在此同步。版本异写时 ``sync_links_or_conflict``
+    映射 409 稳定码；调用方尚未 commit → 整事务零写入（含审核决议回滚）。
+    """
+    if action in (ReviewAction.UPDATE_ITEM, ReviewAction.RESTORE_VERSION):
+        item = SQLAlchemyKnowledgeRepository(session).get(item_id)
+        if item is not None:
+            sync_links_or_conflict(session, item)
+
+
 @router.post("/reviews/{review_id}/approve", response_model=ReviewOut)
 async def approve_review(
     review_id: UUID,
@@ -313,12 +356,17 @@ async def approve_review(
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
     payload: ReviewResolve | None = None,
 ) -> ReviewOut:
-    _pending_review(session, review_id)
+    pending = _pending_review(session, review_id)
     service = build_review_service(session)
+    # K1：DELETE 预降级。approve 内部先 update_review 再 _apply_action（删除会
+    # CASCADE 审核单自身），入链降级须在 delete flush 前、同事务完成。
+    _demote_backlinks_before_delete(session, pending.item_id, pending.action)
     try:
         review = await service.approve(review_id, payload.note if payload else None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # K1：UPDATE/RESTORE 应用后同步出链（commit 前，同事务；409 整事务零写入）。
+    _sync_links_after_content_change(session, review.item_id, review.action)
     session.commit()
     await _sync_applied_action(
         session, embedder, review.item_id, review.action, review.payload

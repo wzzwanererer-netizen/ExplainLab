@@ -1,0 +1,19 @@
+ backend/app/api/routes/knowledge.py                |   24 +-
+ backend/app/api/routes/links.py                    |   95 +
+ backend/app/api/schemas.py                         |   49 +
+ backend/app/main.py                                |    3 +
+ backend/app/services/links.py                      |  464 +++++
+ backend/tests/test_links.py                        | 1965 +++++++++++++++++++
+ backend/tests/test_links_http.py                   |  345 ++++
+ backend/tests/test_links_pg.py                     | 2004 ++++++++++++++++++++
+ .../V2-A1-03-link-services-and-version-guard.md    |  256 +++
+ docs/audit/V2-A1-03-implementation-plan.md         |   51 +-
+ .../src/knowledge_core/markdown/__init__.py        |  130 +-
+ .../src/knowledge_core/markdown/link_service.py    | 1021 ++++++++++
+ .../src/knowledge_core/markdown/links.py           |  414 ++++
+ knowledge-core/src/knowledge_core/ports.py         |    7 +-
+ knowledge-core/tests/helpers.py                    |  106 +-
+ knowledge-core/tests/test_interfaces.py            |   20 +-
+ knowledge-core/tests/test_markdown_link_service.py | 1545 +++++++++++++++
+ knowledge-core/tests/test_markdown_links.py        |  331 ++++
+ 18 files changed, 8803 insertions(+), 27 deletions(-)

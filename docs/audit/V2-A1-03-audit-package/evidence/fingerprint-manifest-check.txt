@@ -1,0 +1,22 @@
+backend/app/models.py: OK
+backend/tests/test_fts_backfill.py: OK
+backend/tests/test_migrations.py: OK
+backend/tests/test_retrieval_pg.py: OK
+knowledge-core/src/knowledge_core/domain/__init__.py: OK
+knowledge-core/src/knowledge_core/domain/entities.py: OK
+knowledge-core/src/knowledge_core/ports.py: FAILED
+knowledge-core/tests/test_interfaces.py: FAILED
+backend/alembic/versions/0006_v2_markdown_kb.py: OK
+backend/tests/test_v2_models.py: OK
+backend/tests/test_v2_models_pg.py: OK
+knowledge-core/tests/test_v2_entities.py: OK
+knowledge-core/src/knowledge_core/markdown/__init__.py: FAILED
+knowledge-core/src/knowledge_core/markdown/canonical.py: OK
+knowledge-core/src/knowledge_core/markdown/frontmatter.py: OK
+knowledge-core/src/knowledge_core/markdown/codec.py: OK
+knowledge-core/tests/test_markdown_canonical.py: OK
+knowledge-core/tests/test_markdown_frontmatter.py: OK
+knowledge-core/tests/test_markdown_codec.py: OK
+docs/acceptance/V2-A1-01-data-model-and-migration.md: OK
+docs/acceptance/V2-A1-02-markdown-codec-and-frontmatter.md: OK
+sha256sum: WARNING: 3 computed checksums did NOT match

@@ -1,0 +1,15 @@
+### A1-02 frozen subset (293)
+============================= 293 passed in 0.77s =============================
+### test_interfaces.py (14)
+============================= 14 passed in 0.58s ==============================
+### D3 port-signature frozen (Core)
+============================== 1 passed in 0.15s ==============================
+### ruff check
+All checks passed!
+### environment
+python: Python 3.11.9
+uv: uv 0.13.6 (329bf9448 2026-10-26 x86_64-pc-windows-msvc)
+node: v22.23.2
+sqlite: 3.45.1
+### lockfile working-tree status (expect empty)
+[end lockfile status]

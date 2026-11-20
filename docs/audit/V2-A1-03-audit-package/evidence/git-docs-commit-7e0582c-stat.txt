@@ -1,0 +1,6 @@
+7e0582c3a90604289be4d50ef11c24418829f5cc
+docs: V2 A1-03 验收记录 + 计划 T22–T40 状态由【待验证】更新为【已验证】
+
+ .../V2-A1-03-link-services-and-version-guard.md    | 256 +++++++++++++++++++++
+ docs/audit/V2-A1-03-implementation-plan.md         |  51 ++--
+ 2 files changed, 286 insertions(+), 21 deletions(-)

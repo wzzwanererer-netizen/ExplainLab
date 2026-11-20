@@ -1,0 +1,73 @@
+### Core layer2 T22-T40 functions (test_markdown_link_service.py)
+542:def test_freshness_ok_when_unchanged(rebuild_fixture, links) -> None:
+548:def test_t22_target_title_changed(rebuild_fixture, links) -> None:
+556:def test_t23_alias_four_variants_exact_compare(rebuild_fixture, links) -> None:
+577:def test_t24_row_added(rebuild_fixture, links, items) -> None:
+590:def test_t25_row_deleted_update_and_noop(rebuild_fixture, links, items) -> None:
+604:def test_t26_key_changed_incl_changed_to_new_key(rebuild_fixture, links) -> None:
+613:def test_t27_version_changed_and_unsupported_registry(rebuild_fixture, links) -> None:
+623:def test_t28_incomplete_coverage_three_constructions(rebuild_fixture, links) -> None:
+650:def test_t29_duplicate_link_id_in_plan(rebuild_fixture, links) -> None:
+660:def test_t35_source_id_changed(rebuild_fixture, links) -> None:
+667:def test_t36_tamper_new_key_new_version_status(rebuild_fixture, links) -> None:
+680:def test_t37_noop_blindspot_closed_and_no_false_refusal(items, links, v2_registry) -> None:
+699:def test_t38_frozen_tuple_deterministic_no_digest(rebuild_fixture, links) -> None:
+729:def test_freshness_pure_functions_no_io(rebuild_fixture, links, monkeypatch) -> None:
+742:def test_freshness_raw_unicode_no_normalization_before_compare(items, links, v2_registry) -> None:
+785:def test_single_source_of_truth_homogeneity_and_freshness() -> None:
+
+### SQLite DB T22-T40 functions (test_links.py)
+1281:def test_t22_target_title_changed(session, items, links, rebuild_setup):
+1303:def test_t23_alias_changed_raw_compare(session, items, links, rebuild_setup, old_alias, new_alias):
+1327:def test_t24_row_added(session, items, links, rebuild_setup):
+1345:def test_t25_row_deleted(session, items, links, rebuild_setup):
+1373:def test_t26_key_changed_incl_to_new_key(session, items, links, rebuild_setup):
+1404:def test_t27_version_drift_precedence_and_unsupported(session, items, links, rebuild_setup):
+1435:def test_t28_incomplete_coverage_three_constructions(session, items, links, rebuild_setup):
+1464:def test_t29_duplicate_link_id_belongs_to_c(session, items, links, rebuild_setup):
+1496:def test_t30_strongest_zero_write_matrix(session, items, links, rebuild_setup, mutation):
+1545:def test_t32_commit_then_external_change(engine, session, items, links):
+1568:def test_t33_rollback_then_reprecheck(engine, session, items, links, v2):
+1600:def test_t33_rollback_no_external_change_passes(engine, session, items, links):
+1614:def test_t34_no_cache_k_writes(engine, session, items, links, k):
+1624:def test_t34_exempt_zero_precheck(engine, session, items, links):
+1638:def test_t34_apply_counts_and_structure(engine, session, items, links, rebuild_setup):
+1660:def test_t35_source_id_changed(session, items, links, rebuild_setup):
+1682:def test_t36_tamper_matrix(session, items, links, rebuild_setup):
+1716:def test_t37_noop_blindspot_and_no_false_refusal(session, items, links, monkeypatch):
+1747:def test_t39_order_guard_success(engine, session, items, links, rebuild_setup):
+1766:def test_t39_no_update_after_gate_failure(engine, session, items, links, rebuild_setup, gate):
+1793:def test_t39_post_write_governance_and_items(engine, session, items, links, rebuild_setup):
+1815:def test_t39_fault_injection_runtime_error(engine, session, items, links, rebuild_setup, fail_at):
+1840:def test_t39_fault_injection_integrity_error(engine, session, items, links, rebuild_setup):
+1876:def test_t39_transaction_ownership(session, items, links, rebuild_setup):
+1897:def test_t40_nested_precheck_lifecycle(engine, session, items, links):
+1925:def test_t40_repo_source_guard():
+
+### PG DB T22-T40 functions (test_links_pg.py) — mirror
+1320:def test_t22_target_title_changed(session, items, links, rebuild_setup):
+1342:def test_t23_alias_changed_raw_compare(session, items, links, rebuild_setup, old_alias, new_alias):
+1366:def test_t24_row_added(session, items, links, rebuild_setup):
+1384:def test_t25_row_deleted(session, items, links, rebuild_setup):
+1412:def test_t26_key_changed_incl_to_new_key(session, items, links, rebuild_setup):
+1443:def test_t27_version_drift_precedence_and_unsupported(session, items, links, rebuild_setup):
+1474:def test_t28_incomplete_coverage_three_constructions(session, items, links, rebuild_setup):
+1503:def test_t29_duplicate_link_id_belongs_to_c(session, items, links, rebuild_setup):
+1535:def test_t30_strongest_zero_write_matrix(session, items, links, rebuild_setup, mutation):
+1584:def test_t32_commit_then_external_change(engine, session, items, links):
+1607:def test_t33_rollback_then_reprecheck(engine, session, items, links, v2):
+1639:def test_t33_rollback_no_external_change_passes(engine, session, items, links):
+1653:def test_t34_no_cache_k_writes(engine, session, items, links, k):
+1663:def test_t34_exempt_zero_precheck(engine, session, items, links):
+1677:def test_t34_apply_counts_and_structure(engine, session, items, links, rebuild_setup):
+1699:def test_t35_source_id_changed(session, items, links, rebuild_setup):
+1721:def test_t36_tamper_matrix(session, items, links, rebuild_setup):
+1755:def test_t37_noop_blindspot_and_no_false_refusal(session, items, links, monkeypatch):
+1786:def test_t39_order_guard_success(engine, session, items, links, rebuild_setup):
+1805:def test_t39_no_update_after_gate_failure(engine, session, items, links, rebuild_setup, gate):
+1832:def test_t39_post_write_governance_and_items(engine, session, items, links, rebuild_setup):
+1854:def test_t39_fault_injection_runtime_error(engine, session, items, links, rebuild_setup, fail_at):
+1879:def test_t39_fault_injection_integrity_error(engine, session, items, links, rebuild_setup):
+1915:def test_t39_transaction_ownership(session, items, links, rebuild_setup):
+1936:def test_t40_nested_precheck_lifecycle(engine, session, items, links):
+1964:def test_t40_repo_source_guard():

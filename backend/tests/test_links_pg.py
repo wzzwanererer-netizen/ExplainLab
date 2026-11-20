@@ -367,7 +367,11 @@ class _QueryCounter:
 
     def _listen(self, conn, cursor, statement, parameters, context, executemany):
         up = statement.upper()
-        if "DISTINCT" in up and "link_normalization_version" in statement:
+        if up.startswith("LOCK TABLE") or (
+            up.startswith("SELECT") and "FOR UPDATE" in up
+        ):
+            kind = "lock"  # K2 步 1b：PG 表锁 + FOR UPDATE 行锁（持锁至提交）
+        elif "DISTINCT" in up and "link_normalization_version" in statement:
             kind = "distinct"
         elif up.startswith("UPDATE KNOWLEDGE_LINK"):
             kind = "update"
@@ -1793,11 +1797,12 @@ def test_t39_order_guard_success(engine, session, items, links, rebuild_setup):
     seq = [e for e in counter.events[start:] if e != "other"]
     n = len(plan.updates)
     expected = (
-        ["distinct", "sixcol", "gov", "items"]
+        ["lock", "lock"]  # K2 步 1b：LOCK TABLE + FOR UPDATE，先于门禁 A
+        + ["distinct", "sixcol", "gov", "items"]
         + ["update"] * n
         + ["distinct", "pairs", "gov", "items"]
     )
-    assert seq == expected  # 开事务 → A → 6 列重读 → 基线 → B/C → 批量写 → 写后复核 → 提交
+    assert seq == expected  # 开事务 → 取锁 → A → 6 列重读 → 基线 → B/C → 批量写 → 写后复核 → 提交
     counter.stop()
 
 
@@ -1823,9 +1828,9 @@ def test_t39_no_update_after_gate_failure(engine, session, items, links, rebuild
     seq = [e for e in counter.events[start:] if e != "other"]
     assert "update" not in seq  # 任一门禁失败后不得出现任何 UPDATE
     if gate == "a":
-        assert seq == ["distinct"]  # A 失败：其后步骤一律不执行
+        assert seq == ["lock", "lock", "distinct"]  # 取锁 → A 失败：其后步骤一律不执行
     else:
-        assert seq == ["distinct", "sixcol", "gov", "items"]
+        assert seq == ["lock", "lock", "distinct", "sixcol", "gov", "items"]
     counter.stop()
 
 

@@ -1,0 +1,10 @@
+### test_markdown_links.py (Core layer1)
+============================= 41 passed in 0.12s ==============================
+### test_markdown_link_service.py (Core layer2)
+============================= 86 passed in 0.22s ==============================
+### test_links.py (backend SQLite layer3)
+======================= 91 passed, 1 warning in 32.79s ========================
+### test_links_http.py (backend HTTP layer4)
+======================== 19 passed, 1 warning in 6.91s ========================
+### test_links_pg.py (backend PG layer3, gated)
+======================== 91 passed, 1 warning in 1.85s ========================
