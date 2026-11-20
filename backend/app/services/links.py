@@ -49,7 +49,7 @@ from knowledge_core.markdown.link_service import (
     check_global_version_homogeneity,
     check_plan_freshness,
 )
-from knowledge_core.markdown.links import LINK_KEY_RULES
+from knowledge_core.markdown.links import LINK_KEY_RULES, link_key_for_version
 
 
 class LinkRebuildPostWriteError(Exception):
@@ -320,7 +320,9 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
     写阶段 RESERVED 锁 + busy_timeout 补充。P2 前置经专项审计扩至门禁 C 同口径 6 字段
     （link_id + source_id/old_key/old_version/target_title/alias），覆盖全部影响 new_key
     与唯一域的正确性字段，杜绝「改 title/alias/source 但键列未同步改」的过期计划应用。
-    门禁 A/B/C 与步 8 写后复核全部保留。
+    门禁 A/B/C 与步 8 写后复核全部保留。步 8c（no-op 专项审计）逐行复核全部快照行
+    （含不进步 7 的 no-op 行）：source_id/title/alias 不可变 + key-title 一致 + 行存在，
+    补齐 no-op 行窗口②保护（与 update 行 P2 同口径，方言中立，零新增门禁删除）。
     """
     # 前置拒绝（零写入，不开事务）。
     if plan.status != "ready":
@@ -456,6 +458,48 @@ def apply_link_key_plan(plan: LinkRebuildPlan, session: Session) -> LinkRebuildR
             raise LinkRebuildPostWriteError("写后治理列与步 3b 基线不一致")
         if _item_baseline(session) != items_before:
             raise LinkRebuildPostWriteError("写后 knowledge_item 与步 3b 基线不一致")
+
+        # 步 8c（no-op 专项审计）：逐行复核**全部原始快照行**（含 no-op 行）。
+        # no-op 行（键已等于目标重算键且版本已是目标）被 plan() 排除出 updates，故
+        # **不进入步 7 UPDATE**，不受 P2 六字段前置保护；其窗口②（门禁 C 重读 → 提交）
+        # 漂移此前不被步 8 发现（步 8 只查版本同构/键对唯一/治理列/条目基线，不重读
+        # title/alias、不逐行比对快照、不验 key-title 一致）。此处补齐：
+        #   ① 快照行须仍存在（窗口②删除 → 拒绝；治理基线已兜底，再逐行确认）；
+        #   ② source_id/target_title/alias 对**全部行**不可变（重建只写键/版本/updated_at），
+        #      任一漂移 → 拒绝（与 update 行 P2 同口径，no-op 行无条件拒绝而非仅碰撞时）；
+        #   ③ 每行 key == 按当前字面与版本重算（key-title 一致性，含 no-op 行过期键）。
+        # 版本同构已于上方确认（全表 == target），故 link_key_for_version 取目标规则有效。
+        # 纯 SQLAlchemy 列选择 + Core 纯函数，零方言分支；任一不符抛异常 → 整体回滚零写入。
+        final_rows = {
+            r.id: r
+            for r in session.execute(
+                select(
+                    KnowledgeLinkORM.id,
+                    KnowledgeLinkORM.source_item_id,
+                    KnowledgeLinkORM.normalized_link_key,
+                    KnowledgeLinkORM.link_normalization_version,
+                    KnowledgeLinkORM.target_title,
+                    KnowledgeLinkORM.alias,
+                )
+            )
+        }
+        for snap in plan.row_snapshots:
+            r = final_rows.get(str(snap.link_id))
+            if r is None:
+                raise LinkRebuildPostWriteError("写后快照行缺失（窗口②删除行）")
+            if (
+                UUID(r.source_item_id) != snap.source_id
+                or r.target_title != snap.target_title
+                or r.alias != snap.alias
+            ):
+                raise LinkRebuildPostWriteError(
+                    "写后 source_id/标题/别名与计划快照不一致（窗口②漂移，含 no-op 行）"
+                )
+            expected_key = link_key_for_version(
+                r.link_normalization_version, r.target_title, r.alias
+            )
+            if r.normalized_link_key != expected_key:
+                raise LinkRebuildPostWriteError("写后键与当前 title/alias 不一致（过期键）")
 
     # 步 9：with 块正常退出即提交；步 10：任何异常已整体回滚。
     return LinkRebuildReport(

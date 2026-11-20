@@ -1,0 +1,195 @@
+============================= test session starts =============================
+collected 13 items
+
+backend\tests\test_links_noop_coverage_pg.py ...FFFFF.F...               [100%]
+
+================================== FAILURES ===================================
+__________________ test_scenario4_noop_title_drift_rejected ___________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A10156CD0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A10569890>
+
+    def test_scenario4_noop_title_drift_rejected(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r2.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(target_title="Drifted Title")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:321: Failed
+__________________ test_scenario5_noop_alias_drift_rejected ___________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A1058C650>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A0FEFA410>
+
+    def test_scenario5_noop_alias_drift_rejected(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r2.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(alias="drifted alias")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:347: Failed
+________________ test_scenario6_noop_source_id_drift_rejected _________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A1070B810>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A10708050>
+
+    def test_scenario6_noop_source_id_drift_rejected(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r3.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r3.id))
+                .values(source_item_id=str(a.id))  # b → a，无碰撞
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:373: Failed
+______________ test_scenario7_mixed_noop_drift_no_partial_update ______________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A107156D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A10715110>
+
+    def test_scenario7_mixed_noop_drift_no_partial_update(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_mixed(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        assert {u.link_id for u in plan.updates} == {r1.id}
+        _assert_noop(plan, r2.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(target_title="Drifted Noop")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:403: Failed
+___________ test_scenario8_empty_updates_concurrent_modify_rejected ___________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A10701190>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A10701710>
+
+    def test_scenario8_empty_updates_concurrent_modify_rejected(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        assert plan.updates == ()
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(target_title="Empty Updates Drift")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:435: Failed
+________________________ test_noop_key_drift_rejected _________________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024A10717E10>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024A1070C1D0>
+
+    def test_noop_key_drift_rejected(session, monkeypatch):
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r1.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(normalized_link_key="GARBAGE-KEY")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage_pg.py:486: Failed
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=================================== PASSES ====================================
+___________________ test_scenario1_all_rows_update_control ____________________
+---------------------------- Captured stderr setup ----------------------------
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+=========================== short test summary info ===========================
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_scenario1_all_rows_update_control
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_scenario2_all_noop_control
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_scenario3_mixed_update_and_noop_control
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_pg_empty_updates_apply_holds_write_lock
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_noop_version_drift_rejected_by_step8_homogeneity
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_noop_phantom_insert_collision_rejected
+PASSED backend/tests/test_links_noop_coverage_pg.py::test_pg_lock_blocks_concurrent_noop_row_drift
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_scenario4_noop_title_drift_rejected
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_scenario5_noop_alias_drift_rejected
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_scenario6_noop_source_id_drift_rejected
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_scenario7_mixed_noop_drift_no_partial_update
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_scenario8_empty_updates_concurrent_modify_rejected
+FAILED backend/tests/test_links_noop_coverage_pg.py::test_noop_key_drift_rejected
+=================== 6 failed, 7 passed, 1 warning in 2.43s ====================

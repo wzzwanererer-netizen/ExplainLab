@@ -1644,7 +1644,7 @@ def test_t34_apply_counts_and_structure(engine, session, items, links, rebuild_s
     window = counter.events[start:]
     assert report.status == "rebuilt"
     assert window.count("distinct") == 2  # 门禁 A 1 次 + 写后复核 1 次（不逐行预检）
-    assert window.count("sixcol") == 1  # 1 次 6 列重读
+    assert window.count("sixcol") == 2  # 步3 6列重读 + 步8c 逐行复核重读（含 no-op 行）
     assert window.count("update") == len(plan.updates)
     assert window.count("gov") == 2  # 写前/写后治理基线
     assert window.count("items") == 2  # 写前/写后条目基线
@@ -1756,9 +1756,9 @@ def test_t39_order_guard_success(engine, session, items, links, rebuild_setup):
     expected = (
         ["distinct", "sixcol", "gov", "items"]
         + ["update"] * n
-        + ["distinct", "pairs", "gov", "items"]
+        + ["distinct", "pairs", "gov", "items", "sixcol"]
     )
-    assert seq == expected  # 开事务 → A → 6 列重读 → 基线 → B/C → 批量写 → 写后复核 → 提交
+    assert seq == expected  # 开事务 → A → 6 列重读 → 基线 → B/C → 批量写 → 写后复核 → 8c 逐行复核 → 提交
     counter.stop()
 
 

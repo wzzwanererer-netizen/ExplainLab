@@ -1,0 +1,212 @@
+============================= test session starts =============================
+collected 12 items
+
+backend\tests\test_links_noop_coverage.py ...FFFFF.F..                   [100%]
+
+================================== FAILURES ===================================
+__________________ test_scenario4_noop_title_drift_rejected ___________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99D8D6D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99C6FC10>
+
+    def test_scenario4_noop_title_drift_rejected(session, monkeypatch):
+        """场景4：门禁 C 后并发修改 **no-op 行** 的 target_title（键列/版本不变）。
+    
+        no-op 行不进步 7 UPDATE → 无 P2 保护；步 8 不重读 title → 须由逐行快照/key-title
+        复核拒绝，否则过期不一致行被提交（key 仍按旧 title）。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r2.id)  # 确为 no-op，非 update 行
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(target_title="Drifted Title")  # 规范化不同；键列/版本不变
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:315: Failed
+__________________ test_scenario5_noop_alias_drift_rejected ___________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99CCCDD0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99C27ED0>
+
+    def test_scenario5_noop_alias_drift_rejected(session, monkeypatch):
+        """场景5：门禁 C 后并发修改 **no-op 行** 的 alias（键列/版本不变）→ 须拒绝 + 零写入。"""
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r2.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(alias="drifted alias")  # 原 "al ias"；键列/版本不变
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:342: Failed
+________________ test_scenario6_noop_source_id_drift_rejected _________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99BF3710>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99B8F290>
+
+    def test_scenario6_noop_source_id_drift_rejected(session, monkeypatch):
+        """场景6：门禁 C 后并发修改 **no-op 行** 的 source_id（键/版本/字面不变，无碰撞）。
+    
+        source_id 决定唯一域；漂移后计划过期。无碰撞时步 8 键对唯一复核不报 → 须由逐行
+        快照 source_id 比对拒绝（与 update 行 P2 同口径，无条件拒绝而非仅碰撞时）。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r3.id)  # r3 source=b
+        before = _snapshot(session)
+        session.commit()
+    
+        # b → a：r3 键与 r1/r2 键不同 → 不产生 (source,key) 碰撞，隔离 source 守护。
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r3.id))
+                .values(source_item_id=str(a.id))
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:374: Failed
+______________ test_scenario7_mixed_noop_drift_no_partial_update ______________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99CCE390>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99F08B50>
+
+    def test_scenario7_mixed_noop_drift_no_partial_update(session, monkeypatch):
+        """场景7：混合计划中 no-op 行（r2）漂移，update 行（r1）正常 → 整体回滚，无部分更新。
+    
+        关键：步 7 已写 r1 新键；若 no-op 漂移在步 8 被拒，必须**连同 r1 的写入一并回滚**
+        （零部分更新），而非提交 r1 却放过 r2。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_mixed(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        assert {u.link_id for u in plan.updates} == {r1.id}
+        _assert_noop(plan, r2.id)
+        before = _snapshot(session)  # r1 键仍 "STALE-KEY"
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r2.id))
+                .values(target_title="Drifted Noop")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:409: Failed
+___________ test_scenario8_empty_updates_concurrent_modify_rejected ___________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99BF08D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99B27A90>
+
+    def test_scenario8_empty_updates_concurrent_modify_rejected(session, monkeypatch):
+        """场景8：空 updates（全 no-op）时发生并发修改 → 须拒绝 + 零写入。
+    
+        空 updates 时步 7 循环体不执行（无任何 UPDATE/P2）；保护完全依赖步 8 逐行复核。
+        """
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        assert plan.updates == ()
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(target_title="Empty Updates Drift")
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:445: Failed
+________________________ test_noop_key_drift_rejected _________________________
+
+session = <sqlalchemy.orm.session.Session object at 0x0000024C99F115D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000024C99F13E90>
+
+    def test_noop_key_drift_rejected(session, monkeypatch):
+        """no-op 行键列被并发篡改为与 title 不一致的垃圾值（版本不变）→ key-title 复核拒绝。"""
+        items = SQLAlchemyKnowledgeRepository(session)
+        links = SQLAlchemyLinkRepository(session)
+        a, b, c, r1, r2, r3 = _setup_all_noop(session, items, links, monkeypatch)
+        plan = _plan_ready(links, session)
+        _assert_noop(plan, r1.id)
+        before = _snapshot(session)
+        session.commit()
+    
+        _inject_after_gate_c(
+            monkeypatch,
+            session,
+            lambda: session.execute(
+                update(KnowledgeLinkORM)
+                .where(KnowledgeLinkORM.id == str(r1.id))
+                .values(normalized_link_key="GARBAGE-KEY")  # 与 title 不一致；版本仍 2
+            ),
+        )
+>       with pytest.raises(LinkRebuildPostWriteError):
+E       Failed: DID NOT RAISE LinkRebuildPostWriteError
+
+backend\tests\test_links_noop_coverage.py:498: Failed
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=================================== PASSES ====================================
+=========================== short test summary info ===========================
+PASSED backend/tests/test_links_noop_coverage.py::test_scenario1_all_rows_update_control
+PASSED backend/tests/test_links_noop_coverage.py::test_scenario2_all_noop_control
+PASSED backend/tests/test_links_noop_coverage.py::test_scenario3_mixed_update_and_noop_control
+PASSED backend/tests/test_links_noop_coverage.py::test_sqlite_empty_updates_apply_is_readonly_no_write_lock
+PASSED backend/tests/test_links_noop_coverage.py::test_noop_version_drift_rejected_by_step8_homogeneity
+PASSED backend/tests/test_links_noop_coverage.py::test_noop_phantom_insert_collision_rejected
+FAILED backend/tests/test_links_noop_coverage.py::test_scenario4_noop_title_drift_rejected
+FAILED backend/tests/test_links_noop_coverage.py::test_scenario5_noop_alias_drift_rejected
+FAILED backend/tests/test_links_noop_coverage.py::test_scenario6_noop_source_id_drift_rejected
+FAILED backend/tests/test_links_noop_coverage.py::test_scenario7_mixed_noop_drift_no_partial_update
+FAILED backend/tests/test_links_noop_coverage.py::test_scenario8_empty_updates_concurrent_modify_rejected
+FAILED backend/tests/test_links_noop_coverage.py::test_noop_key_drift_rejected
+=================== 6 failed, 6 passed, 1 warning in 4.45s ====================
