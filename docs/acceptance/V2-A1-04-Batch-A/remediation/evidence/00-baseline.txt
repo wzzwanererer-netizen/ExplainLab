@@ -1,0 +1,136 @@
+HEAD=784b1248065424e07273b272d6016cc121bc606c
+BRANCH=fix/m0-admission-and-m5-regressions
+
+# git status --short
+ M backend/app/api/routes/governance.py
+ M backend/app/api/schemas.py
+ M backend/app/core/config.py
+ M backend/app/db/session.py
+ M backend/app/dependencies.py
+ M backend/app/main.py
+ M backend/tests/conftest.py
+ M backend/tests/test_health.py
+?? backend/app/api/routes/import_export.py
+?? backend/app/db/process_lock.py
+?? backend/app/services/import_coordinator.py
+?? backend/app/services/import_review_hook.py
+?? backend/app/services/journal_canonical.py
+?? backend/app/services/markdown.py
+?? backend/app/services/markdown_item_repository.py
+?? backend/app/services/repositories_v2.py
+?? backend/app/services/source_identity.py
+?? backend/app/services/source_instance_id.py
+?? backend/tests/test_batch_a_canonical.py
+?? backend/tests/test_batch_a_process_and_identity.py
+?? backend/tests/test_markdown_batch_a_identity.py
+?? backend/tests/test_markdown_batch_a_import_export.py
+?? docs/acceptance/V2-A1-04-Batch-A/
+?? docs/audit/V2-A1-03-final-stage-audit/
+?? docs/audit/V2-A1-04-R1-independent-review.md
+?? docs/audit/V2-A1-04-technical-verification.md
+?? docs/plans/A1-04/
+?? docs/plans/README-A1-04-R1.1.md
+?? docs/plans/README-A1-04-R1.2.md
+?? docs/plans/README-A1-04-R1.3.md
+?? docs/plans/V2-A1-04-R1.2-merge-report.md
+?? docs/plans/V2-A1-04-R1.3-merge-report.md
+?? docs/plans/V2-A1-04-acceptance-matrix.md
+?? docs/plans/V2-A1-04-implementation-plan.md
+?? docs/plans/V2-A1-04-open-decisions.md
+?? docs/plans/V2-A1-04-risk-register.md
+?? knowledge-core/src/knowledge_core/markdown/import_report.py
+?? knowledge-core/src/knowledge_core/markdown/service.py
+?? knowledge-core/tests/test_markdown_service.py
+
+# staged
+
+# tracked diff stat
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+ backend/app/api/routes/governance.py | 185 +++++++++++++++++++++++++++++------
+ backend/app/api/schemas.py           |  37 ++++++-
+ backend/app/core/config.py           |   5 +
+ backend/app/db/session.py            |  16 +++
+ backend/app/dependencies.py          |  19 +++-
+ backend/app/main.py                  |  83 ++++++++++++++--
+ backend/tests/conftest.py            |   1 +
+ backend/tests/test_health.py         |   9 +-
+ 8 files changed, 309 insertions(+), 46 deletions(-)
+
+# untracked
+backend/app/api/routes/import_export.py
+backend/app/db/process_lock.py
+backend/app/services/import_coordinator.py
+backend/app/services/import_review_hook.py
+backend/app/services/journal_canonical.py
+backend/app/services/markdown.py
+backend/app/services/markdown_item_repository.py
+backend/app/services/repositories_v2.py
+backend/app/services/source_identity.py
+backend/app/services/source_instance_id.py
+backend/tests/test_batch_a_canonical.py
+backend/tests/test_batch_a_process_and_identity.py
+backend/tests/test_markdown_batch_a_identity.py
+backend/tests/test_markdown_batch_a_import_export.py
+docs/acceptance/V2-A1-04-Batch-A/Batch-A-acceptance-report.md
+docs/acceptance/V2-A1-04-Batch-A/Batch-A-implementation-report.md
+docs/acceptance/V2-A1-04-Batch-A/Batch-A-known-issues.md
+docs/acceptance/V2-A1-04-Batch-A/Batch-A-test-evidence-index.md
+docs/acceptance/V2-A1-04-Batch-A/evidence/frontend-regression.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/frozen-contracts.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/git-worktree.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/postgresql-unverified.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/pytest-batch-a.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/pytest-full-sqlite.txt
+docs/acceptance/V2-A1-04-Batch-A/evidence/ruff-check.txt
+docs/acceptance/V2-A1-04-Batch-A/remediation/evidence/00-baseline.txt
+docs/audit/V2-A1-03-final-stage-audit/A1-03-final-stage-audit.md
+docs/audit/V2-A1-03-final-stage-audit/acceptance-matrix.md
+docs/audit/V2-A1-03-final-stage-audit/evidence/a1-02-frozen.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/alembic-baseline.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/core-independence-guard.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/frontend-build.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/frontend-typecheck.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/frontend-vitest.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/git-baseline.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/k1-governance-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/k1-governance-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/k2-concurrency-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/k2-concurrency-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/links-t22-t40-http-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/links-t22-t40-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/noop-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/noop-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/npm-ci-dryrun.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/p2-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/p2-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/pg-baseline.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/pg-full.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/phantom-pg.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/phantom-sqlite.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/ruff.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/sqlite-full.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/toolchain-baseline.txt
+docs/audit/V2-A1-03-final-stage-audit/evidence/uv-lock-check.txt
+docs/audit/V2-A1-03-final-stage-audit/known-issues.md
+docs/audit/V2-A1-03-final-stage-audit/test-evidence-index.md
+docs/audit/V2-A1-04-R1-independent-review.md
+docs/audit/V2-A1-04-technical-verification.md
+docs/plans/A1-04/R1.1-amendment/ExplainLab-V2-A1-04-Architecture-R1.1-amendment.zip
+docs/plans/README-A1-04-R1.1.md
+docs/plans/README-A1-04-R1.2.md
+docs/plans/README-A1-04-R1.3.md
+docs/plans/V2-A1-04-R1.2-merge-report.md
+docs/plans/V2-A1-04-R1.3-merge-report.md
+docs/plans/V2-A1-04-acceptance-matrix.md
+docs/plans/V2-A1-04-implementation-plan.md
+docs/plans/V2-A1-04-open-decisions.md
+docs/plans/V2-A1-04-risk-register.md
+knowledge-core/src/knowledge_core/markdown/import_report.py
+knowledge-core/src/knowledge_core/markdown/service.py
+knowledge-core/tests/test_markdown_service.py

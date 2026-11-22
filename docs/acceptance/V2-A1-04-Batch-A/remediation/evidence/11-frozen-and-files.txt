@@ -1,0 +1,20 @@
+# frozen contract / migration / dependency drift
+
+## locks/deps/migrations status
+
+## A1-02/A1-03/frozen ports status
+
+## changed file hashes
+64dc50821af7ff5f6536494c68570d1499e3c7e0b4123b347577b7388c56bd04 *backend/app/services/file_write.py
+1fd4e2e2d49246e82a71f38e88cbed4ca0fa192a7906b7225f912a8051ec43c1 *backend/app/services/source_identity.py
+96ae5fe80c46115b95356aaed347865afaff15e5943676b4b65a69f5ddd8de3f *backend/app/services/source_instance_id.py
+a9cf54c9663db910f9571fb072dbd0dfc2b3e15ffecec56acd42f4b95598e36d *backend/tests/test_batch_a_file_write.py
+055b05a5de5ec743d713ef17a267c6e221b8225a6df52920f1b2be20ebaaf942 *backend/tests/test_markdown_batch_a_identity.py
+
+## line counts
+   30 backend/app/services/file_write.py
+  986 backend/app/services/source_identity.py
+  169 backend/app/services/source_instance_id.py
+  287 backend/tests/test_batch_a_file_write.py
+  803 backend/tests/test_markdown_batch_a_identity.py
+ 2275 total

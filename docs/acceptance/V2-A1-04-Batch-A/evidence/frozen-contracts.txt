@@ -1,0 +1,9 @@
+# dependency / migration / frozen-contract drift check
+
+## pyproject.toml / uv.lock / package lock status
+
+## alembic versions status
+
+## core ports/review/service/link contracts status
+
+## portable dialect guard

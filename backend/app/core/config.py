@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_url: str = DEFAULT_DATABASE_URL
+    # V2 A1-04：本机数据根（进程锁 / source-instance-id / Journal）。
+    # 默认与 SQLite 数据文件同目录；测试注入临时目录以隔离。
+    data_dir: Path = BACKEND_DIR / "data"
+    # 同步导入身份锁有界等待（秒）；超时返回 IMPORT_LOCK_TIMEOUT。
+    import_lock_wait_seconds: float = 10.0
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

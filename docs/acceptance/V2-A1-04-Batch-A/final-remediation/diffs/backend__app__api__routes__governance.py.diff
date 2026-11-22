@@ -1,0 +1,47 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__api__routes__governance.py b/backend/app/api/routes/governance.py
+index 892385e..247ec8d 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__api__routes__governance.py
++++ b/backend/app/api/routes/governance.py
+@@ -424,8 +424,13 @@ def approve_review(
+         raise _import_http_error(exc) from exc
+ 
+     coordinator: ImportCoordinator = request.app.state.import_coordinator
++    identity = getattr(request.app.state, "source_identity", None)
++    if identity is None:
++        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+-    with context:
++    # P1-02：审核批准的身份写入与 MATERIALIZE/ROTATE 串行；钩子在写前校验
++    # 目标条目未被物化，冲突时整事务回滚、审核单保持 PENDING。
++    with context, identity.identity_guard():
+         session = create_session()
+         try:
+             pending = _pending_review(session, review_id)
+@@ -459,7 +464,7 @@ def approve_review(
+             if is_import:
+                 assert envelope is not None
+                 # 导入分支不再额外普通正文 sync（避免双重解析覆盖绑定恢复）。
+-                ImportReviewHook(session).apply_approved(review, envelope)
++                ImportReviewHook(session, identity).apply_approved(review, envelope)
+             else:
+                 _sync_links_after_content_change(session, review.item_id, review.action)
+             session.commit()
+@@ -492,6 +497,9 @@ def reject_review(
+     except (MarkdownServiceError, SourceIdentityError) as exc:
+         raise _import_http_error(exc) from exc
+     coordinator: ImportCoordinator = request.app.state.import_coordinator
++    identity = getattr(request.app.state, "source_identity", None)
++    if identity is None:
++        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+     with context:
+         session = create_session()
+@@ -505,7 +513,7 @@ def reject_review(
+             except ValueError as exc:
+                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+             if review_is_import(review):
+-                ImportReviewHook(session).apply_rejected(review)
++                ImportReviewHook(session, identity).apply_rejected(review)
+             session.commit()
+             return ReviewOut.model_validate(review)
+         except (MarkdownServiceError, SourceIdentityError) as exc:

@@ -1,0 +1,136 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_identity.py b/backend/app/services/source_identity.py
+index b58dcb3..bd72ed7 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_identity.py
++++ b/backend/app/services/source_identity.py
+@@ -15,7 +15,8 @@ import os
+ import re
+ import threading
+ import uuid
+-from contextlib import suppress
++from collections.abc import Iterator
++from contextlib import contextmanager, suppress
+ from dataclasses import dataclass
+ from datetime import UTC, datetime
+ from pathlib import Path
+@@ -54,6 +55,7 @@ SOURCE_IDENTITY_INCONSISTENT = "SOURCE_IDENTITY_INCONSISTENT"
+ SOURCE_IDENTITY_ORPHAN = "SOURCE_IDENTITY_ORPHAN"
+ SOURCE_DOCUMENT_UNMATERIALIZED = "SOURCE_DOCUMENT_UNMATERIALIZED"
+ 
++_BINARY = getattr(os, "O_BINARY", 0)
+ _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ _PAYLOAD_RE = re.compile(r"^[0-9a-f]{64}$")
+ _TOP_FIELDS = {
+@@ -476,16 +478,50 @@ class JournalStore:
+                 os.fsync(fd)
+             finally:
+                 os.close(fd)
+-            if target.exists():
+-                if target.read_bytes() != payload:
+-                    raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+-            else:
+-                os.replace(tmp, target)
++            self._publish_archive_no_overwrite(tmp, target, payload)
+         finally:
+             with suppress(OSError):
+                 os.unlink(tmp)
+         _sync_dir(self.archive_dir)
+ 
++    @staticmethod
++    def _publish_archive_no_overwrite(tmp: Path, target: Path, payload: bytes) -> None:
++        """原子发布归档且绝不覆盖已有归档（P2-06）。
++
++        先硬链接（目标存在则 ``FileExistsError``），再复核字节一致；不依赖
++        「检查 target.exists() 之后到 replace 之前无人创建」这一未验证假设。
++        硬链接不受支持时退回 O_EXCL 独占创建；已有目标仍不覆盖。
++        """
++        try:
++            os.link(tmp, target)
++        except FileExistsError:
++            pass
++        except OSError:
++            try:
++                target_fd = os.open(
++                    target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600
++                )
++            except FileExistsError:
++                pass
++            else:
++                try:
++                    try:
++                        write_all(target_fd, payload)
++                        os.fsync(target_fd)
++                    finally:
++                        os.close(target_fd)
++                except BaseException:
++                    # 独占创建后写入失败：移除不完整归档；current 保留。
++                    with suppress(OSError):
++                        os.unlink(target)
++                    raise
++        try:
++            existing = target.read_bytes()
++        except OSError as exc:
++            raise SourceIdentityError(JOURNAL_CORRUPT, "archive publish missing") from exc
++        if existing != payload:
++            raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
++
+     def remove_current(self) -> None:
+         try:
+             os.unlink(self.current)
+@@ -555,6 +591,24 @@ class SourceIdentityService:
+     def audit_digest(self, session: Session) -> str:
+         return sha256_canonical(self.snapshots(session))
+ 
++    @contextmanager
++    def identity_guard(self) -> Iterator[None]:
++        """串行化「身份分类 + 导入身份写入」与 MATERIALIZE/ROTATE。
++
++        P1-02：导入事务必须在同一把 Journal 锁内完成分类校验、DB 写入与
++        commit，避免「导入检查时尚未物化、导出并发物化后导入再追加
++        ImportOrigin」的事务成功冲突态。恢复门在获锁后先执行。
++        """
++        with self._journal_lock:
++            self._recover_locked()
++            yield
++
++    def has_committed_materialize(self, item_id: UUID | str) -> bool:
++        """该条目是否存在 COMMITTED MATERIALIZE 记录（含 current/archive）。"""
++        with self._journal_lock:
++            self._recover_locked()
++            return bool(self._committed_index().get(str(item_id)))
++
+     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
+         index: dict[str, list[dict[str, Any]]] = {}
+         for record in self.journal.committed_materialize_records():
+@@ -803,10 +857,12 @@ class SourceIdentityService:
+ 
+     def materialize(self, item_id: UUID | str) -> MaterializeReport:
+         with self._journal_lock:
++            # 恢复优先；恢复完成前不得分类或写身份。
+             self._recover_locked()
+-            target = self._store.ensure()
+             session = self._factory()
+             try:
++                # P1-01：先做只读身份分类。冲突/非 2a 状态必须在创建实例身份
++                # 文件之前返回，保证零身份文件、零 DB、零 Journal 写入。
+                 classified = self.classify(session, item_id)
+                 if classified.state == "2b":
+                     existing = next(
+@@ -816,12 +872,17 @@ class SourceIdentityService:
+                         ),
+                         "",
+                     )
+-                    return MaterializeReport(str(item_id), existing, False, target)
++                    assert classified.source_instance_id is not None
++                    return MaterializeReport(
++                        str(item_id), existing, False, classified.source_instance_id
++                    )
+                 if classified.state != "2a":
+                     raise SourceIdentityError(
+                         SOURCE_DOCUMENT_UNMATERIALIZED,
+                         f"identity state {classified.state}",
+                     )
++                # 仅确认合法 2a 后才创建/读取实例身份文件。
++                target = self._store.ensure()
+                 entry = {
+                     "item_id": str(item_id),
+                     "source_instance_id": target,

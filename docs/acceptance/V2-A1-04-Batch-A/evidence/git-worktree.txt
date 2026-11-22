@@ -1,0 +1,61 @@
+# git status --short
+ M backend/app/api/routes/governance.py
+ M backend/app/api/schemas.py
+ M backend/app/core/config.py
+ M backend/app/db/session.py
+ M backend/app/dependencies.py
+ M backend/app/main.py
+ M backend/tests/conftest.py
+ M backend/tests/test_health.py
+?? backend/app/api/routes/import_export.py
+?? backend/app/db/process_lock.py
+?? backend/app/services/import_coordinator.py
+?? backend/app/services/import_review_hook.py
+?? backend/app/services/journal_canonical.py
+?? backend/app/services/markdown.py
+?? backend/app/services/markdown_item_repository.py
+?? backend/app/services/repositories_v2.py
+?? backend/app/services/source_identity.py
+?? backend/app/services/source_instance_id.py
+?? backend/tests/test_batch_a_canonical.py
+?? backend/tests/test_batch_a_process_and_identity.py
+?? backend/tests/test_markdown_batch_a_identity.py
+?? backend/tests/test_markdown_batch_a_import_export.py
+?? docs/acceptance/V2-A1-04-Batch-A/
+?? docs/audit/V2-A1-03-final-stage-audit/
+?? docs/audit/V2-A1-04-R1-independent-review.md
+?? docs/audit/V2-A1-04-technical-verification.md
+?? docs/plans/A1-04/
+?? docs/plans/README-A1-04-R1.1.md
+?? docs/plans/README-A1-04-R1.2.md
+?? docs/plans/README-A1-04-R1.3.md
+?? docs/plans/V2-A1-04-R1.2-merge-report.md
+?? docs/plans/V2-A1-04-R1.3-merge-report.md
+?? docs/plans/V2-A1-04-acceptance-matrix.md
+?? docs/plans/V2-A1-04-implementation-plan.md
+?? docs/plans/V2-A1-04-open-decisions.md
+?? docs/plans/V2-A1-04-risk-register.md
+?? knowledge-core/src/knowledge_core/markdown/import_report.py
+?? knowledge-core/src/knowledge_core/markdown/service.py
+?? knowledge-core/tests/test_markdown_service.py
+
+# git diff --stat
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+ backend/app/api/routes/governance.py | 185 +++++++++++++++++++++++++++++------
+ backend/app/api/schemas.py           |  37 ++++++-
+ backend/app/core/config.py           |   5 +
+ backend/app/db/session.py            |  16 +++
+ backend/app/dependencies.py          |  19 +++-
+ backend/app/main.py                  |  83 ++++++++++++++--
+ backend/tests/conftest.py            |   1 +
+ backend/tests/test_health.py         |   9 +-
+ 8 files changed, 309 insertions(+), 46 deletions(-)
+
+# HEAD
+784b124 test: A1-03 最终审计补充 — phantom 非碰撞新增 ID 集合守护验证

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -360,3 +360,36 @@ class AttemptOut(BaseModel):
 class ExperimentCompleteResult(BaseModel):
     session: ExperimentOut
     attempt: AttemptOut
+
+class MarkdownImportItemIn(BaseModel):
+    """单篇 Markdown 入参（非附件 Batch A）。
+
+    ``attachments`` 仅用于识别附件请求（显式拒绝），本批不写任何附件。
+    """
+
+    content: str = Field(min_length=1)
+    filename: str | None = None
+    target_item_id: UUID | None = None
+    frontmatter_resolution: Literal["normalize", "keep_original"] | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class MarkdownImportIn(BaseModel):
+    """单篇/批量导入 JSON 入参；``archive_base64`` 支持导出 ZIP 回灌。"""
+
+    content: str | None = None
+    filename: str | None = None
+    target_item_id: UUID | None = None
+    frontmatter_resolution: Literal["normalize", "keep_original"] | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    documents: list[MarkdownImportItemIn] | None = None
+    space_id: str | None = None
+    batch_id: str | None = None
+    manifest: dict[str, Any] | None = None
+    archive_base64: str | None = None
+
+
+class MarkdownExportIn(BaseModel):
+    ids: list[UUID] = Field(default_factory=list)
+    space_id: str | None = None
+    include_attachments: bool = False

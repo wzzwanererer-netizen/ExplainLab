@@ -1,0 +1,288 @@
+"""A1-04 整改 P2：可靠完整写入与故障注入。
+
+真实文件描述符 + 真实临时目录；通过替换 ``write_all``/``os.write`` 注入短写、
+零写和异常，验证不发布截断文件、不误标 COMMITTED、不覆盖已有实例 ID。
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+import app.services.file_write as file_write
+import app.services.source_identity as source_identity
+import app.services.source_instance_id as source_instance_id
+from app.db.session import get_session_factory
+from app.models import KnowledgeItemORM
+from app.services.file_write import write_all
+from app.services.source_identity import (
+    SourceIdentityService,
+)
+from app.services.source_instance_id import SourceInstanceIdStore
+
+
+def _open_temp(tmp_path: Path):
+    path = tmp_path / "target.bin"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    return path, fd
+
+
+class TestWriteAll:
+    def test_partial_then_complete(self, tmp_path: Path, monkeypatch):
+        path, fd = _open_temp(tmp_path)
+        real_write = os.write
+        calls: list[int] = []
+
+        def fake_write(descriptor, data):
+            raw = bytes(data)
+            calls.append(len(raw))
+            chunk = raw[: max(1, len(raw) // 2)]
+            return real_write(descriptor, chunk)
+
+        try:
+            monkeypatch.setattr(file_write.os, "write", fake_write)
+            write_all(fd, b"abcdefghij")
+        finally:
+            os.close(fd)
+        assert path.read_bytes() == b"abcdefghij"
+        assert len(calls) >= 2
+
+    def test_many_one_byte_writes(self, tmp_path: Path, monkeypatch):
+        path, fd = _open_temp(tmp_path)
+        real_write = os.write
+
+        def one_byte(descriptor, data):
+            return real_write(descriptor, bytes(data)[:1])
+
+        try:
+            monkeypatch.setattr(file_write.os, "write", one_byte)
+            write_all(fd, b"abcdef")
+        finally:
+            os.close(fd)
+        assert path.read_bytes() == b"abcdef"
+
+    def test_zero_write_fails(self, tmp_path: Path, monkeypatch):
+        path, fd = _open_temp(tmp_path)
+        try:
+            monkeypatch.setattr(file_write.os, "write", lambda descriptor, data: 0)
+            with pytest.raises(OSError, match="returned 0"):
+                write_all(fd, b"abc")
+        finally:
+            os.close(fd)
+        assert path.read_bytes() == b""
+
+    def test_exception_propagates_without_remaining_write(self, tmp_path: Path, monkeypatch):
+        path, fd = _open_temp(tmp_path)
+        calls = 0
+
+        def boom(descriptor, data):
+            nonlocal calls
+            calls += 1
+            raise OSError("injected write failure")
+
+        try:
+            monkeypatch.setattr(file_write.os, "write", boom)
+            with pytest.raises(OSError, match="injected"):
+                write_all(fd, b"abc")
+        finally:
+            os.close(fd)
+        assert calls == 1
+        assert path.read_bytes() == b""
+
+    def test_empty_payload_is_noop(self, tmp_path: Path):
+        path, fd = _open_temp(tmp_path)
+        try:
+            write_all(fd, b"")
+        finally:
+            os.close(fd)
+        assert path.read_bytes() == b""
+
+
+def _new_local_item() -> str:
+    session = get_session_factory()()
+    try:
+        item = KnowledgeItemORM(
+            id=str(__import__("uuid").uuid4()),
+            title="短写项",
+            content="正文",
+            status="draft",
+            space_id=None,
+            extra_metadata="{}",
+            source_instance_id=None,
+        )
+        session.add(item)
+        session.commit()
+        return item.id
+    finally:
+        session.close()
+
+
+def _instance(client) -> SourceIdentityService:
+    return client.app.state.source_identity
+
+
+def _item_source(item_id: str) -> str | None:
+    session = get_session_factory()()
+    try:
+        item = session.get(KnowledgeItemORM, item_id)
+        assert item is not None
+        return item.source_instance_id
+    finally:
+        session.close()
+
+
+class TestJournalWriteFailure:
+    def test_current_write_failure_publishes_nothing(self, client, monkeypatch):
+        item_id = _new_local_item()
+        identity = _instance(client)
+        journal = identity.journal
+
+        def boom(fd, payload):
+            raise OSError("injected current write failure")
+
+        monkeypatch.setattr(source_identity, "write_all", boom)
+        with pytest.raises(OSError, match="injected"):
+            identity.materialize(item_id)
+
+        assert journal.current.exists() is False
+        assert journal.read_archive() == []
+        assert _item_source(item_id) is None
+        assert not [p for p in journal.data_dir.iterdir() if p.name.endswith(".tmp")]
+
+    def test_current_half_write_is_not_renamed_into_place(self, client, monkeypatch):
+        identity = _instance(client)
+        journal = identity.journal
+        real_write = source_identity.write_all
+
+        def half_then_fail(fd, payload):
+            raw = bytes(payload)
+            real_write(fd, raw[: max(1, len(raw) // 2)])
+            raise OSError("injected half write")
+
+        monkeypatch.setattr(source_identity, "write_all", half_then_fail)
+        with pytest.raises(OSError, match="injected half write"):
+            journal._atomic_write(journal.current, b"x" * 64)
+
+        assert journal.current.exists() is False
+        assert not [p for p in journal.data_dir.iterdir() if p.name.endswith(".tmp")]
+
+    def test_archive_write_failure_keeps_committed_current_then_recovers(
+        self, client, monkeypatch
+    ):
+        item_id = _new_local_item()
+        identity = _instance(client)
+        journal = identity.journal
+        real_write = source_identity.write_all
+        calls: list[int] = []
+
+        def fail_archive(fd, payload):
+            calls.append(len(payload))
+            if len(calls) == 3:  # PREPARED current → COMMITTED current → archive
+                raise OSError("injected archive write failure")
+            real_write(fd, payload)
+
+        monkeypatch.setattr(source_identity, "write_all", fail_archive)
+        with pytest.raises(OSError, match="injected archive"):
+            identity.materialize(item_id)
+
+        assert _item_source(item_id) == client.app.state.source_instance_store.read()
+        assert journal.current.exists()
+        current = journal.read_current()
+        assert current is not None and current["phase"] == "COMMITTED"
+        assert journal.read_archive() == []
+        assert not [p for p in journal.archive_dir.iterdir() if p.name.endswith(".tmp")]
+
+        monkeypatch.setattr(source_identity, "write_all", real_write)
+        restarted = SourceIdentityService(
+            get_session_factory(),
+            client.app.state.source_identity.journal.data_dir,
+            client.app.state.source_instance_store,
+        )
+        restarted.recover_if_needed()
+        assert journal.current.exists() is False
+        assert len(journal.read_archive()) == 1
+
+
+class TestInstanceIdWriteFailure:
+    def test_create_write_failure_publishes_no_id(self, tmp_path: Path, monkeypatch):
+        store = SourceInstanceIdStore(tmp_path)
+
+        def boom(fd, payload):
+            raise OSError("injected id create failure")
+
+        monkeypatch.setattr(source_instance_id, "write_all", boom)
+        with pytest.raises(OSError, match="injected"):
+            store.ensure()
+        assert store.path.exists() is False
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+
+    def test_create_half_write_is_not_linked_into_place(
+        self, tmp_path: Path, monkeypatch
+    ):
+        store = SourceInstanceIdStore(tmp_path)
+        real_write = source_instance_id.write_all
+
+        def half_then_fail(fd, payload):
+            raw = bytes(payload)
+            real_write(fd, raw[: max(1, len(raw) // 2)])
+            raise OSError("injected half id")
+
+        monkeypatch.setattr(source_instance_id, "write_all", half_then_fail)
+        with pytest.raises(OSError, match="injected half id"):
+            store.ensure()
+        assert store.path.exists() is False
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+
+    def test_create_fallback_half_write_removes_partial_formal_file(
+        self, tmp_path: Path, monkeypatch
+    ):
+        store = SourceInstanceIdStore(tmp_path)
+        real_write = source_instance_id.write_all
+
+        def no_link(*args, **kwargs):
+            raise OSError("hardlink unsupported")
+
+        def half_then_fail(fd, payload):
+            raw = bytes(payload)
+            real_write(fd, raw[: max(1, len(raw) // 2)])
+            raise OSError("injected fallback half id")
+
+        monkeypatch.setattr(source_instance_id.os, "link", no_link)
+        monkeypatch.setattr(source_instance_id, "write_all", half_then_fail)
+        with pytest.raises(OSError, match="injected fallback half id"):
+            store.ensure()
+        assert store.path.exists() is False
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+
+    def test_replace_write_failure_preserves_old_id(self, tmp_path: Path, monkeypatch):
+        store = SourceInstanceIdStore(tmp_path)
+        old = store.ensure()
+        new = "f0e8400a-e29b-41d4-a716-446655440099"
+
+        def boom(fd, payload):
+            raise OSError("injected id replace failure")
+
+        monkeypatch.setattr(source_instance_id, "write_all", boom)
+        with pytest.raises(OSError, match="injected"):
+            store.replace(new)
+        assert store.read() == old
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+
+    def test_replace_half_write_preserves_old_id(self, tmp_path: Path, monkeypatch):
+        store = SourceInstanceIdStore(tmp_path)
+        old = store.ensure()
+        new = "f1e8400a-e29b-41d4-a716-446655440098"
+        real_write = source_instance_id.write_all
+
+        def half_then_fail(fd, payload):
+            raw = bytes(payload)
+            real_write(fd, raw[: max(1, len(raw) // 2)])
+            raise OSError("injected half replace")
+
+        monkeypatch.setattr(source_instance_id, "write_all", half_then_fail)
+        with pytest.raises(OSError, match="injected half replace"):
+            store.replace(new)
+        assert store.read() == old
+        assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]

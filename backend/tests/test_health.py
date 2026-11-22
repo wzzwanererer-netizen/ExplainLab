@@ -21,10 +21,11 @@ def test_health_ok(client: TestClient):
     assert body["timestamp"]
 
 
-def test_health_degraded_when_db_unreachable():
+def test_health_degraded_when_db_unreachable(tmp_path):
     # 指向一个必然拒绝连接的地址（无需真实 PostgreSQL 服务器）
     settings = Settings(
         database_url="postgresql+psycopg://u:p@127.0.0.1:1/nodb?connect_timeout=1",
+        data_dir=tmp_path / "data",
         _env_file=None,
     )
     app = create_app(settings)
@@ -71,10 +72,11 @@ def test_health_timeout_returns_stable_code(client: TestClient):
     assert "timed out" not in client.get("/api/health").text
 
 
-def test_health_unavailable_returns_stable_code():
+def test_health_unavailable_returns_stable_code(tmp_path):
     """M0-02：数据库不可用 → 稳定错误码 database_unavailable（非 str(exc)）。"""
     settings = Settings(
         database_url="postgresql+psycopg://u:p@127.0.0.1:1/nodb?connect_timeout=1",
+        data_dir=tmp_path / "data",
         _env_file=None,
     )
     app = create_app(settings)
@@ -84,13 +86,14 @@ def test_health_unavailable_returns_stable_code():
     assert body["database"]["error"] == "database_unavailable"
 
 
-def test_health_error_does_not_leak_sensitive_details():
+def test_health_error_does_not_leak_sensitive_details(tmp_path):
     """M0-02：响应不得包含主机、端口、密码、用户名或底层异常文本。"""
     settings = Settings(
         database_url=(
             "postgresql+psycopg://secretuser:SuperSecret123@127.0.0.1:1/nodb"
             "?connect_timeout=1"
         ),
+        data_dir=tmp_path / "data",
         _env_file=None,
     )
     app = create_app(settings)

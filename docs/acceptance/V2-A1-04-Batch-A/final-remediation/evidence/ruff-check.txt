@@ -1,0 +1,6 @@
+command: uv run ruff check
+cwd: /d/ExplainLab
+start: 2026-11-22T11:24:30+08:00
+All checks passed!
+end: 2026-11-22T11:24:31+08:00
+exit_code: 0

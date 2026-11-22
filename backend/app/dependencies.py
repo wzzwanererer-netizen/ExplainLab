@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 from app.core.config import Settings, get_settings
+from app.services.markdown import MarkdownService
 from app.services.model import build_embed_adapter, build_model_adapter
+from app.services.source_identity import SourceIdentityService
 from knowledge_core.model_adapter import ModelAdapter
 from knowledge_core.ports import Embedder
 
@@ -44,3 +46,16 @@ def get_model_adapter_optional(
     """M5 实验用可选适配器。未配置返回 None：学习路径仍可用，
     测验/对比由 Core 抛 ModelRequiredError，路由层翻译为 503。"""
     return build_model_adapter(settings)
+
+def get_identity_service(request: Request) -> SourceIdentityService:
+    service = getattr(request.app.state, "source_identity", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+    return service
+
+
+def get_markdown_service(request: Request) -> MarkdownService:
+    service = getattr(request.app.state, "markdown_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="markdown_service_unavailable")
+    return service

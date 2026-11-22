@@ -1,0 +1,555 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_identity.py b/backend/app/services/source_identity.py
+index b58dcb3..bd72ed7 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_identity.py
++++ b/backend/app/services/source_identity.py
+@@ -15,7 +15,8 @@ import os
+ import re
+ import threading
+ import uuid
+-from contextlib import suppress
++from collections.abc import Iterator
++from contextlib import contextmanager, suppress
+ from dataclasses import dataclass
+ from datetime import UTC, datetime
+ from pathlib import Path
+@@ -54,6 +55,7 @@ SOURCE_IDENTITY_INCONSISTENT = "SOURCE_IDENTITY_INCONSISTENT"
+ SOURCE_IDENTITY_ORPHAN = "SOURCE_IDENTITY_ORPHAN"
+ SOURCE_DOCUMENT_UNMATERIALIZED = "SOURCE_DOCUMENT_UNMATERIALIZED"
+ 
++_BINARY = getattr(os, "O_BINARY", 0)
+ _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ _PAYLOAD_RE = re.compile(r"^[0-9a-f]{64}$")
+ _TOP_FIELDS = {
+@@ -476,16 +478,50 @@ class JournalStore:
+                 os.fsync(fd)
+             finally:
+                 os.close(fd)
+-            if target.exists():
+-                if target.read_bytes() != payload:
+-                    raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+-            else:
+-                os.replace(tmp, target)
++            self._publish_archive_no_overwrite(tmp, target, payload)
+         finally:
+             with suppress(OSError):
+                 os.unlink(tmp)
+         _sync_dir(self.archive_dir)
+ 
++    @staticmethod
++    def _publish_archive_no_overwrite(tmp: Path, target: Path, payload: bytes) -> None:
++        """原子发布归档且绝不覆盖已有归档（P2-06）。
++
++        先硬链接（目标存在则 ``FileExistsError``），再复核字节一致；不依赖
++        「检查 target.exists() 之后到 replace 之前无人创建」这一未验证假设。
++        硬链接不受支持时退回 O_EXCL 独占创建；已有目标仍不覆盖。
++        """
++        try:
++            os.link(tmp, target)
++        except FileExistsError:
++            pass
++        except OSError:
++            try:
++                target_fd = os.open(
++                    target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600
++                )
++            except FileExistsError:
++                pass
++            else:
++                try:
++                    try:
++                        write_all(target_fd, payload)
++                        os.fsync(target_fd)
++                    finally:
++                        os.close(target_fd)
++                except BaseException:
++                    # 独占创建后写入失败：移除不完整归档；current 保留。
++                    with suppress(OSError):
++                        os.unlink(target)
++                    raise
++        try:
++            existing = target.read_bytes()
++        except OSError as exc:
++            raise SourceIdentityError(JOURNAL_CORRUPT, "archive publish missing") from exc
++        if existing != payload:
++            raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
++
+     def remove_current(self) -> None:
+         try:
+             os.unlink(self.current)
+@@ -555,6 +591,24 @@ class SourceIdentityService:
+     def audit_digest(self, session: Session) -> str:
+         return sha256_canonical(self.snapshots(session))
+ 
++    @contextmanager
++    def identity_guard(self) -> Iterator[None]:
++        """串行化「身份分类 + 导入身份写入」与 MATERIALIZE/ROTATE。
++
++        P1-02：导入事务必须在同一把 Journal 锁内完成分类校验、DB 写入与
++        commit，避免「导入检查时尚未物化、导出并发物化后导入再追加
++        ImportOrigin」的事务成功冲突态。恢复门在获锁后先执行。
++        """
++        with self._journal_lock:
++            self._recover_locked()
++            yield
++
++    def has_committed_materialize(self, item_id: UUID | str) -> bool:
++        """该条目是否存在 COMMITTED MATERIALIZE 记录（含 current/archive）。"""
++        with self._journal_lock:
++            self._recover_locked()
++            return bool(self._committed_index().get(str(item_id)))
++
+     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
+         index: dict[str, list[dict[str, Any]]] = {}
+         for record in self.journal.committed_materialize_records():
+@@ -803,10 +857,12 @@ class SourceIdentityService:
+ 
+     def materialize(self, item_id: UUID | str) -> MaterializeReport:
+         with self._journal_lock:
++            # 恢复优先；恢复完成前不得分类或写身份。
+             self._recover_locked()
+-            target = self._store.ensure()
+             session = self._factory()
+             try:
++                # P1-01：先做只读身份分类。冲突/非 2a 状态必须在创建实例身份
++                # 文件之前返回，保证零身份文件、零 DB、零 Journal 写入。
+                 classified = self.classify(session, item_id)
+                 if classified.state == "2b":
+                     existing = next(
+@@ -816,12 +872,17 @@ class SourceIdentityService:
+                         ),
+                         "",
+                     )
+-                    return MaterializeReport(str(item_id), existing, False, target)
++                    assert classified.source_instance_id is not None
++                    return MaterializeReport(
++                        str(item_id), existing, False, classified.source_instance_id
++                    )
+                 if classified.state != "2a":
+                     raise SourceIdentityError(
+                         SOURCE_DOCUMENT_UNMATERIALIZED,
+                         f"identity state {classified.state}",
+                     )
++                # 仅确认合法 2a 后才创建/读取实例身份文件。
++                target = self._store.ensure()
+                 entry = {
+                     "item_id": str(item_id),
+                     "source_instance_id": target,
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_instance_id.py b/backend/app/services/source_instance_id.py
+index b4db165..02df30e 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_instance_id.py
++++ b/backend/app/services/source_instance_id.py
+@@ -132,17 +132,22 @@ class SourceInstanceIdStore:
+                     target = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600)
+                 except FileExistsError:
+                     return self.read()
++                write_ok = False
+                 try:
+                     try:
+                         write_all(target, payload)
+                         os.fsync(target)
++                        # fsync 成功即视为完整内容已落盘；此后 close 失败
++                        # 不得删除已有效的正式 ID。
++                        write_ok = True
+                     finally:
+                         os.close(target)
+                 except BaseException:
+-                    # 不支持硬链接时只能直接写目标；失败必须移除半成品，
+-                    # 绝不让截断文件以正式 ID 身份留下。
+-                    with suppress(OSError):
+-                        os.unlink(self.path)
++                    if not write_ok:
++                        # 不支持硬链接时只能直接写目标；写入/fsync 失败必须
++                        # 移除半成品，绝不让截断文件以正式 ID 身份留下。
++                        with suppress(OSError):
++                            os.unlink(self.path)
+                     raise
+         finally:
+             with suppress(OSError):
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__markdown.py b/backend/app/services/markdown.py
+index 2006a4b..3e5aa8f 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__markdown.py
++++ b/backend/app/services/markdown.py
+@@ -643,7 +643,9 @@ class MarkdownService:
+             s0 = self._read_state(s0_session, item, target)
+         finally:
+             s0_session.close()
+-        with self._coordinator.keyed(lock_key):
++        # P1-02：身份分类校验、导入 DB 写入与 commit 必须与 MATERIALIZE/ROTATE
++        # 串行（同一 Journal 锁），避免并发导出物化后导入追加 ImportOrigin。
++        with self._coordinator.keyed(lock_key), self._identity.identity_guard():
+             session = self._factory()
+             try:
+                 s1 = self._read_state(session, item, target)
+@@ -770,6 +772,16 @@ class MarkdownService:
+             existing = items.get(existing_ids[0])
+         elif target is not None:
+             existing = items.get(target)
++        if existing is not None and self._identity.has_committed_materialize(
++            existing.id
++        ):
++            # §22.2：ImportOrigin 与 COMMITTED MATERIALIZE 并存即冲突态。
++            # 已物化本地文档不得经导入追加来源身份或重写实例字段（2b 冻结）。
++            raise MarkdownServiceError(
++                SOURCE_IDENTITY_CONFLICT,
++                "目标条目为已物化本地文档，导入不得追加来源身份",
++                status_code=409,
++            )
+         # 既有条目来源身份不同 → 冲突，零写入（不覆盖来源身份）。
+         if existing is not None and item.source_instance_id and item.source_document_id:
+             existing_origins = origins.list_for_item(existing.id)
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__import_review_hook.py b/backend/app/services/import_review_hook.py
+index af96220..00c0eeb 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__import_review_hook.py
++++ b/backend/app/services/import_review_hook.py
+@@ -31,6 +31,7 @@ from app.services.repositories_v2 import (
+     SQLAlchemyTagChangeLogRepository,
+     SQLAlchemyTagRepository,
+ )
++from app.services.source_identity import SourceIdentityService
+ from knowledge_core.domain.entities import (
+     ImportOrigin,
+     KnowledgeItem,
+@@ -69,8 +70,9 @@ def envelope_from_review(review: ReviewRequest) -> ImportEnvelope | None:
+ class ImportReviewHook:
+     """在同一事务内补齐导入审核的非 Core 字段。"""
+ 
+-    def __init__(self, session: Session) -> None:
++    def __init__(self, session: Session, identity: SourceIdentityService) -> None:
+         self._session = session
++        self._identity = identity
+         self._items = MarkdownItemRepository(session)
+         self._tags = SQLAlchemyTagRepository(session)
+         self._origins = SQLAlchemyImportOriginRepository(session)
+@@ -104,6 +106,15 @@ class ImportReviewHook:
+             raise MarkdownServiceError(
+                 "IMPORT_FAILED", "审核条目不存在", status_code=409
+             )
++        if self._identity.has_committed_materialize(record.id):
++            # §22.2：审核批准时条目已被物化 → 追加 ImportOrigin 会造成冲突态。
++            # 在写任何导入字段前 fail-closed；路由回滚整个审核事务。
++            raise MarkdownServiceError(
++                "SOURCE_IDENTITY_CONFLICT",
++                "目标条目已物化，导入审核不得追加来源身份",
++                status_code=409,
++            )
++
+         # 来源身份：仅当 envelope 提供完整合法身份时认领；不覆盖其他身份。
+         if envelope.source_instance_id and envelope.source_document_id:
+             pairs = {
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__api__routes__governance.py b/backend/app/api/routes/governance.py
+index 892385e..247ec8d 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__api__routes__governance.py
++++ b/backend/app/api/routes/governance.py
+@@ -424,8 +424,13 @@ def approve_review(
+         raise _import_http_error(exc) from exc
+ 
+     coordinator: ImportCoordinator = request.app.state.import_coordinator
++    identity = getattr(request.app.state, "source_identity", None)
++    if identity is None:
++        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+-    with context:
++    # P1-02：审核批准的身份写入与 MATERIALIZE/ROTATE 串行；钩子在写前校验
++    # 目标条目未被物化，冲突时整事务回滚、审核单保持 PENDING。
++    with context, identity.identity_guard():
+         session = create_session()
+         try:
+             pending = _pending_review(session, review_id)
+@@ -459,7 +464,7 @@ def approve_review(
+             if is_import:
+                 assert envelope is not None
+                 # 导入分支不再额外普通正文 sync（避免双重解析覆盖绑定恢复）。
+-                ImportReviewHook(session).apply_approved(review, envelope)
++                ImportReviewHook(session, identity).apply_approved(review, envelope)
+             else:
+                 _sync_links_after_content_change(session, review.item_id, review.action)
+             session.commit()
+@@ -492,6 +497,9 @@ def reject_review(
+     except (MarkdownServiceError, SourceIdentityError) as exc:
+         raise _import_http_error(exc) from exc
+     coordinator: ImportCoordinator = request.app.state.import_coordinator
++    identity = getattr(request.app.state, "source_identity", None)
++    if identity is None:
++        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+     with context:
+         session = create_session()
+@@ -505,7 +513,7 @@ def reject_review(
+             except ValueError as exc:
+                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+             if review_is_import(review):
+-                ImportReviewHook(session).apply_rejected(review)
++                ImportReviewHook(session, identity).apply_rejected(review)
+             session.commit()
+             return ReviewOut.model_validate(review)
+         except (MarkdownServiceError, SourceIdentityError) as exc:
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__tests__test_markdown_batch_a_identity.py b/backend/tests/test_markdown_batch_a_identity.py
+index a5c43ba..373a1c3 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__tests__test_markdown_batch_a_identity.py
++++ b/backend/tests/test_markdown_batch_a_identity.py
+@@ -801,4 +801,263 @@ class TestRotate:
+         _restart(client, settings).recover_if_needed()
+         assert identity._store.read() == target
+         assert journal.current.exists() is False
+-        assert len(journal.read_archive()) == 1
+\ No newline at end of file
++        assert len(journal.read_archive()) == 1
++
++class TestMaterializeClassificationBeforeIdentityWrite:
++    """P1-01：恢复门之后先只读分类；冲突/非 2a 不得创建实例身份文件。
++
++    这些用例使用真实 SQLite 与真实文件系统，并在调用前后对 ID 文件、当前
++    Journal、归档、DB 身份投影做逐字节/摘要取证，断言冲突路径零写入。
++    """
++
++    @staticmethod
++    def _identity_dir_state(client: TestClient) -> dict:
++        journal = _journal(client)
++        archive = {
++            path.name: path.read_bytes()
++            for path in sorted(journal.archive_dir.glob("*.json"))
++        }
++        current = journal.current.read_bytes() if journal.current.exists() else None
++        store = client.app.state.source_instance_store
++        id_bytes = store.path.read_bytes() if store.path.exists() else None
++        return {"archive": archive, "current": current, "id": id_bytes}
++
++    def _assert_no_identity_write(
++        self, client: TestClient, item_id: str, before: dict, before_digest: str
++    ) -> None:
++        assert self._identity_dir_state(client) == before
++        assert _digest() == before_digest
++        assert _classify(client, item_id).state == "3"
++
++    def test_conflict_with_existing_id_keeps_id_and_journal_bytes(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "冲突-ID存在")
++        _new_origin(item_id, instance=instance, document=item_id)
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++        assert before["id"] is not None
++
++        with pytest.raises(SourceIdentityError) as excinfo:
++            client.app.state.source_identity.materialize(item_id)
++        assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++        self._assert_no_identity_write(client, item_id, before, before_digest)
++
++    def test_conflict_with_empty_identity_dir_creates_no_id_files(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "冲突-ID缺失")
++        _new_origin(item_id, instance=instance, document=item_id)
++        store = client.app.state.source_instance_store
++        store.path.unlink()
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++        assert before["id"] is None
++        assert before["archive"]
++
++        with pytest.raises(SourceIdentityError) as excinfo:
++            client.app.state.source_identity.materialize(item_id)
++        assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++        self._assert_no_identity_write(client, item_id, before, before_digest)
++        assert store.path.exists() is False
++
++    def test_empty_data_dir_origin_plus_db_instance_creates_no_id(
++        self, client: TestClient
++    ):
++        # 数据目录身份文件/Journal 全部缺失，DB 仍有 ImportOrigin 与非空实例值。
++        # 分类先于 ensure，任何非 2a 状态都不得创建 source-instance-id。
++        item_id, instance = _materialized_local(client, "缺失全部证据")
++        _new_origin(item_id, instance=instance, document=item_id)
++        store = client.app.state.source_instance_store
++        store.path.unlink()
++        journal = _journal(client)
++        for path in journal.archive_dir.glob("*.json"):
++            path.unlink()
++        if journal.current.exists():
++            journal.current.unlink()
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++        assert before["id"] is None and before["archive"] == {}
++        assert _classify(client, item_id).state == "1"
++
++        with pytest.raises(SourceIdentityError) as excinfo:
++            client.app.state.source_identity.materialize(item_id)
++        assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++        assert self._identity_dir_state(client) == before
++        assert _digest() == before_digest
++        assert store.path.exists() is False
++
++    def test_prepared_materialize_plus_origin_conflict_keeps_journal(
++        self, client: TestClient
++    ):
++        item_id = _new_item(title="PREPARED冲突")
++        _new_origin(item_id, instance=None)
++        store = client.app.state.source_instance_store
++        store.path.unlink()
++        expected_instance = X
++        _prepare_materialize(client, item_id, expected_instance)
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++        assert before["current"] is not None
++        assert before["id"] is None
++
++        with pytest.raises(SourceIdentityError) as excinfo:
++            client.app.state.source_identity.materialize(item_id)
++        assert excinfo.value.code == SOURCE_IDENTITY_INCONSISTENT
++        assert self._identity_dir_state(client) == before
++        assert _digest() == before_digest
++        assert _item(item_id).source_instance_id is None
++
++    def test_normal_2a_materializes_after_classification(self, client: TestClient):
++        item_id = _new_item(title="正常2a")
++        store = client.app.state.source_instance_store
++        store.path.unlink()
++        assert _classify(client, item_id).state == "2a"
++
++        report = client.app.state.source_identity.materialize(item_id)
++        assert report.materialized is True
++        assert store.path.exists()
++        assert store.read() == report.source_instance_id
++        assert _item(item_id).source_instance_id == report.source_instance_id
++        assert _classify(client, item_id).state == "2b"
++        assert len(_journal(client).read_archive()) == 1
++
++    def test_normal_state_1_materialize_creates_no_id(self, client: TestClient):
++        item_id = _new_item(source_instance=X)
++        _new_origin(item_id)
++        store = client.app.state.source_instance_store
++        store.path.unlink()
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++
++        with pytest.raises(SourceIdentityError) as excinfo:
++            client.app.state.source_identity.materialize(item_id)
++        assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++        assert self._identity_dir_state(client) == before
++        assert _digest() == before_digest
++        assert store.path.exists() is False
++        assert _classify(client, item_id).state == "1"
++
++    def test_normal_2b_materialize_does_not_recreate_or_rewrite_id(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "正常2b")
++        before = self._identity_dir_state(client)
++        before_digest = _digest()
++
++        report = client.app.state.source_identity.materialize(item_id)
++        assert report.materialized is False
++        assert report.source_instance_id == instance
++        assert self._identity_dir_state(client) == before
++        assert _digest() == before_digest
++
++
++class TestRotateMaterializeOriginConflict:
++    """P1-03：ROTATE 对状态 3 并存冲突不物化/不重写/不认领，仅替换 exporter。"""
++
++    @staticmethod
++    def _rotate_records(client: TestClient) -> list[dict]:
++        return [
++            record
++            for record in _journal(client).read_archive()
++            if record["kind"] == "ROTATE"
++        ]
++
++    def test_rotate_conflict_only_keeps_audit_and_replaces_exporter(
++        self, client: TestClient
++    ):
++        identity = client.app.state.source_identity
++        old = client.app.state.source_instance_store.read()
++        conflict_id, instance = _materialized_local(client, "rotate冲突")
++        _new_origin(conflict_id, instance=instance, document=conflict_id)
++        imported = client.app.state.markdown_service.import_documents(
++            [
++                MarkdownImportDocument(
++                    content=(
++                        "---\ntitle: rotate导入\n"
++                        f"source_instance_id: {X}\n"
++                        f"source_document_id: {D1}\n---\n正文"
++                    ),
++                    filename="rotate-imported.md",
++                )
++            ]
++        )
++        imported_id = str(imported.report.items[0].item_id)
++        before_snapshot = _snapshot(client, conflict_id)
++        before_digest = _digest()
++        before_archive = len(_journal(client).read_archive())
++        before_materialize = [
++            (record["operation_id"], record["item_id"])
++            for record in _journal(client).read_archive()
++            if record["kind"] == "MATERIALIZE"
++        ]
++        assert _classify(client, conflict_id).state == "3"
++
++        report = identity.rotate(Z)
++        assert report.old_instance_id == old
++        assert report.target_instance_id == Z
++        assert report.materialized_items == []
++        assert client.app.state.source_instance_store.read() == Z
++
++        # 冲突条目来源身份与 DB 值零改写，仍可识别为状态 3。
++        assert _classify(client, conflict_id).state == "3"
++        assert _item(conflict_id).source_instance_id == instance
++        assert _snapshot(client, conflict_id) == before_snapshot
++        # 导入条目与冲突条目均不改写来源；exporter 轮换不影响审计投影。
++        assert _classify(client, imported_id).state == "1"
++        assert _item(imported_id).source_instance_id == X
++        assert _digest() == before_digest
++
++        rotate_records = self._rotate_records(client)
++        assert len(rotate_records) == 1
++        assert rotate_records[0]["materialization_items"] == []
++        assert rotate_records[0]["identity_audit_digest"] == _digest()
++        assert len(_journal(client).read_archive()) == before_archive + 1
++        # 冲突条目没有新增 MATERIALIZE 记录（既有证明记录保持原样）。
++        after_materialize = [
++            (record["operation_id"], record["item_id"])
++            for record in _journal(client).read_archive()
++            if record["kind"] == "MATERIALIZE"
++        ]
++        assert after_materialize == before_materialize
++
++        exported = client.get(f"/api/knowledge/{conflict_id}/markdown")
++        assert exported.status_code == 200
++        assert "X-ExplainLab-Source-Instance-Id" not in exported.headers
++        assert exported.headers["X-ExplainLab-Exporter-Instance-Id"] == Z
++        assert "source_instance_id" not in exported.text
++
++        # 再轮换一次，冲突仍保持原状且可识别。
++        second = identity.rotate()
++        assert client.app.state.source_instance_store.read() == (
++            second.target_instance_id
++        )
++        assert _classify(client, conflict_id).state == "3"
++        assert _item(conflict_id).source_instance_id == instance
++        assert _snapshot(client, conflict_id) == before_snapshot
++        assert len(self._rotate_records(client)) == 2
++
++    def test_rotate_conflict_does_not_block_other_2a_materialization(
++        self, client: TestClient
++    ):
++        identity = client.app.state.source_identity
++        old = client.app.state.source_instance_store.read()
++        conflict_id, instance = _materialized_local(client, "rotate冲突2a")
++        _new_origin(conflict_id, instance=instance, document=conflict_id)
++        local_id = _new_item(title="rotate待物化")
++        assert _classify(client, local_id).state == "2a"
++        before_snapshot = _snapshot(client, conflict_id)
++
++        report = identity.rotate(Z)
++        assert report.materialized_items == [local_id]
++        assert _item(local_id).source_instance_id == old
++        assert _classify(client, local_id).state == "2b"
++        assert _classify(client, conflict_id).state == "3"
++        assert _item(conflict_id).source_instance_id == instance
++        assert _snapshot(client, conflict_id) == before_snapshot
++
++        rotate_record = self._rotate_records(client)[0]
++        assert rotate_record["identity_audit_digest"] == _digest()
++        assert [entry["item_id"] for entry in rotate_record["materialization_items"]] == [
++            local_id
++        ]

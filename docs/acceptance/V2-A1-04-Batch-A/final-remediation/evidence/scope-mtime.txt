@@ -1,0 +1,13 @@
+time: 2026-11-22T11:23:34+08:00
+--- files modified after 2026-11-22 10:00 (excluding docs/acceptance) ---
+backend/app/api/routes/governance.py
+backend/app/services/import_review_hook.py
+backend/app/services/markdown.py
+backend/app/services/source_identity.py
+backend/app/services/source_instance_id.py
+backend/tests/test_batch_a_fault_injection.py
+backend/tests/test_batch_a_file_write.py
+backend/tests/test_markdown_batch_a_identity.py
+backend/tests/test_markdown_batch_a_import_conflict.py
+--- knowledge-core files modified after 10:00 ---
+--- alembic files modified after 10:00 ---

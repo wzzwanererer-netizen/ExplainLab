@@ -1,0 +1,22 @@
+time: 2026-11-22T11:23:14+08:00
+--- EXPLAINLAB_PG_TEST_URL ---
+unset
+--- docker ---
+docker: not found
+--- podman ---
+podman: not found
+--- psql ---
+psql: not found
+--- pg_ctl ---
+pg_ctl: not found
+--- postgres ---
+postgres: not found
+--- windows services (postgres) ---
+--- wsl distribution ---
+Ubuntu
+--- wsl psql/pip ---
+wsl: ÀhKm0R localhost ãNtM‘nÿFO*g\•ÏP0R WSL0NAT !j_N„v WSL N/ec localhost ãNt0
+wsl psql: not found
+wsl pip3: not found
+wsl sqlalchemy: absent
+--- end ---

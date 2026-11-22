@@ -1,0 +1,32 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__markdown.py b/backend/app/services/markdown.py
+index 2006a4b..3e5aa8f 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__markdown.py
++++ b/backend/app/services/markdown.py
+@@ -643,7 +643,9 @@ class MarkdownService:
+             s0 = self._read_state(s0_session, item, target)
+         finally:
+             s0_session.close()
+-        with self._coordinator.keyed(lock_key):
++        # P1-02：身份分类校验、导入 DB 写入与 commit 必须与 MATERIALIZE/ROTATE
++        # 串行（同一 Journal 锁），避免并发导出物化后导入追加 ImportOrigin。
++        with self._coordinator.keyed(lock_key), self._identity.identity_guard():
+             session = self._factory()
+             try:
+                 s1 = self._read_state(session, item, target)
+@@ -770,6 +772,16 @@ class MarkdownService:
+             existing = items.get(existing_ids[0])
+         elif target is not None:
+             existing = items.get(target)
++        if existing is not None and self._identity.has_committed_materialize(
++            existing.id
++        ):
++            # §22.2：ImportOrigin 与 COMMITTED MATERIALIZE 并存即冲突态。
++            # 已物化本地文档不得经导入追加来源身份或重写实例字段（2b 冻结）。
++            raise MarkdownServiceError(
++                SOURCE_IDENTITY_CONFLICT,
++                "目标条目为已物化本地文档，导入不得追加来源身份",
++                status_code=409,
++            )
+         # 既有条目来源身份不同 → 冲突，零写入（不覆盖来源身份）。
+         if existing is not None and item.source_instance_id and item.source_document_id:
+             existing_origins = origins.list_for_item(existing.id)

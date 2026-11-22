@@ -30,6 +30,7 @@ from knowledge_core.model_adapter import (
 def settings(tmp_path: Path) -> Settings:
     return Settings(
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        data_dir=tmp_path / "data",
         model_provider=None,
         model_base_url=None,
         model_api_key=None,

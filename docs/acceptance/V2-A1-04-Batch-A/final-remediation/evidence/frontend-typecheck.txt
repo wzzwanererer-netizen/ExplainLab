@@ -1,0 +1,9 @@
+command: npm run typecheck
+cwd: /d/ExplainLab/frontend
+start: 2026-11-22T11:29:35+08:00
+
+> explainlab-frontend@0.1.0 typecheck
+> tsc -b
+
+end: 2026-11-22T11:29:36+08:00
+exit_code: 0

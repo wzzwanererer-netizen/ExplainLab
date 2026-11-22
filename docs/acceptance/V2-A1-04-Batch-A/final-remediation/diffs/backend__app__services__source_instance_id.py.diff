@@ -1,0 +1,31 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_instance_id.py b/backend/app/services/source_instance_id.py
+index b4db165..02df30e 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__source_instance_id.py
++++ b/backend/app/services/source_instance_id.py
+@@ -132,17 +132,22 @@ class SourceInstanceIdStore:
+                     target = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600)
+                 except FileExistsError:
+                     return self.read()
++                write_ok = False
+                 try:
+                     try:
+                         write_all(target, payload)
+                         os.fsync(target)
++                        # fsync 成功即视为完整内容已落盘；此后 close 失败
++                        # 不得删除已有效的正式 ID。
++                        write_ok = True
+                     finally:
+                         os.close(target)
+                 except BaseException:
+-                    # 不支持硬链接时只能直接写目标；失败必须移除半成品，
+-                    # 绝不让截断文件以正式 ID 身份留下。
+-                    with suppress(OSError):
+-                        os.unlink(self.path)
++                    if not write_ok:
++                        # 不支持硬链接时只能直接写目标；写入/fsync 失败必须
++                        # 移除半成品，绝不让截断文件以正式 ID 身份留下。
++                        with suppress(OSError):
++                            os.unlink(self.path)
+                     raise
+         finally:
+             with suppress(OSError):

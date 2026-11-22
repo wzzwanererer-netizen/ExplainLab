@@ -1,0 +1,351 @@
+"""P1-02：导入/审核批准不得向已物化本地文档追加 ImportOrigin。
+
+使用真实 SQLite 与真实文件系统；冲突路径断言 item/origin/link 计数、Journal
+归档、ID 文件与内容均零变化。审核竞态覆盖「审核待决期间文档被导出物化」。
+"""
+
+from __future__ import annotations
+
+import uuid
+from uuid import UUID
+
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+
+from app.db.session import get_session_factory
+from app.models import ImportOriginORM
+from app.services.markdown import MarkdownImportDocument
+from app.services.markdown_item_repository import MarkdownItemRepository
+
+INSTANCE_Y = "770e8400-e29b-41d4-a716-446655440002"
+DOC_X2 = "660e8400-e29b-41d4-a716-446655440003"
+PAYLOAD = "a" * 64
+CONTENT = "c" * 64
+
+
+def _service(client: TestClient):
+    return client.app.state.markdown_service
+
+
+def _record(item_id: UUID | str):
+    session = get_session_factory()()
+    try:
+        return MarkdownItemRepository(session).get(str(item_id))
+    finally:
+        session.close()
+
+
+def _counts() -> tuple[int, int, int]:
+    session = get_session_factory()()
+    try:
+        items = session.execute(text("select count(*) from knowledge_item")).scalar_one()
+        origins = session.execute(text("select count(*) from import_origin")).scalar_one()
+        links = session.execute(text("select count(*) from knowledge_link")).scalar_one()
+        return int(items), int(origins), int(links)
+    finally:
+        session.close()
+
+
+def _identity_doc(instance: str, document: str, body: str) -> str:
+    return (
+        "---\n"
+        f"source_instance_id: {instance}\n"
+        f"source_document_id: {document}\n"
+        "---\n"
+        f"{body}"
+    )
+
+
+def _materialized(client: TestClient, title: str) -> tuple[str, str]:
+    created = client.post(
+        "/api/knowledge", json={"title": title, "content": f"{title}正文"}
+    ).json()
+    item_id = created["id"]
+    exported = client.get(f"/api/knowledge/{item_id}/markdown")
+    assert exported.status_code == 200
+    instance = client.app.state.source_instance_store.read()
+    record = _record(item_id)
+    assert record is not None
+    assert record.source_instance_id == instance
+    return item_id, instance
+
+
+def _archive_state(client: TestClient) -> tuple[int, bool]:
+    journal = client.app.state.source_identity.journal
+    return len(journal.read_archive()), journal.current.exists()
+
+
+class TestImportCannotCreateMaterializeConflict:
+    def _assert_rejected_without_identity_write(
+        self,
+        client: TestClient,
+        outcome,
+        item_id: str,
+        *,
+        before_counts: tuple[int, int, int],
+        before_archive: tuple[int, bool],
+        before_content: str,
+        before_instance: str,
+    ) -> None:
+        result = outcome.report.items[0]
+        assert result.status.value == "error"
+        assert result.errors == ["SOURCE_IDENTITY_CONFLICT"]
+        assert _counts() == before_counts
+        assert _archive_state(client) == before_archive
+        record = _record(item_id)
+        assert record is not None
+        assert record.content == before_content
+        assert record.source_instance_id == before_instance
+        assert _counts()[1] == 0
+
+    def test_same_identity_import_into_materialized_is_rejected(
+        self, client: TestClient
+    ):
+        item_id, instance = _materialized(client, "同身份导入")
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before = _record(item_id)
+        assert before is not None
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(instance, item_id, "导入正文"),
+                    filename="same.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        self._assert_rejected_without_identity_write(
+            client,
+            outcome,
+            item_id,
+            before_counts=before_counts,
+            before_archive=before_archive,
+            before_content=before.content,
+            before_instance=before.source_instance_id,
+        )
+
+    def test_different_identity_import_into_materialized_is_rejected(
+        self, client: TestClient
+    ):
+        item_id, _instance = _materialized(client, "异身份导入")
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before = _record(item_id)
+        assert before is not None
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(INSTANCE_Y, DOC_X2, "外部正文"),
+                    filename="other.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        self._assert_rejected_without_identity_write(
+            client,
+            outcome,
+            item_id,
+            before_counts=before_counts,
+            before_archive=before_archive,
+            before_content=before.content,
+            before_instance=before.source_instance_id,
+        )
+
+    def test_conflict_item_does_not_accept_duplicate_origin_via_import(
+        self, client: TestClient
+    ):
+        item_id, instance = _materialized(client, "重复导入")
+        session = get_session_factory()()
+        try:
+            session.add(
+                ImportOriginORM(
+                    id=str(uuid.uuid4()),
+                    item_id=item_id,
+                    source_payload_hash=PAYLOAD,
+                    source_content_hash=CONTENT,
+                    source_instance_id=instance,
+                    source_document_id=item_id,
+                    source_canonicalization_version=1,
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before = _record(item_id)
+        assert before is not None
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(instance, item_id, "再次导入"),
+                    filename="dup.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        result = outcome.report.items[0]
+        assert result.status.value == "error"
+        assert result.errors == ["SOURCE_IDENTITY_CONFLICT"]
+        assert _counts() == before_counts == (1, 1, 0)
+        assert _archive_state(client) == before_archive
+        record = _record(item_id)
+        assert record is not None
+        assert record.content == before.content
+
+    def test_batch_isolates_conflict_and_creates_unrelated_document(
+        self, client: TestClient
+    ):
+        item_id, instance = _materialized(client, "批量冲突")
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before = _record(item_id)
+        assert before is not None
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(instance, item_id, "批量冲突正文"),
+                    filename="conflict.md",
+                    target_item_id=UUID(item_id),
+                ),
+                MarkdownImportDocument(
+                    content="---\ntitle: 新文档\n---\n完全不同的正文",
+                    filename="new.md",
+                ),
+            ]
+        )
+        by_name = {item.filename: item for item in outcome.report.items}
+        assert by_name["conflict.md"].status.value == "error"
+        assert by_name["conflict.md"].errors == ["SOURCE_IDENTITY_CONFLICT"]
+        assert by_name["new.md"].status.value == "created"
+        after_counts = _counts()
+        assert after_counts[0] == before_counts[0] + 1
+        assert after_counts[1] == before_counts[1]
+        assert _archive_state(client) == before_archive
+        record = _record(item_id)
+        assert record is not None
+        assert record.content == before.content
+        assert record.source_instance_id == before.source_instance_id
+
+    def test_materialized_active_item_rejects_before_review_creation(
+        self, client: TestClient
+    ):
+        item_id, instance = _materialized(client, "活动物化")
+        patched = client.patch(f"/api/knowledge/{item_id}", json={"status": "active"})
+        assert patched.status_code == 200
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before_reviews = client.get("/api/reviews?status=pending").json()
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(instance, item_id, "活动新正文"),
+                    filename="active.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        result = outcome.report.items[0]
+        assert result.status.value == "error"
+        assert result.errors == ["SOURCE_IDENTITY_CONFLICT"]
+        assert _counts() == before_counts
+        assert _archive_state(client) == before_archive
+        assert client.get("/api/reviews?status=pending").json() == before_reviews
+
+    def test_approve_rejects_when_target_materialized_after_review(
+        self, client: TestClient
+    ):
+        created = client.post(
+            "/api/knowledge", json={"title": "审批竞态", "content": "初版"}
+        ).json()
+        item_id = created["id"]
+        patched = client.patch(f"/api/knowledge/{item_id}", json={"status": "active"})
+        assert patched.status_code == 200
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content="---\ntitle: 审批竞态\n---\n审核后新正文",
+                    filename="pending.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        result = outcome.report.items[0]
+        assert result.status.value == "pending_review"
+        assert result.review_id is not None
+
+        # 审核待决期间导出该本地文档 → MATERIALIZE COMMITTED。
+        exported = client.get(f"/api/knowledge/{item_id}/markdown")
+        assert exported.status_code == 200
+        instance = client.app.state.source_instance_store.read()
+        record = _record(item_id)
+        assert record is not None
+        assert record.source_instance_id == instance
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+
+        approved = client.post(f"/api/reviews/{result.review_id}/approve", json={})
+        assert approved.status_code == 409
+        assert approved.json()["detail"] == "SOURCE_IDENTITY_CONFLICT"
+
+        record = _record(item_id)
+        assert record is not None
+        assert record.content == "初版"
+        assert record.status == "active"
+        assert record.source_instance_id == instance
+        assert _counts() == before_counts
+        assert _archive_state(client) == before_archive
+        pending = client.get("/api/reviews?status=pending").json()
+        assert any(review["id"] == str(result.review_id) for review in pending)
+
+    def test_incomplete_origin_plus_materialize_rejects_import(
+        self, client: TestClient
+    ):
+        """§22.2：不完整 ImportOrigin + MATERIALIZE 同样是冲突，导入不得追加。"""
+        item_id, instance = _materialized(client, "不完整来源")
+        session = get_session_factory()()
+        try:
+            session.add(
+                ImportOriginORM(
+                    id=str(uuid.uuid4()),
+                    item_id=item_id,
+                    source_payload_hash=PAYLOAD,
+                    source_content_hash=CONTENT,
+                    source_instance_id=None,
+                    source_document_id=item_id,
+                    source_canonicalization_version=1,
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+        before_counts = _counts()
+        before_archive = _archive_state(client)
+        before = _record(item_id)
+        assert before is not None
+
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content=_identity_doc(instance, item_id, "补全身份"),
+                    filename="incomplete.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        result = outcome.report.items[0]
+        assert result.status.value == "error"
+        assert result.errors == ["SOURCE_IDENTITY_CONFLICT"]
+        assert _counts() == before_counts == (1, 1, 0)
+        assert _archive_state(client) == before_archive
+        record = _record(item_id)
+        assert record is not None
+        assert record.content == before.content
+        assert record.source_instance_id == instance

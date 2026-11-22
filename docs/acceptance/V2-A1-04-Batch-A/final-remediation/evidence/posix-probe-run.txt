@@ -1,0 +1,14 @@
+command: wsl.exe -e bash -lc 'cd /mnt/d/ExplainLab/docs/acceptance/V2-A1-04-Batch-A/final-remediation/evidence && PYTHONPATH=/mnt/d/ExplainLab/backend python3 posix_probe.py'
+start: 2026-11-22T11:31:21+08:00
+{"check": "id_create_mode_0600", "status": "PASS", "detail": {"mode": "0o600", "id": "caf1a831-516b-4d49-8586-13d3ec138b96"}}
+{"check": "id_ensure_idempotent", "status": "PASS", "detail": {}}
+{"check": "id_concurrent_ensure", "status": "PASS", "detail": {"ids": ["7bf2dbb6-b58c-408c-b951-92277f922182"], "file": ["7bf2dbb6-b58c-408c-b951-92277f922182"]}}
+{"check": "id_fallback_exclusive_create", "status": "PASS", "detail": {"mode": "0o600"}}
+{"check": "posix_dir_fsync_called", "status": "PASS", "detail": {"count": 1}}
+{"check": "id_replace_atomic", "status": "PASS", "detail": {"old": "b367257d-f4ab-4c99-b14a-1cfece620add", "new": "f0e8400a-e29b-41d4-a716-446655440099"}}
+{"check": "write_all_eintr_retry", "status": "PASS", "detail": {"calls": 2}}
+{"check": "process_lock_cross_process_contention", "status": "PASS", "detail": {"returncode": 2, "stdout": "BACKEND_ALREADY_RUNNING"}}
+{"check": "process_lock_release_allows_child", "status": "PASS", "detail": {"returncode": 0, "mode": "0o600"}}
+{"check": "journal_store_full_import", "status": "UNVERIFIED", "detail": {"reason": "WSL Ubuntu 26.04 has Python 3.14 without pip/SQLAlchemy; full backend test suite not runnable in this POSIX environment"}}
+end: 2026-11-22T11:31:26+08:00
+exit_code: 0

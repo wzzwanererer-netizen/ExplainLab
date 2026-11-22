@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+from contextlib import nullcontext as _null_context
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.routes.links import sync_links_or_conflict
@@ -27,7 +30,7 @@ from app.api.schemas import (
     SourceRefOut,
     VersionOut,
 )
-from app.db.session import get_session
+from app.db.session import create_session, get_session
 from app.dependencies import get_embedder, get_model_adapter
 from app.services.governance import (
     SQLAlchemyRelationRepository,
@@ -37,9 +40,18 @@ from app.services.governance import (
     build_provenance_service,
     build_review_service,
 )
+from app.services.import_coordinator import ImportCoordinator
+from app.services.import_review_hook import (
+    ImportReviewHook,
+    envelope_from_review,
+    review_is_import,
+)
+from app.services.journal_canonical import sha256_canonical
 from app.services.knowledge import SQLAlchemyKnowledgeRepository
 from app.services.links import demote_backlinks_on_delete
+from app.services.markdown import IMPORT_ENVELOPE_INVALID, MarkdownServiceError
 from app.services.retrieval import sync_index
+from app.services.source_identity import SourceIdentityError
 from knowledge_core.domain.entities import (
     KnowledgeItem,
     KnowledgeRelation,
@@ -349,43 +361,166 @@ def _sync_links_after_content_change(
             sync_links_or_conflict(session, item)
 
 
+def _import_http_error(exc: Exception) -> HTTPException:
+    code = getattr(exc, "code", IMPORT_ENVELOPE_INVALID)
+    status = getattr(exc, "status_code", 409)
+    return HTTPException(status_code=status, detail=code)
+
+
+def _review_lock_key(envelope, item_id: UUID) -> str:
+    if envelope is not None and envelope.source_instance_id and envelope.source_document_id:
+        return "identity:" + sha256_canonical(
+            {
+                "source_instance_id": envelope.source_instance_id,
+                "source_document_id": envelope.source_document_id,
+            }
+        )
+    return f"target-item:{item_id}"
+
+
+def _payload_digest(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _preflight_review(review_id: UUID) -> tuple[dict, bytes | None, str | None]:
+    """S0 只读预检：读取 pending 与 envelope 摘要，立即关闭会话。"""
+    session = create_session()
+    try:
+        review = _pending_review(session, review_id)
+        if not review_is_import(review):
+            return review.payload, None, None
+        envelope = envelope_from_review(review)
+        if envelope is None:
+            raise MarkdownServiceError(
+                IMPORT_ENVELOPE_INVALID, "导入 envelope 缺失", status_code=409
+            )
+        if review.action != ReviewAction.UPDATE_ITEM:
+            raise MarkdownServiceError(
+                IMPORT_ENVELOPE_INVALID, "导入 envelope 仅允许 UPDATE_ITEM", status_code=409
+            )
+        return review.payload, _payload_digest(review.payload).encode("utf-8"), _review_lock_key(
+            envelope, review.item_id
+        )
+    finally:
+        session.close()
+
+
 @router.post("/reviews/{review_id}/approve", response_model=ReviewOut)
-async def approve_review(
+def approve_review(
     review_id: UUID,
-    session: Annotated[Session, Depends(get_session)],
+    request: Request,
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
     payload: ReviewResolve | None = None,
 ) -> ReviewOut:
-    pending = _pending_review(session, review_id)
-    service = build_review_service(session)
-    # K1：DELETE 预降级。approve 内部先 update_review 再 _apply_action（删除会
-    # CASCADE 审核单自身），入链降级须在 delete flush 前、同事务完成。
-    _demote_backlinks_before_delete(session, pending.item_id, pending.action)
+    """审核批准（同步写入口，D20）。
+
+    导入分支：与 submit 共用同一身份键锁；S0 预检 → 获锁 → S1 fresh session
+    重读并校验 envelope 未变 → Core approve → 导入钩子补齐 → 单次 commit。
+    非导入分支保持既有 K1 行为，不额外解析正文。
+    """
     try:
-        review = await service.approve(review_id, payload.note if payload else None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    # K1：UPDATE/RESTORE 应用后同步出链（commit 前，同事务；409 整事务零写入）。
-    _sync_links_after_content_change(session, review.item_id, review.action)
-    session.commit()
-    await _sync_applied_action(
-        session, embedder, review.item_id, review.action, review.payload
-    )
-    session.commit()
-    return ReviewOut.model_validate(review)
+        _s0_payload, s0_digest, lock_key = _preflight_review(review_id)
+    except (MarkdownServiceError, SourceIdentityError) as exc:
+        raise _import_http_error(exc) from exc
+
+    coordinator: ImportCoordinator = request.app.state.import_coordinator
+    identity = getattr(request.app.state, "source_identity", None)
+    if identity is None:
+        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+    context = coordinator.keyed(lock_key) if lock_key else _null_context()
+    # P1-02：审核批准的身份写入与 MATERIALIZE/ROTATE 串行；钩子在写前校验
+    # 目标条目未被物化，冲突时整事务回滚、审核单保持 PENDING。
+    with context, identity.identity_guard():
+        session = create_session()
+        try:
+            pending = _pending_review(session, review_id)
+            is_import = review_is_import(pending)
+            envelope = None
+            if is_import:
+                envelope = envelope_from_review(pending)
+                if envelope is None or pending.action != ReviewAction.UPDATE_ITEM:
+                    raise MarkdownServiceError(
+                        IMPORT_ENVELOPE_INVALID,
+                        "导入 envelope 非法",
+                        status_code=409,
+                    )
+            if s0_digest is not None and (
+                not is_import
+                or s0_digest != _payload_digest(pending.payload).encode("utf-8")
+            ):
+                raise MarkdownServiceError(
+                    IMPORT_ENVELOPE_INVALID,
+                    "审核 envelope 在获锁前被改动",
+                    status_code=409,
+                )
+            service = build_review_service(session)
+            _demote_backlinks_before_delete(session, pending.item_id, pending.action)
+            try:
+                review = asyncio.run(
+                    service.approve(review_id, payload.note if payload else None)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if is_import:
+                assert envelope is not None
+                # 导入分支不再额外普通正文 sync（避免双重解析覆盖绑定恢复）。
+                ImportReviewHook(session, identity).apply_approved(review, envelope)
+            else:
+                _sync_links_after_content_change(session, review.item_id, review.action)
+            session.commit()
+            asyncio.run(
+                _sync_applied_action(
+                    session, embedder, review.item_id, review.action, review.payload
+                )
+            )
+            session.commit()
+            return ReviewOut.model_validate(review)
+        except (MarkdownServiceError, SourceIdentityError) as exc:
+            session.rollback()
+            raise _import_http_error(exc) from exc
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 @router.post("/reviews/{review_id}/reject", response_model=ReviewOut)
-async def reject_review(
+def reject_review(
     review_id: UUID,
-    session: Annotated[Session, Depends(get_session)],
+    request: Request,
     payload: ReviewResolve | None = None,
 ) -> ReviewOut:
-    _pending_review(session, review_id)
-    service = build_review_service(session)
+    """审核拒绝（同步写入口）；导入分支不写任何 item/tags/links/origin。"""
     try:
-        review = await service.reject(review_id, payload.note if payload else None)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    session.commit()
-    return ReviewOut.model_validate(review)
+        _s0_payload, _digest, lock_key = _preflight_review(review_id)
+    except (MarkdownServiceError, SourceIdentityError) as exc:
+        raise _import_http_error(exc) from exc
+    coordinator: ImportCoordinator = request.app.state.import_coordinator
+    identity = getattr(request.app.state, "source_identity", None)
+    if identity is None:
+        raise HTTPException(status_code=503, detail="identity_service_unavailable")
+    context = coordinator.keyed(lock_key) if lock_key else _null_context()
+    with context:
+        session = create_session()
+        try:
+            _pending_review(session, review_id)
+            service = build_review_service(session)
+            try:
+                review = asyncio.run(
+                    service.reject(review_id, payload.note if payload else None)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if review_is_import(review):
+                ImportReviewHook(session, identity).apply_rejected(review)
+            session.commit()
+            return ReviewOut.model_validate(review)
+        except (MarkdownServiceError, SourceIdentityError) as exc:
+            session.rollback()
+            raise _import_http_error(exc) from exc
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()

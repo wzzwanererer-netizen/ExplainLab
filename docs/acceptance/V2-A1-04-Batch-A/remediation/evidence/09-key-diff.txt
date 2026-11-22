@@ -1,0 +1,117 @@
+# A1-04 Batch A 整改关键 diff（源码当前状态）
+
+说明：Batch A 整体尚未提交，`source_identity.py` / `source_instance_id.py` 在 git 中仍是 untracked，
+无法用 `git diff HEAD` 展示。以下为本次整改相对 Batch A 交付版本的 before/after 关键片段；
+行号以当前工作树为准。
+
+## P1：MATERIALIZE 与 ImportOrigin 并存冲突
+
+文件：`backend/app/services/source_identity.py`
+
+### before（缺陷）
+
+```python
+origin_state = snapshot["import_origin_state"]
+if snapshot["import_origin_count"] > 0:
+    if origin_state == "complete":
+        return ClassifiedIdentity(
+            str(item.id), "1",
+            snapshot["source_instance_id"],
+            snapshot["source_document_id"],
+            snapshot,
+        )
+    return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+```
+
+问题：只要 ImportOrigin 自身 complete 就返回状态 1，未检查同一 item 是否已有
+COMMITTED MATERIALIZE 记录。
+
+### after
+
+```python
+def _origin_materialize_conflict(
+    snapshot: dict[str, Any], records: list[dict[str, Any]]
+) -> bool:
+    """§22.2：ImportOrigin 与任意 COMMITTED MATERIALIZE 记录并存即冲突。"""
+    return snapshot["import_origin_count"] > 0 and bool(records)
+
+# classify(...)
+origin_state = snapshot["import_origin_state"]
+if self._origin_materialize_conflict(snapshot, records):
+    # 即使 ImportOrigin 自身为 complete，也不得任选一条作为可信来源。
+    return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+if snapshot["import_origin_count"] > 0:
+    if origin_state == "complete":
+        return ClassifiedIdentity(str(item.id), "1", ...)
+    return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+```
+
+位置：`source_identity.py:565`（helper）、`:597`（调用）。
+
+结果：
+
+- 单条/多条完整 ImportOrigin + MATERIALIZE → 状态 3；
+- 残缺/重复/多合法身份对 + MATERIALIZE → 状态 3；
+- 同实例/异实例 ID + MATERIALIZE → 状态 3；
+- 无 MATERIALIZE 的正常导入仍为状态 1；
+- 无 ImportOrigin 的正常本地物化仍为状态 2b；
+- 状态 3 时 `source_instance_id=None`，导出不写来源头，materialize/ensure 拒绝，DB/Journal 零写。
+
+## P2：文件短写
+
+### 新增统一封装
+
+文件：`backend/app/services/file_write.py`
+
+```python
+def write_all(fd: int, payload: bytes | bytearray | memoryview) -> None:
+    view = memoryview(payload)
+    total = len(view)
+    offset = 0
+    while offset < total:
+        try:
+            written = os.write(fd, view[offset:])
+        except InterruptedError:
+            continue
+        if written <= 0:
+            raise OSError(errno.EIO, "write_all: os.write returned 0")
+        offset += written
+```
+
+### 接入点
+
+文件：`backend/app/services/source_identity.py`
+
+- `JournalStore._atomic_write`：`os.write(fd, payload)` → `write_all(fd, payload)`（`:434`）。
+- `JournalStore.archive_committed`：`os.write(fd, payload)` → `write_all(fd, payload)`（`:475`）。
+
+文件：`backend/app/services/source_instance_id.py`
+
+- `ensure` 临时文件：`write_all(fd, payload)`（`:121`）。
+- `ensure` 无硬链接 fallback 正式文件：`write_all(target, payload)`，失败时删除半成品（`:135`）。
+- `replace` 临时文件：`write_all(fd, (new_id + "\n").encode("ascii"))`（`:162`）。
+
+### fallback 清理
+
+```python
+try:
+    try:
+        write_all(target, payload)
+        os.fsync(target)
+    finally:
+        os.close(target)
+except BaseException:
+    # 不支持硬链接时只能直接写目标；失败必须移除半成品。
+    with suppress(OSError):
+        os.unlink(self.path)
+    raise
+```
+
+保证：短写/0/异常时不会把截断文件发布为正式 ID；原 ID 不被覆盖。
+
+## 保持不变的契约
+
+- Journal v1 字段、排序、Canonical JSON v1、三个摘要、checksum 未变。
+- 文件打开模式 `0o600`、fsync、临时文件、`os.replace`/`os.link` 原子发布顺序未变。
+- `source-instance-id` 格式、校验、ROTATE 语义未变。
+- 无新迁移/表/列/索引/依赖；未改 A1-02/A1-03/V1 契约。

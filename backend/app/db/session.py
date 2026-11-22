@@ -73,6 +73,22 @@ def get_engine() -> Engine:
     return _engine
 
 
+def get_session_factory() -> sessionmaker[Session]:
+    """返回会话工厂（V2 导入/身份服务需要在线程内自建多个短会话）。"""
+    if _session_factory is None:
+        init_db()
+    assert _session_factory is not None
+    return _session_factory
+
+
+def create_session() -> Session:
+    """创建独立会话（V2 导入协调器在锁内自建 S1，不共享请求会话）。"""
+    if _session_factory is None:
+        init_db()
+    assert _session_factory is not None
+    return _session_factory()
+
+
 def get_session() -> Generator[Session, None, None]:
     """FastAPI 依赖：每个请求一个会话。"""
     if _session_factory is None:
