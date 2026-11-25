@@ -1,6 +1,7 @@
 import type {
   AnalyzeResponse,
   AnswerFeedback,
+  ChatCitation,
   Conversation,
   ConversationDetail,
   DuplicateCandidate,
@@ -18,6 +19,9 @@ import type {
   KnowledgeRelation,
   KnowledgeUpdateInput,
   KnowledgeVersion,
+  LinkItem,
+  MarkdownImportInput,
+  MarkdownImportReport,
   Message,
   MutationResult,
   RelationCreateInput,
@@ -31,7 +35,11 @@ import type {
   SourceAttachInput,
   SourceRef,
   Space,
+  AttachmentItem,
+  AttachmentUploadInput,
 } from "./types";
+
+import { handleDemoRequest, IS_STATIC_DEMO } from "./demoRuntime";
 
 /** 统一 API 客户端：所有后端请求都经过这里，前端不持有任何密钥。 */
 
@@ -46,10 +54,12 @@ export class ApiError extends Error {
 }
 
 async function send(path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  const response = IS_STATIC_DEMO
+    ? await handleDemoRequest(path, init)
+    : await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...init,
+      });
   if (!response.ok) {
     // 如实透传后端错误详情（如 503 模型未配置的具体指引）
     let detail = "";
@@ -128,6 +138,94 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
+  chatStream: async (
+    id: string,
+    content: string,
+    handlers: {
+      onCitations?: (citations: ChatCitation[]) => void;
+      onDelta?: (chunk: string) => void;
+      onDone?: (message: Message) => void;
+    },
+  ): Promise<Message> => {
+    if (IS_STATIC_DEMO) {
+      const msg = await api.chat(id, content);
+      handlers.onDone?.(msg);
+      return msg;
+    }
+    const response = await fetch(`/api/conversations/${id}/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+
+    // 若遇到 404（如旧版接口或单测仅 stub 了 /chat），优雅回退到非流式 /chat
+    if (response.status === 404) {
+      const msg = await api.chat(id, content);
+      handlers.onDone?.(msg);
+      return msg;
+    }
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const body = (await response.json()) as { detail?: unknown };
+        if (typeof body.detail === "string") detail = body.detail;
+      } catch {
+        // ignore
+      }
+      throw new ApiError(
+        response.status,
+        detail || `请求失败（HTTP ${response.status}）：/api/conversations/${id}/chat/stream`,
+      );
+    }
+
+    if (!response.body) {
+      const msg = await api.chat(id, content);
+      handlers.onDone?.(msg);
+      return msg;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let finalMessage: Message | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const rawEvent of parts) {
+        for (const line of rawEvent.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const jsonText = trimmed.slice(5).trim();
+          if (!jsonText) continue;
+          const evt = JSON.parse(jsonText) as
+            | { type: "citations"; citations: ChatCitation[] }
+            | { type: "delta"; content: string }
+            | { type: "done"; message: Message }
+            | { type: "error"; detail: string };
+          if (evt.type === "citations") {
+            handlers.onCitations?.(evt.citations);
+          } else if (evt.type === "delta") {
+            handlers.onDelta?.(evt.content);
+          } else if (evt.type === "done") {
+            finalMessage = evt.message;
+            handlers.onDone?.(evt.message);
+          } else if (evt.type === "error") {
+            throw new ApiError(502, evt.detail);
+          }
+        }
+      }
+    }
+
+    if (!finalMessage) {
+      throw new ApiError(502, "流式响应意外中断，未收到完成信号。");
+    }
+    return finalMessage;
+  },
   extractKnowledge: (id: string, spaceId?: string | null) =>
     request<ExtractResponse>(`/api/conversations/${id}/extract`, {
       method: "POST",
@@ -263,4 +361,38 @@ export const api = {
     }),
   deleteExperiment: (id: string) =>
     request<void>(`/api/experiments/sessions/${id}`, { method: "DELETE" }),
+
+  // V2 附件（JSON Base64 上传 / 列表 / 流式下载 URL / 删除）
+  listAttachments: (itemId: string) =>
+    request<AttachmentItem[]>(`/api/knowledge/${itemId}/attachments`),
+  uploadAttachment: (itemId: string, input: AttachmentUploadInput) =>
+    request<AttachmentItem>(`/api/knowledge/${itemId}/attachments`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  downloadAttachmentUrl: (itemId: string, attachmentId: string) =>
+    `/api/knowledge/${itemId}/attachments/${attachmentId}`,
+  deleteAttachment: (itemId: string, attachmentId: string) =>
+    request<void>(`/api/knowledge/${itemId}/attachments/${attachmentId}`, {
+      method: "DELETE",
+    }),
+
+  // V2 双链只读查询
+  listLinks: (itemId: string) => request<LinkItem[]>(`/api/knowledge/${itemId}/links`),
+  listBacklinks: (itemId: string) => request<LinkItem[]>(`/api/knowledge/${itemId}/backlinks`),
+
+  // V2 Markdown / ZIP 导入导出
+  importMarkdown: (input: MarkdownImportInput) =>
+    request<MarkdownImportReport>("/api/knowledge/import", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  exportMarkdownZip: async (spaceId?: string | null): Promise<Blob> => {
+    const response = await send("/api/knowledge/export", {
+      method: "POST",
+      body: JSON.stringify({ ids: [], space_id: spaceId ?? null, include_attachments: false }),
+    });
+    return await response.blob();
+  },
+  exportSingleMarkdownUrl: (itemId: string) => `/api/knowledge/${itemId}/markdown`,
 };

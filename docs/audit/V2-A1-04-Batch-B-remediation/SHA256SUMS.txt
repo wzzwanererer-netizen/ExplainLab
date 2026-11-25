@@ -1,0 +1,39 @@
+# ExplainLab Batch B design remediation
+# HEAD: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+# Current files (SHA-256, relative to repo root)
+1d92d42ffa4acb03be7820f86e19388facf4a0158b7cf3f50670b77dc16836ff  docs/audit/V2-A1-04-Batch-B-remediation/cross-document-audit.md
+a295a0284ac4ee067f473c7ac16a8845afe8b36c40fabdbaa3cfd952867e276b  docs/audit/V2-A1-04-Batch-B-remediation/README.md
+345251202d8e9a63bfeda5056912ce6c3178818bf74e186aeec1527d5189f564  docs/audit/V2-A1-04-Batch-B-remediation/remaining-risks.md
+c018426a8c4d4c59f933b63e00517f59707c33526623b713bf3b21dc2551f688  docs/audit/V2-A1-04-Batch-B-remediation/remediation-report.md
+889ae7ccc87786085eb0908b89804fd6f2b12c5c1324fe2caabe8f38884912b7  docs/audit/V2-A1-04-Batch-B-remediation/updated-acceptance-mapping.md
+28682029e402a3a5cd2420aa5915a10f5188d38dd0ac17ce3ea388c2c8062169  docs/plans/V2-A1-04-Batch-B/acceptance-plan.md
+1c26df1b45e3e12b3253107732b57767dc7cca376392cb0248316ccd90e49d97  docs/plans/V2-A1-04-Batch-B/active-review-integration.md
+68806218d1e95e50fc9de13a2e60c00e96f8e6bda7ab5c8e09ad0eb8c1e741a5  docs/plans/V2-A1-04-Batch-B/api-contracts.md
+f6fed7fc2e87f72da366c1eb1622fb4de64bc28f6c8e099a09fa3f97bc50c1c9  docs/plans/V2-A1-04-Batch-B/architecture.md
+9dfe727645179e7f12fe57f56e61d0e3be54867aadf9287d034baef66cb9db95  docs/plans/V2-A1-04-Batch-B/attachment-lifecycle.md
+ee4617f69de17d6a4906dfb38d879fd9cd0983b15ccb94749be766ad22018164  docs/plans/V2-A1-04-Batch-B/gc-and-orphan-recovery.md
+87975aca6f290496719b4f11c1fef232ca6745f0f2937e20a456da1fd538b776  docs/plans/V2-A1-04-Batch-B/implementation-roadmap.md
+097d3d7d80a3941cf9d6c0ea7d02c27b3ff5eb18111e3d37850c15d4d0baa1d5  docs/plans/V2-A1-04-Batch-B/README.md
+5a9ec280f1e933c5749e27d70e4eb24ee0f26caff3969a468d7acf7dce1b6476  docs/plans/V2-A1-04-Batch-B/risk-register.md
+0c78513702af7a637418cef00fabb26b9ad34c93aacf368782a0cc6e62afd5ef  docs/plans/V2-A1-04-Batch-B/storage-and-lock-contract.md
+
+# Baseline files (pre-edit SHA-256; final-review reports verified unchanged)
+# 381b0967ff908369c4601cca4f8600ec8d26b6c56e189cb9dec613892e5192bb  docs/audit/V2-A1-04-Batch-B-final-review/acceptance-gaps.md
+# 79990b99a3bb790b2f6274243821c798c5701ec5a40c599da7af11556e8b52a5  docs/audit/V2-A1-04-Batch-B-final-review/architecture-findings.md
+# b608e37d640cccb3422f0a6905323bea09950614e9b7eec29fa19d7b28891e96  docs/audit/V2-A1-04-Batch-B-final-review/freeze-recommendation.md
+# 3310e60cc1879ec0fd6a385f3a04bcc386792821817c714e01383e9bf7a55011  docs/audit/V2-A1-04-Batch-B-final-review/implementation-readiness.md
+# 7872f83db4118f6d9f8ac77a31d5cbff9a9f59fa0a4b3b2ef39093a52d44b85a  docs/audit/V2-A1-04-Batch-B-final-review/README.md
+# 6a14634847ca94ac496929457472a533058d6a63b9676e8bcce3bae23e1b6478  docs/plans/V2-A1-04-Batch-B/acceptance-plan.md
+# 0642d4558008ac2ab8733fcf5a281f8d82868690f511fa49a4bc05be0dca7cac  docs/plans/V2-A1-04-Batch-B/active-review-integration.md
+# bc572f5ffb9108928b9fb02ca05be82b164de320d46451ec60c4f6c6b9c26dfc  docs/plans/V2-A1-04-Batch-B/api-contracts.md
+# e0c071333512bb1fd9e3af9f4f47d049b75f7e068fefa73b09da71866f95e3c4  docs/plans/V2-A1-04-Batch-B/architecture.md
+# d45f1b55d5442a9dc64fce9ad2f6d3e2448368d6e3a0bba1af18ad8112d66667  docs/plans/V2-A1-04-Batch-B/attachment-lifecycle.md
+# 71038257cca719b96cb52e75a2a92142d9b151c0666e7e3bce515e5c12a023c0  docs/plans/V2-A1-04-Batch-B/gc-and-orphan-recovery.md
+# 20e366cf14b7cb9c1b3cedf4bc3788d12e77bcc812a81cddb85ccbe4f4027e62  docs/plans/V2-A1-04-Batch-B/implementation-roadmap.md
+# ab1525a5ddae8fd6cf90358ab1fdcf7fbd97ebda839a4a5b8071c7e31b4d4582  docs/plans/V2-A1-04-Batch-B/README.md
+# ee0c498538094a90434c5feb12ffedf29f81c128dfd830d4cbf0870f4c174211  docs/plans/V2-A1-04-Batch-B/risk-register.md
+# b98e137951068c3107e1a2480d81edc16a159e89667de7025a87c2aa0fba1fc2  docs/plans/V2-A1-04-Batch-B/storage-and-lock-contract.md
+
+# Scope: 10 pre-existing candidate files updated, 5 new reports plus this manifest.
+# Git: no tracked/staged diff, HEAD unchanged, prior unrelated status entries unchanged.
+# Acceptance: 53 unique IDs, same sequence as baseline. Runtime tests not executed.

@@ -35,6 +35,14 @@ export interface Message {
   created_at: string;
 }
 
+export interface ChatCitation {
+  item_id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  status: KnowledgeStatus;
+}
+
 export interface Conversation {
   id: string;
   space_id: string | null;
@@ -335,4 +343,54 @@ export interface ExperimentCompleteResult {
 export interface ExperimentListOptions {
   kind?: ExperimentKind;
   spaceId?: string | null;
+}
+
+/** 以下与后端 V2 附件 / 双链 / Markdown 导入导出 DTO 对应。 */
+
+export interface AttachmentItem {
+  id: string;
+  item_id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  storage_key: string;
+  content_hash: string;
+  created_at: string;
+}
+
+export interface AttachmentUploadInput {
+  filename: string;
+  mime: string;
+  content_base64: string;
+}
+
+export interface LinkItem {
+  id: string;
+  source_id: string;
+  target_id: string | null;
+  target_title: string;
+  alias: string | null;
+  resolution: string;
+  cross_space: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarkdownImportInput {
+  content?: string | null;
+  filename?: string | null;
+  target_item_id?: string | null;
+  space_id?: string | null;
+  archive_base64?: string | null;
+}
+
+export interface MarkdownImportReport {
+  items: {
+    status: string;
+    item_id?: string | null;
+    review_id?: string | null;
+    warnings?: string[];
+    errors?: string[];
+  }[];
+  index_sync?: string;
 }

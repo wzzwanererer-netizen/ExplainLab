@@ -11,18 +11,44 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import KnowledgeSpace
+from app.db.storage_lock import (
+    STORAGE_LOCK_UNAVAILABLE,
+    LockGuard,
+    PostgresStorageKeyLock,
+    SQLiteStorageKeyLock,
+    StorageLockError,
+    StorageLockTransient,
+    new_owner,
+)
+from app.models import KnowledgeSpace, ReviewRequestORM
+from app.services.attachment_promotion import publish_staged
+from app.services.attachment_staging import (
+    ATTACHMENT_MANIFEST_CORRUPTED,
+    ATTACHMENT_STAGING_INVALID,
+    AttachmentManifestItem,
+    AttachmentStagingError,
+    AttachmentStagingService,
+    ParsedImportZip,
+    StagedAttachmentSet,
+    StagingLease,
+    coerce_manifest_items,
+    logical_manifest_set,
+)
+from app.services.attachment_storage import AttachmentStorageError
+from app.services.attachments import release_storage_guard
 from app.services.governance import SQLAlchemyReviewRepository, build_review_service
 from app.services.import_coordinator import (
     IMPORT_LOCK_TIMEOUT,
@@ -36,6 +62,7 @@ from app.services.markdown_item_repository import (
     MarkdownItemRepository,
 )
 from app.services.repositories_v2 import (
+    SQLAlchemyAttachmentRepository,
     SQLAlchemyImportOriginRepository,
     SQLAlchemyTagChangeLogRepository,
     SQLAlchemyTagRepository,
@@ -87,6 +114,7 @@ from knowledge_core.markdown.service import (
 __all__ = [
     "ATTACHMENT_EXPORT_UNSUPPORTED",
     "ATTACHMENT_IMPORT_UNSUPPORTED",
+    "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED",
     "ATTACHMENT_REVIEW_UNSUPPORTED",
     "IMPORT_ENVELOPE_INVALID",
     "IMPORT_FAILED",
@@ -100,6 +128,7 @@ __all__ = [
 ]
 
 ATTACHMENT_IMPORT_UNSUPPORTED = "ATTACHMENT_IMPORT_UNSUPPORTED"
+ATTACHMENT_ONLY_IMPORT_UNSUPPORTED = "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED"
 ATTACHMENT_EXPORT_UNSUPPORTED = "ATTACHMENT_EXPORT_UNSUPPORTED"
 ATTACHMENT_REVIEW_UNSUPPORTED = "ATTACHMENT_REVIEW_UNSUPPORTED"
 SOURCE_CHANGED_DURING_WAIT = "SOURCE_CHANGED_DURING_WAIT"
@@ -129,6 +158,10 @@ class MarkdownImportDocument:
     target_item_id: UUID | None = None
     frontmatter_resolution: str | None = None
     attachments_requested: bool = False
+    # Server-side ZIP attachment source (never a client path/filename).  The
+    # route parses/validates the archive; this object is passed through preflight
+    # and only materialised into staging after every Active/pending check passes.
+    attachment_source: ParsedImportZip | None = None
 
 
 @dataclass
@@ -164,6 +197,28 @@ class PreparedDocument:
     conflict: bool = False
     warnings: list[str] = field(default_factory=list)
     unsupported: list[str] = field(default_factory=list)
+    attachment_source: ParsedImportZip | None = None
+    attachment_manifest: tuple[AttachmentManifestItem, ...] = ()
+    staging_id: UUID | None = None
+    staging_directory: Path | None = None
+
+
+@dataclass(frozen=True)
+class _PendingInfo:
+    review_id: UUID
+    item_id: UUID
+    payload_hash: str
+    attachments: tuple[AttachmentManifestItem, ...]
+
+    @property
+    def logical_set(self) -> tuple[tuple[str, str, str, int], ...]:
+        return logical_manifest_set(self.attachments)
+
+    @property
+    def staging_id(self) -> str | None:
+        if not self.attachments:
+            return None
+        return self.attachments[0].staging_id
 
 
 @dataclass
@@ -172,8 +227,8 @@ class _State:
     item_ids: tuple[str, ...]
     anonymous_ids: tuple[str, ...]
     applied_hashes: frozenset[str]
-    pending_same: tuple[UUID, UUID] | None
-    pending_other: str | None
+    pending_same: _PendingInfo | None
+    pending_other: _PendingInfo | None
 
 
 def _is_uuid_text(value: str | None) -> bool:
@@ -217,12 +272,14 @@ class MarkdownService:
         instance_store: SourceInstanceIdStore,
         *,
         codec: StdlibMarkdownCodec | None = None,
+        storage_lock: SQLiteStorageKeyLock | PostgresStorageKeyLock | None = None,
     ) -> None:
         self._factory = session_factory
         self._coordinator = coordinator
         self._identity = identity
         self._instance_store = instance_store
         self._codec = codec or StdlibMarkdownCodec()
+        self._storage_lock = storage_lock
 
     @property
     def exporter_instance_id(self) -> str:
@@ -233,6 +290,19 @@ class MarkdownService:
     def session_factory(self) -> sessionmaker[Session]:
         return self._factory
 
+    def attachment_only_error_code(self, target_item_id: UUID | None) -> str:
+        """Classify a zero-document attachment ZIP without creating staging."""
+        if target_item_id is None:
+            return ATTACHMENT_IMPORT_UNSUPPORTED
+        session = self._factory()
+        try:
+            record = MarkdownItemRepository(session).get(target_item_id)
+        finally:
+            session.close()
+        if record is not None and record.status == KnowledgeStatus.ACTIVE:
+            return ATTACHMENT_ONLY_IMPORT_UNSUPPORTED
+        return ATTACHMENT_IMPORT_UNSUPPORTED
+
     # ------------------------------------------------------------------ 导入
     def import_documents(
         self,
@@ -242,11 +312,20 @@ class MarkdownService:
         manifest: dict[str, Any] | None = None,
         batch_id: str | None = None,
         reject_attachments: bool = False,
+        attachment_staging: AttachmentStagingService | None = None,
     ) -> ImportOutcome:
         if not documents:
             raise MarkdownServiceError("IMPORT_EMPTY", "no documents")
         # D23 恢复门：恢复完成前禁止分类/身份写入/新操作（含导入）。
         self._identity.recover_if_needed()
+        if (
+            any(doc.attachment_source is not None for doc in documents)
+            and attachment_staging is None
+        ):
+            raise MarkdownServiceError(
+                ATTACHMENT_IMPORT_UNSUPPORTED,
+                "attachment staging service unavailable",
+            )
         prepared = self._preflight(documents, manifest)
         if reject_attachments:
             for item in prepared:
@@ -292,8 +371,16 @@ class MarkdownService:
                     item,
                     default_space_id=space_id,
                     batch_id=batch_id,
+                    attachment_staging=attachment_staging,
                 )
+            except AttachmentStagingError:
+                raise
             except MarkdownServiceError as exc:
+                if item.attachment_source is not None:
+                    # Attachment ZIPs are a single-owner request; conflicts and
+                    # stable rejections must reach the HTTP boundary, not become
+                    # a per-item 200 report entry.
+                    raise
                 result = ImportItemResult(
                     filename=item.filename,
                     status=ImportItemStatus.ERROR,
@@ -302,12 +389,16 @@ class MarkdownService:
                     source_payload_hash=item.payload_hash,
                 )
             except SourceIdentityError as exc:
+                if item.attachment_source is not None:
+                    raise
                 result = ImportItemResult(
                     filename=item.filename,
                     status=ImportItemStatus.ERROR,
                     errors=[exc.code],
                 )
             except ImportLockTimeout:
+                if item.attachment_source is not None:
+                    raise
                 result = ImportItemResult(
                     filename=item.filename,
                     status=ImportItemStatus.ERROR,
@@ -316,6 +407,8 @@ class MarkdownService:
                     source_payload_hash=item.payload_hash,
                 )
             except Exception:  # noqa: BLE001 - 单篇隔离，不外泄异常文本
+                if item.attachment_source is not None:
+                    raise
                 result = ImportItemResult(
                     filename=item.filename,
                     status=ImportItemStatus.ERROR,
@@ -481,7 +574,13 @@ class MarkdownService:
         _drop_empty_metadata(hash_document)
         hashes = compute_document_hashes(hash_document)
         unsupported: list[str] = []
-        if document.attachments or incoming.attachments_requested:
+        attachment_source = incoming.attachment_source
+        # Frontmatter attachment references remain Batch A-unsupported.  A
+        # validated server-side ZIP attachment source is the only path that
+        # removes ATTACHMENT_IMPORT_UNSUPPORTED.
+        if document.attachments or (
+            incoming.attachments_requested and attachment_source is None
+        ) or attachment_source is not None and not attachment_source.attachments:
             unsupported.append(ATTACHMENT_IMPORT_UNSUPPORTED)
             warnings.append(ATTACHMENT_IMPORT_UNSUPPORTED)
         for warning in parsed.warnings:
@@ -500,6 +599,7 @@ class MarkdownService:
             conflict=conflict,
             warnings=warnings,
             unsupported=unsupported,
+            attachment_source=attachment_source,
         )
 
     # -- 单篇导入 -----------------------------------------------------------
@@ -545,21 +645,39 @@ class MarkdownService:
             # 幂等判定；不同 payload 仍走 duplicates，绝不静默覆盖。
             for record in repo.find_by_source_content_hash(item.content_hash):
                 anonymous_records[str(record.id)] = record
-        pending_same: tuple[UUID, UUID] | None = None
+        pending_same: _PendingInfo | None = None
         pending_other: str | None = None
-        pending_signature: list[tuple[str, str]] = []
+        pending_signature: list[tuple[str, str, tuple[Any, ...]]] = []
         for review in SQLAlchemyReviewRepository(session).list_reviews(_pending()):
             envelope = self._envelope_or_error(review.payload)
             if envelope is None:
                 continue
             if not self._envelope_matches(envelope, item, review.item_id, target):
                 continue
-            pending_signature.append((str(review.id), envelope.source_payload_hash))
+            attachments = self._envelope_manifest(envelope)
+            pending_signature.append(
+                (
+                    str(review.id),
+                    envelope.source_payload_hash,
+                    tuple(item.model_dump(mode="json") for item in attachments),
+                )
+            )
             if envelope.source_payload_hash == item.payload_hash:
                 if pending_same is None:
-                    pending_same = (review.id, review.item_id)
+                    pending_same = _PendingInfo(
+                        review_id=review.id,
+                        item_id=review.item_id,
+                        payload_hash=envelope.source_payload_hash,
+                        attachments=attachments,
+                    )
             else:
-                pending_other = envelope.source_payload_hash
+                if pending_other is None:
+                    pending_other = _PendingInfo(
+                        review_id=review.id,
+                        item_id=review.item_id,
+                        payload_hash=envelope.source_payload_hash,
+                        attachments=attachments,
+                    )
         signature = (
             tuple(
                 sorted(
@@ -608,6 +726,24 @@ class MarkdownService:
             ) from exc
 
     @staticmethod
+    def _envelope_manifest(envelope: ImportEnvelope) -> tuple[AttachmentManifestItem, ...]:
+        if not envelope.attachments:
+            return ()
+        try:
+            return coerce_manifest_items(envelope.attachments)
+        except AttachmentStagingError as exc:
+            code = (
+                ATTACHMENT_MANIFEST_CORRUPTED
+                if exc.code == "ATTACHMENT_MANIFEST_DUPLICATE"
+                else exc.code
+            )
+            raise MarkdownServiceError(
+                code,
+                "审核 envelope 附件 manifest 非法",
+                status_code=409 if code == ATTACHMENT_MANIFEST_CORRUPTED else exc.status_code,
+            ) from exc
+
+    @staticmethod
     def _envelope_matches(
         envelope: ImportEnvelope,
         item: PreparedDocument,
@@ -633,6 +769,7 @@ class MarkdownService:
         *,
         default_space_id: str | None,
         batch_id: str | None,
+        attachment_staging: AttachmentStagingService | None,
     ) -> tuple[ImportItemResult, bool]:
         target = item.target_item_id
         target = item.document.id if target is None and item.document.id else target
@@ -655,31 +792,28 @@ class MarkdownService:
                         "同一来源身份对应多个条目",
                         status_code=409,
                     )
+                attachment_context = None
+                if item.attachment_source is not None:
+                    attachment_context = self._attachment_context(
+                        session, item, target, s1, attachment_staging
+                    )
                 decision_same = item.payload_hash in s1.applied_hashes
                 if s0.signature != s1.signature:
                     if decision_same:
-                        matched = s1.item_ids or s1.anonymous_ids
                         return (
-                            ImportItemResult(
-                                filename=item.filename,
-                                item_id=UUID(matched[0]) if matched else None,
-                                status=ImportItemStatus.SKIPPED,
-                                source_payload_hash=item.payload_hash,
-                                source_content_hash=item.content_hash,
-                                warnings=item.warnings,
+                            self._skipped_result(
+                                session,
+                                item,
+                                s1,
+                                attachment_context,
+                                attachment_staging,
                             ),
                             False,
                         )
                     if s1.pending_same:
                         return (
-                            ImportItemResult(
-                                filename=item.filename,
-                                status=ImportItemStatus.REUSED_PENDING,
-                                review_id=s1.pending_same[0],
-                                item_id=s1.pending_same[1],
-                                source_payload_hash=item.payload_hash,
-                                source_content_hash=item.content_hash,
-                                warnings=item.warnings,
+                            self._reuse_pending(
+                                item, s1.pending_same, attachment_staging
                             ),
                             False,
                         )
@@ -689,55 +823,413 @@ class MarkdownService:
                         status_code=409,
                     )
                 if decision_same:
-                    matched = s1.item_ids or s1.anonymous_ids
-                    item_id = UUID(matched[0]) if matched else None
                     return (
-                        ImportItemResult(
-                            filename=item.filename,
-                            item_id=item_id,
-                            status=ImportItemStatus.SKIPPED,
-                            source_payload_hash=item.payload_hash,
-                            source_content_hash=item.content_hash,
-                            warnings=item.warnings,
-                            unsupported=item.unsupported,
+                        self._skipped_result(
+                            session,
+                            item,
+                            s1,
+                            attachment_context,
+                            attachment_staging,
                         ),
                         False,
                     )
                 if s1.pending_same:
                     return (
-                        ImportItemResult(
-                            filename=item.filename,
-                            status=ImportItemStatus.REUSED_PENDING,
-                            review_id=s1.pending_same[0],
-                            item_id=s1.pending_same[1],
-                            source_payload_hash=item.payload_hash,
-                            source_content_hash=item.content_hash,
-                            warnings=item.warnings,
-                            unsupported=item.unsupported,
-                        ),
+                        self._reuse_pending(item, s1.pending_same, attachment_staging),
                         False,
                     )
                 if s1.pending_other:
+                    if item.attachment_source is not None or s1.pending_other.attachments:
+                        raise AttachmentStagingError("SOURCE_HAS_PENDING_IMPORT")
                     raise MarkdownServiceError(
                         SOURCE_HAS_PENDING_IMPORT,
                         "同身份已有不同版本的待审导入",
                         status_code=409,
                     )
-                result, needs_index = self._apply_import(
-                    session,
-                    item,
-                    target=target,
-                    existing_ids=s1.item_ids,
-                    default_space_id=default_space_id,
-                    batch_id=batch_id,
-                )
-                session.commit()
-                return result, needs_index
-            except Exception:
-                session.rollback()
-                raise
+                if item.attachment_source is not None and (
+                    attachment_context is not None
+                    and attachment_context[0].status == KnowledgeStatus.ACTIVE
+                    and not attachment_context[1].has_content_change
+                ):
+                    raise MarkdownServiceError(
+                        ATTACHMENT_ONLY_IMPORT_UNSUPPORTED,
+                        "Active 无标题/正文变化时不允许仅附件导入",
+                        status_code=400,
+                    )
+                if item.attachment_source is not None:
+                    if attachment_staging is None:
+                        raise MarkdownServiceError(
+                            ATTACHMENT_IMPORT_UNSUPPORTED,
+                            "attachment staging unavailable",
+                        )
+                    stage_context = attachment_staging.stage_from_zip(
+                        item.attachment_source
+                    )
+                else:
+                    stage_context = contextlib.nullcontext(None)
+                # P1-01: the staging guard must span staging creation, the
+                # ReviewRequest flush and the business commit.  The lease
+                # removes its directory on a known-uncommitted failure and
+                # keeps it for ORP when the commit outcome is ambiguous.
+                with stage_context as lease:
+                    if lease is not None and (
+                        attachment_context is None
+                        or attachment_context[0].status == KnowledgeStatus.DRAFT
+                    ):
+                        expected = attachment_context[0] if attachment_context else None
+                        session.close()
+                        assert attachment_staging is not None
+                        return self._import_draft_attachments(
+                            item, target, s1, expected, attachment_staging, lease,
+                            default_space_id=default_space_id, batch_id=batch_id,
+                        )
+                    staged = lease.staged if lease is not None else None
+                    try:
+                        result, needs_index = self._apply_import(
+                            session,
+                            item,
+                            target=target,
+                            existing_ids=s1.item_ids,
+                            default_space_id=default_space_id,
+                            batch_id=batch_id,
+                            attachment_staging=attachment_staging,
+                            staged=staged,
+                        )
+                        if lease is not None:
+                            # Preserve before commit. Rollback can also fail after
+                            # a disconnect and must not remove a committed review's files.
+                            lease.keep_for_orp = True
+                        session.commit()
+                        if lease is not None:
+                            lease.committed = True
+                        return result, needs_index
+                    except Exception:
+                        session.rollback()
+                        raise
             finally:
                 session.close()
+
+    def _import_draft_attachments(
+        self,
+        item: PreparedDocument,
+        target: UUID | None,
+        state: _State,
+        expected: MarkdownItemRecord | None,
+        staging: AttachmentStagingService,
+        lease: StagingLease,
+        *,
+        default_space_id: str | None,
+        batch_id: str | None,
+    ) -> tuple[ImportItemResult, bool]:
+        assert lease.staged is not None
+        manifest = lease.staged.manifest
+        expected_id = expected.id if expected else None
+        with self.attachment_keys([entry.storage_key for entry in manifest]) as guard:
+            try:
+                published = publish_staged(staging, lease.staging_id, manifest, expected_id, guard)
+            except AttachmentStorageError as exc:
+                raise MarkdownServiceError(exc.code, status_code=503) from None
+            with self._factory() as session:
+                try:
+                    if expected_id is not None:
+                        MarkdownItemRepository(session).lock_for_import(expected_id)
+                    fresh = self._read_state(session, item, target)
+                    current = self._resolve_attachment_record(session, item, target, fresh)
+                    if fresh.signature != state.signature or current != expected:
+                        raise MarkdownServiceError(SOURCE_CHANGED_DURING_WAIT, status_code=409)
+                    result, needs_index = self._apply_import(
+                        session,
+                        item,
+                        target=target,
+                        existing_ids=fresh.item_ids,
+                        default_space_id=default_space_id,
+                        batch_id=batch_id,
+                    )
+                    if result.item_id is None or result.status not in (
+                        ImportItemStatus.CREATED, ImportItemStatus.UPDATED,
+                    ):
+                        raise MarkdownServiceError(ATTACHMENT_IMPORT_UNSUPPORTED)
+                    published.save_references(session, result.item_id)
+                    result.warnings.append("attachments_applied")
+                    guard.verify_all(session)
+                    lease.keep_for_orp = True
+                    session.commit()
+                    # The successful Draft has no pending staging reference.
+                    # The staging lease removes its own directory on exit.
+                    lease.keep_for_orp = False
+                except BaseException:
+                    session.rollback()
+                    raise
+            return result, needs_index
+
+    def _resolve_attachment_record(
+        self,
+        session: Session,
+        item: PreparedDocument,
+        target: UUID | None,
+        state: _State,
+    ) -> MarkdownItemRecord | None:
+        repo = MarkdownItemRepository(session)
+        if state.item_ids:
+            return repo.get(state.item_ids[0])
+        if target is not None:
+            record = repo.get(target)
+            if record is not None:
+                return record
+        if len(state.anonymous_ids) == 1:
+            return repo.get(state.anonymous_ids[0])
+        return None
+
+    def _attachment_context(
+        self,
+        session: Session,
+        item: PreparedDocument,
+        target: UUID | None,
+        state: _State,
+        staging: AttachmentStagingService | None,
+    ) -> tuple[MarkdownItemRecord, ChangeSet] | None:
+        if staging is None:
+            raise MarkdownServiceError(
+                ATTACHMENT_IMPORT_UNSUPPORTED, "attachment staging unavailable"
+            )
+        record = self._resolve_attachment_record(session, item, target, state)
+        if (
+            not state.item_ids
+            and (target is None or record is None)
+            and item.payload_hash not in state.applied_hashes
+            and self._content_duplicates(MarkdownItemRepository(session), item.content_hash)
+        ):
+            raise MarkdownServiceError(ATTACHMENT_IMPORT_UNSUPPORTED)
+        if record is None:
+            return None
+        if record.status == KnowledgeStatus.ARCHIVED:
+            raise MarkdownServiceError(
+                ATTACHMENT_IMPORT_UNSUPPORTED, "归档条目不允许附件导入"
+            )
+        changes, _ = self._record_changes(session, record, item)
+        return record, changes
+
+    def _record_changes(
+        self,
+        session: Session,
+        record: MarkdownItemRecord,
+        item: PreparedDocument,
+    ) -> tuple[ChangeSet, list[str]]:
+        old_tags = SQLAlchemyTagRepository(session).list_item_tags(record.id)
+        current_links = [
+            {
+                "target_title": link.target_title,
+                "alias": link.alias,
+                "target_id": str(link.target_id) if link.target_id else None,
+                "resolution": link.resolution.value,
+            }
+            for link in SQLAlchemyLinkRepository(session).list_links(record.id)
+        ]
+        changes = classify_changes(
+            current_title=record.title,
+            current_content=record.content,
+            current_status=record.status,
+            current_space_id=record.space_id,
+            current_tags=old_tags,
+            current_extra_metadata=record.extra_metadata,
+            current_links=current_links,
+            current_attachments=[],
+            incoming=item.document,
+        )
+        return changes, old_tags
+
+    def _attachments_satisfied(
+        self,
+        session: Session,
+        item_id: UUID,
+        item: PreparedDocument,
+        staging: AttachmentStagingService,
+    ) -> bool:
+        assert item.attachment_source is not None
+        entries = item.attachment_source.attachments
+        # The SQLite read snapshot must end before the lock manager writes its
+        # lease. The checked references must come from a fresh snapshot.
+        session.close()
+        with self.attachment_keys([entry.storage_key for entry in entries]) as guard:
+            with self._factory() as snapshot:
+                refs = {
+                    attachment.storage_key
+                    for attachment in SQLAlchemyAttachmentRepository(snapshot).list_attachments(item_id)
+                }
+            if not all(entry.storage_key in refs for entry in entries):
+                return False
+            for entry in entries:
+                guard.verify_all()
+                staging.verify_published(entry.storage_key, len(entry.data))
+            guard.verify_all()
+            return True
+
+    @contextlib.contextmanager
+    def attachment_keys(self, keys: list[str]):
+        if self._storage_lock is None:
+            raise MarkdownServiceError(STORAGE_LOCK_UNAVAILABLE, status_code=503)
+        guard: LockGuard | None = None
+        try:
+            guard = self._storage_lock.acquire_many(keys, new_owner())
+            if guard is None:
+                raise MarkdownServiceError("STORAGE_LOCK_TIMEOUT", status_code=409)
+            yield guard
+        except StorageLockError as exc:
+            raise MarkdownServiceError(exc.code, status_code=503) from None
+        except StorageLockTransient:
+            raise MarkdownServiceError(STORAGE_LOCK_UNAVAILABLE, status_code=503) from None
+        finally:
+            release_storage_guard(guard)
+
+    def _skipped_result(
+        self,
+        session: Session,
+        item: PreparedDocument,
+        state: _State,
+        attachment_context: tuple[MarkdownItemRecord, ChangeSet] | None,
+        staging: AttachmentStagingService | None,
+    ) -> ImportItemResult:
+        matched = state.item_ids or state.anonymous_ids
+        if matched:
+            item_id = UUID(matched[0])
+        elif attachment_context is not None:
+            item_id = attachment_context[0].id
+        else:
+            item_id = None
+        warnings = list(item.warnings)
+        if item.attachment_source is not None:
+            if (
+                attachment_context is None
+                or staging is None
+                or not self._attachments_satisfied(
+                    session, attachment_context[0].id, item, staging
+                )
+            ):
+                raise MarkdownServiceError(
+                    ATTACHMENT_ONLY_IMPORT_UNSUPPORTED
+                    if attachment_context is not None
+                    and attachment_context[0].status == KnowledgeStatus.ACTIVE
+                    else ATTACHMENT_IMPORT_UNSUPPORTED,
+                    "已应用版本缺少请求的附件引用",
+                    status_code=400,
+                )
+            warnings.append("attachments_already_satisfied")
+        return ImportItemResult(
+            filename=item.filename,
+            item_id=item_id,
+            status=ImportItemStatus.SKIPPED,
+            source_payload_hash=item.payload_hash,
+            source_content_hash=item.content_hash,
+            warnings=warnings,
+            unsupported=item.unsupported,
+        )
+
+    def _reuse_pending(
+        self,
+        item: PreparedDocument,
+        pending: _PendingInfo,
+        staging: AttachmentStagingService | None,
+    ) -> ImportItemResult:
+        incoming = (
+            item.attachment_source.logical_set
+            if item.attachment_source is not None
+            else ()
+        )
+        if incoming != pending.logical_set:
+            # This is an attachment-set conflict even when the retry itself has
+            # no JSON attachment field; it must reach HTTP as 409, not a 200
+            # per-item error report.
+            raise AttachmentStagingError(SOURCE_HAS_PENDING_IMPORT)
+        if pending.attachments:
+            if staging is None:
+                raise MarkdownServiceError(
+                    ATTACHMENT_STAGING_INVALID,
+                    "pending 附件 staging 服务不可用",
+                    status_code=409,
+                )
+            staging_id = pending.staging_id
+            if staging_id is None:
+                raise MarkdownServiceError(
+                    ATTACHMENT_MANIFEST_CORRUPTED, "pending staging id missing", status_code=409
+                )
+            # Hold the staging guard while re-reading the pending row, then
+            # validate the physical staging beneath the same guard.  This
+            # closes the S1→guard window in which the review could be resolved
+            # or the envelope edited.
+            with staging.staging_guard(staging_id):
+                self._verify_pending_unchanged(pending)
+                staging.validate_manifest_locked(
+                    staging_id, pending.attachments, require_complete=True
+                )
+        else:
+            self._verify_pending_unchanged(pending)
+        warnings = list(item.warnings)
+        if item.attachment_source is not None:
+            warnings.append("attachments_pending_reused")
+        return ImportItemResult(
+            filename=item.filename,
+            status=ImportItemStatus.REUSED_PENDING,
+            review_id=pending.review_id,
+            item_id=pending.item_id,
+            source_payload_hash=item.payload_hash,
+            source_content_hash=item.content_hash,
+            warnings=warnings,
+            unsupported=item.unsupported,
+        )
+
+    def _verify_pending_unchanged(self, pending: _PendingInfo) -> None:
+        """Re-read a pending review and fail closed if it drifted."""
+        session = self._factory()
+        try:
+            row = session.get(ReviewRequestORM, str(pending.review_id))
+            if row is None or row.status != "pending":
+                raise MarkdownServiceError(
+                    SOURCE_CHANGED_DURING_WAIT,
+                    "原待审导入已变化，请重新发起",
+                    status_code=409,
+                )
+            if str(row.item_id) != str(pending.item_id):
+                raise MarkdownServiceError(
+                    SOURCE_HAS_PENDING_IMPORT,
+                    "待审导入目标已变化",
+                    status_code=409,
+                )
+            try:
+                payload = json.loads(row.payload or "{}")
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise MarkdownServiceError(
+                    IMPORT_ENVELOPE_INVALID,
+                    "导入审核 envelope 非法",
+                    status_code=409,
+                ) from exc
+            if not isinstance(payload, dict):
+                raise MarkdownServiceError(
+                    IMPORT_ENVELOPE_INVALID,
+                    "导入审核 envelope 非法",
+                    status_code=409,
+                )
+            envelope = self._envelope_or_error(payload)
+            if envelope is None:
+                raise MarkdownServiceError(
+                    SOURCE_HAS_PENDING_IMPORT,
+                    "待审导入缺少 envelope",
+                    status_code=409,
+                )
+            if envelope.source_payload_hash != pending.payload_hash:
+                raise MarkdownServiceError(
+                    SOURCE_HAS_PENDING_IMPORT,
+                    "待审导入内容已变化",
+                    status_code=409,
+                )
+            fresh = self._envelope_manifest(envelope)
+            if fresh != pending.attachments:
+                raise MarkdownServiceError(
+                    SOURCE_HAS_PENDING_IMPORT,
+                    "待审导入附件集合已变化",
+                    status_code=409,
+                )
+        finally:
+            session.close()
 
     # -- 落库 ---------------------------------------------------------------
     def _resolve_space(self, session: Session, desired: str | None) -> str | None:
@@ -754,6 +1246,8 @@ class MarkdownService:
         existing_ids: tuple[str, ...],
         default_space_id: str | None,
         batch_id: str | None,
+        attachment_staging: AttachmentStagingService | None = None,
+        staged: StagedAttachmentSet | None = None,
     ) -> tuple[ImportItemResult, bool]:
         items = MarkdownItemRepository(session)
         tags = SQLAlchemyTagRepository(session)
@@ -856,29 +1350,21 @@ class MarkdownService:
             )
 
         # 既有条目：变化分类
-        old_tags = tags.list_item_tags(existing.id)
-        current_links = [
-            {
-                "target_title": link.target_title,
-                "alias": link.alias,
-                "target_id": str(link.target_id) if link.target_id else None,
-                "resolution": link.resolution.value,
-            }
-            for link in SQLAlchemyLinkRepository(session).list_links(existing.id)
-        ]
-        changes: ChangeSet = classify_changes(
-            current_title=existing.title,
-            current_content=existing.content,
-            current_status=existing.status,
-            current_space_id=existing.space_id,
-            current_tags=old_tags,
-            current_extra_metadata=existing.extra_metadata,
-            current_links=current_links,
-            current_attachments=[],
-            incoming=doc,
-        )
+        changes, old_tags = self._record_changes(session, existing, item)
         is_active = existing.status == KnowledgeStatus.ACTIVE
         if is_active and changes.has_content_change:
+            if item.attachment_source is not None:
+                if staged is None or attachment_staging is None:
+                    # The caller must create staging inside the staging guard;
+                    # creating it here would release the guard before commit.
+                    raise MarkdownServiceError(
+                        ATTACHMENT_IMPORT_UNSUPPORTED,
+                        "attachment staging lease unavailable",
+                    )
+                item.attachment_manifest = staged.manifest
+                item.staging_id = staged.staging_id
+                item.staging_directory = staged.directory
+                warnings.append("attachments_staged")
             envelope = self._envelope(
                 item,
                 target=existing.id,
@@ -1003,7 +1489,10 @@ class MarkdownService:
             tags=list(doc.tags),
             extra_metadata=dict(doc.extra_metadata),
             links=list(doc.links),
-            attachments=[],
+            attachments=[
+                manifest.model_dump(mode="json")
+                for manifest in item.attachment_manifest
+            ],
         ).with_digest()
 
     @staticmethod

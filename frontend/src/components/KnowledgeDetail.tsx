@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type {
   AnalyzeResponse,
+  AttachmentItem,
   KnowledgeItem,
   KnowledgeRelation,
   KnowledgeVersion,
+  LinkItem,
   RelationOrigin,
   RelationType,
 } from "../api/types";
@@ -49,6 +51,10 @@ interface Props {
 export function KnowledgeDetail({ item, onNotice, onError, onChanged }: Props) {
   const [relations, setRelations] = useState<KnowledgeRelation[]>([]);
   const [versions, setVersions] = useState<KnowledgeVersion[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  const [backlinks, setBacklinks] = useState<LinkItem[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -62,12 +68,51 @@ export function KnowledgeDetail({ item, onNotice, onError, onChanged }: Props) {
       ]);
       setRelations(rels);
       setVersions(vers);
+      const [attRes, linkRes, backRes] = await Promise.allSettled([
+        api.listAttachments(item.id),
+        api.listLinks(item.id),
+        api.listBacklinks(item.id),
+      ]);
+      if (attRes.status === "fulfilled" && Array.isArray(attRes.value)) setAttachments(attRes.value);
+      if (linkRes.status === "fulfilled" && Array.isArray(linkRes.value)) setLinks(linkRes.value);
+      if (backRes.status === "fulfilled" && Array.isArray(backRes.value)) setBacklinks(backRes.value);
     } catch (err) {
       onError(errorMessage(err));
     } finally {
       setLoading(false);
     }
   }, [item.id, onError]);
+
+  async function handleUploadAttachment(file: File) {
+    setUploading(true);
+    try {
+      const buf = await file.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      const b64 = btoa(binary);
+      const mime = file.type || (file.name.endsWith(".md") ? "text/markdown" : file.name.endsWith(".csv") ? "text/csv" : "text/plain");
+      await api.uploadAttachment(item.id, { filename: file.name, mime, content_base64: b64 });
+      onNotice(`已上传附件：${file.name}`);
+      await loadGovernance();
+    } catch (err) {
+      onError(errorMessage(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteAttachment(attId: string) {
+    try {
+      await api.deleteAttachment(item.id, attId);
+      onNotice("已删除附件引用。");
+      await loadGovernance();
+    } catch (err) {
+      onError(errorMessage(err));
+    }
+  }
 
   useEffect(() => {
     setAnalysis(null);
@@ -263,6 +308,81 @@ export function KnowledgeDetail({ item, onNotice, onError, onChanged }: Props) {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+
+          <div className={sectionClass}>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-xs font-medium text-slate-400">附件（{attachments.length}）</h4>
+              <div className="flex items-center gap-2">
+                <a
+                  href={api.exportSingleMarkdownUrl(item.id)}
+                  download
+                  className="rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800"
+                >
+                  导出 .md
+                </a>
+                {item.status !== "archived" && (
+                  <label className="cursor-pointer rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800">
+                    {uploading ? "上传中…" : "上传附件"}
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleUploadAttachment(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+            {attachments.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                暂无附件（支持 PNG/JPG/GIF/WEBP/PDF/TXT/MD/CSV，≤10 MiB，禁止 SVG）。
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {attachments.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-2 text-xs text-slate-300">
+                    <a
+                      href={api.downloadAttachmentUrl(item.id, a.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="truncate underline hover:opacity-80"
+                    >
+                      {a.filename}（{(a.size / 1024).toFixed(1)} KB · {a.mime}）
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteAttachment(a.id)}
+                      className="shrink-0 rounded-md border border-slate-700 px-2 py-0.5 text-xs text-red-400 hover:bg-red-950/40"
+                    >
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className={sectionClass}>
+            <h4 className={headingClass}>
+              双链（出链 {links.length} · 反链 {backlinks.length}）
+            </h4>
+            {links.length === 0 && backlinks.length === 0 ? (
+              <p className="text-xs text-slate-500">暂无 [[wikilink]] 出链或反链。</p>
+            ) : (
+              <div className="space-y-1 text-xs text-slate-300">
+                {links.map((l) => (
+                  <div key={l.id}>→ [[{l.target_title}]]（{l.resolution}）</div>
+                ))}
+                {backlinks.map((b) => (
+                  <div key={b.id}>← 引用自条目 {b.source_id.slice(0, 8)}…</div>
+                ))}
+              </div>
             )}
           </div>
         </>

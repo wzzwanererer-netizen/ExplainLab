@@ -1,0 +1,278 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_sqlite.py
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 191 items
+
+backend\tests\test_attachment_gc.py .......................              [ 12%]
+backend\tests\test_attachment_pg.py ssss                                 [ 14%]
+backend\tests\test_attachment_storage.py ........s..............s....... [ 30%]
+..........s.....................................s...................     [ 65%]
+backend\tests\test_attachment_windows.py ...s..                          [ 69%]
+backend\tests\test_storage_lock_pg_faults.py ....F.............          [ 78%]
+backend\tests\test_storage_lock_pg.py sssssssssssss                      [ 85%]
+backend\tests\test_storage_lock_sqlite.py ............................   [100%]
+
+================================== FAILURES ===================================
+_____________ test_pg_busy_advisory_is_none_and_timeout_is_shared _____________
+
+operation = <function PostgresStorageKeyLock.acquire_many.<locals>.<lambda> at 0x000002236E111800>
+deadline = 415491.528
+on_abandon = <function PostgresStorageKeyLock.acquire_many.<locals>.<lambda> at 0x000002236E480CC0>
+
+    def bounded_db_call(
+        operation: Callable[[], _T], deadline: float, *, on_abandon=None,
+    ) -> _T:
+        """Bound the caller's wait. Abandoned work retains resource ownership."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DatabaseDeadline()
+        result: Future[_T] = Future()
+        context = copy_context()
+    
+        def run():
+            try:
+                result.set_result(context.run(operation))
+            except BaseException as exc:
+                result.set_exception(exc)
+    
+        threading.Thread(target=run, name="storage-db-call", daemon=True).start()
+        try:
+>           return result.result(timeout=max(0.0, deadline - time.monotonic()))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend\app\db\session.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = None, timeout = 0.059999999997671694
+
+    def result(self, timeout=None):
+        """Return the result of the call that the future represents.
+    
+        Args:
+            timeout: The number of seconds to wait for the result if the future
+                isn't done. If None, then there is no limit on the wait time.
+    
+        Returns:
+            The result of the call that the future represents.
+    
+        Raises:
+            CancelledError: If the future was cancelled.
+            TimeoutError: If the future didn't finish executing before the given
+                timeout.
+            Exception: If the call raised then that exception will be raised.
+        """
+        try:
+            with self._condition:
+                if self._state in [CANCELLED, CANCELLED_AND_NOTIFIED]:
+                    raise CancelledError()
+                elif self._state == FINISHED:
+                    return self.__get_result()
+    
+                self._condition.wait(timeout)
+    
+                if self._state in [CANCELLED, CANCELLED_AND_NOTIFIED]:
+                    raise CancelledError()
+                elif self._state == FINISHED:
+                    return self.__get_result()
+                else:
+>                   raise TimeoutError()
+E                   TimeoutError
+
+D:\Dev\Python\Python311\Lib\concurrent\futures\_base.py:458: TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+self = <app.db.storage_lock.PostgresStorageKeyLock object at 0x000002236E040E10>
+storage_keys = ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']
+owner = 'worker', ttl_seconds = None, wait_seconds = 0.06
+heartbeat_seconds = None
+
+    def acquire_many(
+        self,
+        storage_keys: Iterable[str],
+        owner: str,
+        *,
+        ttl_seconds: float | None = None,
+        wait_seconds: float | None = None,
+        heartbeat_seconds: float | None = None,
+    ) -> LockGuard | None:
+        _validate_owner(owner)
+        keys = sorted(set(storage_keys))
+        if not keys or len(keys) > _MAX_KEYS:
+            raise StorageLockError(STORAGE_LOCK_UNAVAILABLE, "invalid key batch")
+        for key in keys:
+            _validate_key(key)
+        ttl = self.ttl_seconds if ttl_seconds is None else ttl_seconds
+        wait = self.wait_seconds if wait_seconds is None else wait_seconds
+        heartbeat = self.heartbeat_seconds if heartbeat_seconds is None else heartbeat_seconds
+        if not self._registry.register(owner, keys):
+            return None
+        deadline = time.monotonic() + max(0.0, wait)
+        connection = None
+        acquired: list[tuple[int, int]] = []
+        handed_off = False
+        phase = "connect"
+        try:
+            connection = self._connect(deadline)
+            phase = "advisory acquisition"
+            dedicated = connection
+            try:
+>               leases = bounded_db_call(
+                    lambda: self._acquire_connected(dedicated, keys, owner, ttl, deadline, acquired),
+                    deadline,
+                    on_abandon=lambda _: _cleanup_pg_after_call(dedicated),
+                )
+
+backend\app\db\storage_lock.py:904: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+operation = <function PostgresStorageKeyLock.acquire_many.<locals>.<lambda> at 0x000002236E111800>
+deadline = 415491.528
+on_abandon = <function PostgresStorageKeyLock.acquire_many.<locals>.<lambda> at 0x000002236E480CC0>
+
+    def bounded_db_call(
+        operation: Callable[[], _T], deadline: float, *, on_abandon=None,
+    ) -> _T:
+        """Bound the caller's wait. Abandoned work retains resource ownership."""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DatabaseDeadline()
+        result: Future[_T] = Future()
+        context = copy_context()
+    
+        def run():
+            try:
+                result.set_result(context.run(operation))
+            except BaseException as exc:
+                result.set_exception(exc)
+    
+        threading.Thread(target=run, name="storage-db-call", daemon=True).start()
+        try:
+            return result.result(timeout=max(0.0, deadline - time.monotonic()))
+        except BaseException as exc:
+            # A timeout raised by the operation itself is kept in its original form.
+            if isinstance(exc, TimeoutError) and result.done() and result.exception() is exc:
+                raise
+            if isinstance(exc, TimeoutError) or not isinstance(exc, Exception):
+                if on_abandon is not None:
+                    result.add_done_callback(lambda done: threading.Thread(
+                        target=on_abandon, args=(done,), name="storage-db-cleanup", daemon=True,
+                    ).start())
+                if isinstance(exc, TimeoutError):
+>                   raise DatabaseDeadline(started=True) from exc
+E                   app.db.session.DatabaseDeadline
+
+backend\app\db\session.py:232: DatabaseDeadline
+
+The above exception was the direct cause of the following exception:
+
+pg_manager = (<app.db.storage_lock.PostgresStorageKeyLock object at 0x000002236E040E10>, <backend.tests.test_storage_lock_pg_faults.DedicatedConnection object at 0x000002236E040450>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002236E051710>
+
+    def test_pg_busy_advisory_is_none_and_timeout_is_shared(pg_manager, monkeypatch):
+        manager, conn = pg_manager
+        execute = conn.execute
+        keys = []
+    
+        def contend(statement, params=None):
+            if "pg_try_advisory_lock" in str(statement):
+                identity = (params["classid"], params["objid"])
+                keys.append(identity)
+                if identity == locks._advisory_identity(KEY_A):
+                    time.sleep(0.025)
+                else:
+                    return Result(False)
+            return execute(statement, params)
+    
+        monkeypatch.setattr(conn, "execute", contend)
+        start = time.monotonic()
+>       assert manager.acquire_many([KEY_A, KEY_B], "worker", wait_seconds=0.06) is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend\tests\test_storage_lock_pg_faults.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <app.db.storage_lock.PostgresStorageKeyLock object at 0x000002236E040E10>
+storage_keys = ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']
+owner = 'worker', ttl_seconds = None, wait_seconds = 0.06
+heartbeat_seconds = None
+
+    def acquire_many(
+        self,
+        storage_keys: Iterable[str],
+        owner: str,
+        *,
+        ttl_seconds: float | None = None,
+        wait_seconds: float | None = None,
+        heartbeat_seconds: float | None = None,
+    ) -> LockGuard | None:
+        _validate_owner(owner)
+        keys = sorted(set(storage_keys))
+        if not keys or len(keys) > _MAX_KEYS:
+            raise StorageLockError(STORAGE_LOCK_UNAVAILABLE, "invalid key batch")
+        for key in keys:
+            _validate_key(key)
+        ttl = self.ttl_seconds if ttl_seconds is None else ttl_seconds
+        wait = self.wait_seconds if wait_seconds is None else wait_seconds
+        heartbeat = self.heartbeat_seconds if heartbeat_seconds is None else heartbeat_seconds
+        if not self._registry.register(owner, keys):
+            return None
+        deadline = time.monotonic() + max(0.0, wait)
+        connection = None
+        acquired: list[tuple[int, int]] = []
+        handed_off = False
+        phase = "connect"
+        try:
+            connection = self._connect(deadline)
+            phase = "advisory acquisition"
+            dedicated = connection
+            try:
+                leases = bounded_db_call(
+                    lambda: self._acquire_connected(dedicated, keys, owner, ttl, deadline, acquired),
+                    deadline,
+                    on_abandon=lambda _: _cleanup_pg_after_call(dedicated),
+                )
+            except DatabaseDeadline as exc:
+                if exc.started:
+                    connection = None  # the operation retains ownership through cleanup
+>               raise PostgresLockFailure(phase, "deadline") from exc
+E               app.db.storage_lock.PostgresLockFailure: STORAGE_LOCK_UNAVAILABLE: PostgreSQL advisory acquisition: deadline
+
+backend\app\db\storage_lock.py:912: PostgresLockFailure
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_attachment_pg.py:99: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:117: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:170: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:195: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_storage.py:201: cannot create a Windows junction or symlink
+SKIPPED [1] backend\tests\test_attachment_storage.py:375: cannot create symlink/junction in this environment
+SKIPPED [1] backend\tests\test_attachment_storage.py:674: Windows 打开文件默认拒绝 rename，句柄路径替换另行取证
+SKIPPED [1] backend\tests\test_attachment_storage.py:894: directory link creation unavailable
+SKIPPED [1] backend\tests\test_attachment_windows.py:95: mklink /J unavailable
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:128: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:149: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:165: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:183: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:196: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:213: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:229: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:244: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:273: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:286: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:298: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:330: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+FAILED backend/tests/test_storage_lock_pg_faults.py::test_pg_busy_advisory_is_none_and_timeout_is_shared
+============ 1 failed, 168 passed, 22 skipped, 1 warning in 44.11s ============
+exit_code=1

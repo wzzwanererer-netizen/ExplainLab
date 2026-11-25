@@ -1,0 +1,71 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: df042a1bb3511f483806794baf015b6fe45ba903
+Source: backend/app/main.py
+
+  40: def _configured_workers() -> int:
+  41:     """尽力识别多 worker 启动；A1-04 仅允许单 Backend 单 worker。"""
+  42:     candidates: list[str] = []
+  43:     args = sys.argv[1:]
+  44:     for index, arg in enumerate(args):
+  45:         if arg == "--workers" and index + 1 < len(args):
+  46:             candidates.append(args[index + 1])
+  47:         elif arg.startswith("--workers="):
+  48:             candidates.append(arg.split("=", 1)[1])
+  49:     for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS"):
+  50:         value = os.environ.get(key)
+  51:         if value:
+  52:             candidates.append(value)
+  53:     for value in candidates:
+  54:         try:
+  55:             if int(value) > 1:
+  56:                 return int(value)
+  57:         except ValueError:
+  58:             continue
+  59:     return 1
+  60: 
+  61: 
+  62: def create_app(settings: Settings | None = None) -> FastAPI:
+  63:     settings = settings if settings is not None else get_settings()
+  64: 
+  65:     @asynccontextmanager
+  66:     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+  67:         if _configured_workers() > 1:
+  68:             raise RuntimeError("MULTI_WORKER_UNSUPPORTED")
+  69:         init_db(settings)
+  70:         settings.data_dir.mkdir(parents=True, exist_ok=True)
+  71:         # 单实例 OS 锁必须先于 source-instance-id 生成与任何导入/身份写操作。
+  72:         lock = ProcessLock(settings.data_dir)
+  73:         lock.acquire()
+  74:         try:
+  75:             instance_store = SourceInstanceIdStore(settings.data_dir)
+  76:             instance_store.ensure()
+  77:             coordinator = ImportCoordinator(
+  78:                 wait_seconds=settings.import_lock_wait_seconds
+  79:             )
+  80:             identity = SourceIdentityService(
+  81:                 get_session_factory(), settings.data_dir, instance_store
+  82:             )
+  83:             # 启动即过 Journal 恢复门；数据库暂不可达时保持 503，导入入口会再次恢复。
+  84:             try:
+  85:                 identity.recover_if_needed()
+  86:             except SQLAlchemyError:
+  87:                 logger.warning("启动时数据库不可达，身份 Journal 恢复延后")
+  88:             markdown_service = MarkdownService(
+  89:                 get_session_factory(), coordinator, identity, instance_store
+  90:             )
+  91:             application.state.process_lock = lock
+  92:             application.state.import_coordinator = coordinator
+  93:             application.state.source_identity = identity
+  94:             application.state.source_instance_store = instance_store
+  95:             application.state.markdown_service = markdown_service
+  96:             try:
+  97:                 with session_scope() as session:
+  98:                     ensure_default_space(session)
+  99:             except Exception:
+ 100:                 # 数据库暂不可达时不阻断启动；/api/health 会如实报告 degraded，
+ 101:                 # 默认空间在数据库恢复后的下次启动时幂等补建。
+ 102:                 logger.warning("默认知识空间初始化失败，将在下次启动时重试", exc_info=True)
+ 103:             yield
+ 104:         finally:
+ 105:             dispose_db()
+ 106:             lock.release()

@@ -1,0 +1,5 @@
+
+> explainlab-frontend@0.1.0 typecheck
+> tsc -b
+
+EXIT_CODE=0

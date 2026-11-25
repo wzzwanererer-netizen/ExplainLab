@@ -1,0 +1,72 @@
+# Command: .venv/Scripts/python.exe -u -m pytest -o addopts=--import-mode=importlib -o faulthandler_timeout=45 -ra -p no:cacheprovider
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+testpaths: backend/tests, knowledge-core/tests
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1473 items
+
+backend\tests\test_alembic_url.py ......                                 [  0%]
+backend\tests\test_attachment_gc.py .......................              [  1%]
+backend\tests\test_attachment_pg.py ssss                                 [  2%]
+backend\tests\test_attachment_storage.py ..............s................ [  4%]
+Timeout (0:00:45)!
+Thread 0x0000a8e4 (most recent call first):
+  File "D:\Dev\Python\Python311\Lib\socket.py", line 294 in accept
+  File "D:\Dev\Python\Python311\Lib\socket.py", line 645 in socketpair
+  File "D:\Dev\Python\Python311\Lib\asyncio\proactor_events.py", line 784 in _make_self_pipe
+  File "D:\Dev\Python\Python311\Lib\asyncio\proactor_events.py", line 639 in __init__
+  File "D:\Dev\Python\Python311\Lib\asyncio\windows_events.py", line 315 in __init__
+  File "D:\Dev\Python\Python311\Lib\asyncio\events.py", line 699 in new_event_loop
+  File "D:\Dev\Python\Python311\Lib\asyncio\events.py", line 810 in new_event_loop
+  File "D:\Dev\Python\Python311\Lib\asyncio\runners.py", line 137 in _lazy_init
+  File "D:\Dev\Python\Python311\Lib\asyncio\runners.py", line 59 in __enter__
+  File "D:\ExplainLab\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 2620 in run
+  File "D:\ExplainLab\.venv\Lib\site-packages\anyio\_core\_eventloop.py", line 83 in run
+  File "D:\ExplainLab\.venv\Lib\site-packages\anyio\from_thread.py", line 639 in run_blocking_portal
+  File "D:\Dev\Python\Python311\Lib\threading.py", line 982 in run
+  File "D:\Dev\Python\Python311\Lib\threading.py", line 1045 in _bootstrap_inner
+  File "D:\Dev\Python\Python311\Lib\threading.py", line 1002 in _bootstrap
+
+Thread 0x0000e214 (most recent call first):
+  File "D:\Dev\Python\Python311\Lib\threading.py", line 327 in wait
+  File "D:\Dev\Python\Python311\Lib\concurrent\futures\_base.py", line 451 in result
+  File "D:\ExplainLab\.venv\Lib\site-packages\anyio\from_thread.py", line 655 in start_blocking_portal
+  File "D:\Dev\Python\Python311\Lib\contextlib.py", line 137 in __enter__
+  File "D:\Dev\Python\Python311\Lib\contextlib.py", line 517 in enter_context
+  File "D:\ExplainLab\.venv\Lib\site-packages\starlette\testclient.py", line 559 in __enter__
+  File "D:\ExplainLab\backend\tests\test_attachment_storage.py", line 637 in test_lifespan_validates_roots_and_exposes_layout
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\python.py", line 187 in pytest_pyfunc_call
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_execution.py", line 147 in _multicall
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_manager.py", line 183 in _hookexec
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_caller.py", line 197 in __call__
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\python.py", line 1798 in runtest
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 184 in pytest_runtest_call
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_execution.py", line 147 in _multicall
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_manager.py", line 183 in _hookexec
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_caller.py", line 197 in __call__
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 250 in <lambda>
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 361 in from_call
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 249 in call_and_report
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 139 in runtestprotocol
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\runner.py", line 118 in pytest_runtest_protocol
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_execution.py", line 147 in _multicall
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_manager.py", line 183 in _hookexec
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_caller.py", line 197 in __call__
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\main.py", line 411 in pytest_runtestloop
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_execution.py", line 147 in _multicall
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_manager.py", line 183 in _hookexec
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_caller.py", line 197 in __call__
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\main.py", line 387 in _main
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\main.py", line 333 in wrap_session
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\main.py", line 380 in pytest_cmdline_main
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_execution.py", line 147 in _multicall
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_manager.py", line 183 in _hookexec
+  File "D:\ExplainLab\.venv\Lib\site-packages\pluggy\_caller.py", line 197 in __call__
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\config\__init__.py", line 262 in _main
+  File "D:\ExplainLab\.venv\Lib\site-packages\_pytest\config\__init__.py", line 286 in _console_main
+  File "D:\ExplainLab\.venv\Lib\site-packages\pytest\__main__.py", line 9 in <module>
+  File "<frozen runpy>", line 88 in _run_code
+  File "<frozen runpy>", line 198 in _run_module_as_main

@@ -1,0 +1,8 @@
+ MILESTONES.md                           |  20 ++
+ backend/app/api/schemas.py              |  23 ++
+ backend/app/core/config.py              | 147 +++++++++++-
+ backend/app/db/session.py               | 255 ++++++++++++++++++++-
+ backend/app/dependencies.py             |   8 +
+ backend/app/main.py                     |  41 +++-
+ backend/app/services/repositories_v2.py | 380 +++++++++++++++++++++++++++++++-
+ 7 files changed, 854 insertions(+), 20 deletions(-)

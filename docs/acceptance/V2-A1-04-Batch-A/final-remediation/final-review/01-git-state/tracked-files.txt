@@ -1,0 +1,45 @@
+captured_at: 2026-11-22T17:42:12+08:00
+===== tracked modified/added/deleted vs HEAD (name-status) =====
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+M	backend/app/api/routes/governance.py
+M	backend/app/api/schemas.py
+M	backend/app/core/config.py
+M	backend/app/db/session.py
+M	backend/app/dependencies.py
+M	backend/app/main.py
+M	backend/tests/conftest.py
+M	backend/tests/test_health.py
+
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+count: 8
+
+===== staged (name-status) =====
+
+===== per tracked file: status | sha256 =====
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+backend/app/api/routes/governance.py |  M | 1537249912cc1f9d2a68105e6401aafb2e1f6e49ce4e3c62e4e5309e1c1bc722
+backend/app/api/schemas.py |  M | 8a733037e85718d5d33fb5ede5f673750f25c33dbf90f5add9288b300deaecd3
+backend/app/core/config.py |  M | 8b796ceb2944f5bc75c2e2f4ed98414f53e96b203529441fadd877c0c6c66da2
+backend/app/db/session.py |  M | 868ca5e468bb20e450819fc00937e11587c524c1d8a748ec7b973138eac109d2
+backend/app/dependencies.py |  M | 38234a20d9a42fb49466080d9780287537b8caf2061e8f4c28a1e532fbc65906
+backend/app/main.py |  M | 96579719200b099465810c8d2c03877e7d9f2cfc6b0633bbae6faaf50699098b
+backend/tests/conftest.py |  M | d77d5c02a6c0b535e0308c0ad9164ea3b245002d6c6aaf92fcae468371cef10d
+backend/tests/test_health.py |  M | c782986e923bfdd4c71b8c833c19942ac3dfc93743d5df90cbe3ecc38569e254

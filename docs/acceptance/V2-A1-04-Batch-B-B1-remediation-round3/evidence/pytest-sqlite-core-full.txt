@@ -1,0 +1,284 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+testpaths: backend/tests, knowledge-core/tests
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1499 items
+
+backend\tests\test_alembic_url.py ......                                 [  0%]
+backend\tests\test_attachment_gc.py .......................              [  1%]
+backend\tests\test_attachment_pg.py ssss                                 [  2%]
+backend\tests\test_attachment_storage.py ..........s...............s.... [  4%]
+..............s.....................................s................... [  9%]
+                                                                         [  9%]
+backend\tests\test_attachment_windows.py ...s..                          [  9%]
+backend\tests\test_batch_a_canonical.py ................                 [ 10%]
+backend\tests\test_batch_a_fault_injection.py .......................    [ 12%]
+backend\tests\test_batch_a_file_write.py .............                   [ 12%]
+backend\tests\test_batch_a_process_and_identity.py ..................... [ 14%]
+.........                                                                [ 14%]
+backend\tests\test_config.py ...............                             [ 15%]
+backend\tests\test_conversations.py .......                              [ 16%]
+backend\tests\test_db.py ....                                            [ 16%]
+backend\tests\test_experiments_api.py .................                  [ 17%]
+backend\tests\test_experiments_db.py .......                             [ 18%]
+backend\tests\test_fts_backfill.py ....                                  [ 18%]
+backend\tests\test_governance.py .............                           [ 19%]
+backend\tests\test_governance_links.py ............                      [ 20%]
+backend\tests\test_governance_links_pg.py sssssssssss                    [ 20%]
+backend\tests\test_graph.py .....                                        [ 21%]
+backend\tests\test_health.py ......                                      [ 21%]
+backend\tests\test_knowledge.py ..........                               [ 22%]
+backend\tests\test_links.py ............................................ [ 25%]
+...............................................                          [ 28%]
+backend\tests\test_links_concurrency.py .......                          [ 28%]
+backend\tests\test_links_concurrency_pg.py sssssss                       [ 29%]
+backend\tests\test_links_http.py ...................                     [ 30%]
+backend\tests\test_links_noop_coverage.py ............                   [ 31%]
+backend\tests\test_links_noop_coverage_pg.py sssssssssssss               [ 32%]
+backend\tests\test_links_p2_coverage.py ........                         [ 32%]
+backend\tests\test_links_p2_coverage_pg.py sssssssss                     [ 33%]
+backend\tests\test_links_pg.py sssssssssssssssssssssssssssssssssssssssss [ 36%]
+ssssssssssssssssssssssssssssssssssssssssssssssssss                       [ 39%]
+backend\tests\test_links_phantom_noncollision.py ....                    [ 39%]
+backend\tests\test_links_phantom_noncollision_pg.py ssssss               [ 40%]
+backend\tests\test_markdown_batch_a_identity.py ........................ [ 41%]
+.....................                                                    [ 43%]
+backend\tests\test_markdown_batch_a_import_conflict.py .......           [ 43%]
+backend\tests\test_markdown_batch_a_import_export.py ................... [ 44%]
+.............                                                            [ 45%]
+backend\tests\test_migrations.py ...                                     [ 45%]
+backend\tests\test_retrieval_db.py ..                                    [ 46%]
+backend\tests\test_retrieval_pg.py sssssssssssssssss                     [ 47%]
+backend\tests\test_retrieval_service.py .............                    [ 48%]
+backend\tests\test_search.py ...........                                 [ 48%]
+backend\tests\test_spaces.py .....                                       [ 49%]
+backend\tests\test_storage_lock_pg.py sssssssssssss                      [ 50%]
+backend\tests\test_storage_lock_pg_faults.py ....................        [ 51%]
+backend\tests\test_storage_lock_sqlite.py ............................   [ 53%]
+backend\tests\test_v2_models.py .................................        [ 55%]
+backend\tests\test_v2_models_pg.py ssssssssssssssssssssssss              [ 57%]
+knowledge-core\tests\test_entities.py ........                           [ 57%]
+knowledge-core\tests\test_experiments.py ............................... [ 59%]
+.                                                                        [ 59%]
+knowledge-core\tests\test_extraction.py .........                        [ 60%]
+knowledge-core\tests\test_graph.py ........                              [ 60%]
+knowledge-core\tests\test_interfaces.py ..............                   [ 61%]
+knowledge-core\tests\test_markdown_canonical.py ........................ [ 63%]
+..................................................                       [ 66%]
+knowledge-core\tests\test_markdown_codec.py ............................ [ 68%]
+...................................................................      [ 73%]
+knowledge-core\tests\test_markdown_frontmatter.py ...................... [ 74%]
+........................................................................ [ 79%]
+............................                                             [ 81%]
+knowledge-core\tests\test_markdown_link_service.py ..................... [ 82%]
+.................................................................        [ 86%]
+knowledge-core\tests\test_markdown_links.py ............................ [ 88%]
+.............                                                            [ 89%]
+knowledge-core\tests\test_markdown_service.py .......................... [ 91%]
+..                                                                       [ 91%]
+knowledge-core\tests\test_model_adapter.py ...........                   [ 92%]
+knowledge-core\tests\test_model_adapter_contract.py ..............       [ 93%]
+knowledge-core\tests\test_openai_adapter.py ...............              [ 94%]
+knowledge-core\tests\test_relations.py ..........                        [ 94%]
+knowledge-core\tests\test_retrieval.py ......                            [ 95%]
+knowledge-core\tests\test_review.py .........                            [ 95%]
+knowledge-core\tests\test_services.py ...                                [ 96%]
+knowledge-core\tests\test_v2_entities.py ............................... [ 98%]
+.......................                                                  [ 99%]
+knowledge-core\tests\test_versioning_provenance.py .....                 [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_attachment_pg.py:99: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:117: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:170: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:195: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_storage.py:206: cannot create a Windows junction or symlink
+SKIPPED [1] backend\tests\test_attachment_storage.py:402: cannot create symlink/junction in this environment
+SKIPPED [1] backend\tests\test_attachment_storage.py:725: Windows 打开文件默认拒绝 rename，句柄路径替换另行取证
+SKIPPED [1] backend\tests\test_attachment_storage.py:945: directory link creation unavailable
+SKIPPED [1] backend\tests\test_attachment_windows.py:95: mklink /J unavailable
+SKIPPED [1] backend\tests\test_governance_links_pg.py:159: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:179: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:202: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:227: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:250: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:271: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:293: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:326: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:345: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:358: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_governance_links_pg.py:369: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K1 治理链接 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:209: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:235: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:261: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:278: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:319: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:354: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_concurrency_pg.py:386: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 K2 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:252: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:266: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:283: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:303: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:329: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:355: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:384: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:420: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:446: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:471: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:497: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:523: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_noop_coverage_pg.py:597: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 no-op 并发 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:201: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:225: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:249: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:273: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:320: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:344: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:379: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_p2_coverage_pg.py:442: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 P2 字段覆盖 PG 测试
+SKIPPED [1] backend\tests\test_links_pg.py:403: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:425: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:435: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:445: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:454: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:465: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:485: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:498: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:514: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:529: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:541: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:566: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:573: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:582: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:595: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:609: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:628: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:647: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:667: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:683: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:706: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:734: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:756: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:777: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:813: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:841: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:865: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:883: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:896: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:930: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:957: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:992: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1022: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1038: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1066: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1104: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1112: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1129: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1154: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1182: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1207: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1235: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1269: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1297: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1324: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [4] backend\tests\test_links_pg.py:1342: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1370: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1388: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1416: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1447: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1478: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1507: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [11] backend\tests\test_links_pg.py:1535: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1588: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1611: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1643: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [3] backend\tests\test_links_pg.py:1656: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1667: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1681: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1703: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1725: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1759: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1790: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [3] backend\tests\test_links_pg.py:1809: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1837: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [3] backend\tests\test_links_pg.py:1858: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1884: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1920: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1941: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1969: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:1986: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_pg.py:2001: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 A1-03 PG 链接测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:242: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:261: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:332: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:489: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_links_phantom_noncollision_pg.py:496: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 phantom 非碰撞 PG 测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:135: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:153: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:170: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:184: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:198: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:210: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:242: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:249: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:265: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:279: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:292: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:307: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:358: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:374: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:390: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:412: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_retrieval_pg.py:424: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 PG 检索测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:128: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:149: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:165: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:183: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:196: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:213: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:229: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:244: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:273: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:286: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:298: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:330: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:132: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:142: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:166: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:208: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:216: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:232: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:247: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:262: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:269: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:277: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:289: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:319: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:335: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:355: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:375: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:399: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:419: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:432: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:463: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:514: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:530: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:546: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+SKIPPED [1] backend\tests\test_v2_models_pg.py:561: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 V2 PG 数据模型测试
+========== 1299 passed, 200 skipped, 1 warning in 307.92s (0:05:07) ===========
+exit_code=0

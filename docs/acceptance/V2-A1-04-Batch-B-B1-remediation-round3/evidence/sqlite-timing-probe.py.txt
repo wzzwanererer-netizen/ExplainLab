@@ -1,0 +1,59 @@
+import tempfile
+import time
+from contextlib import ExitStack
+from pathlib import Path
+
+from sqlalchemy.orm import sessionmaker
+
+from app.db.session import create_engine_from_url
+from app.db.storage_lock import SQLiteStorageKeyLock, StorageLeaseLost
+from app.models import StorageLockORM
+
+with tempfile.TemporaryDirectory(prefix="b1-round3-audit-") as path:
+    engine = create_engine_from_url(f"sqlite:///{(Path(path) / 'probe.db').as_posix()}")
+    factory = sessionmaker(engine)
+    keys = ["a" * 64, "b" * 64, "c" * 64]
+    try:
+        StorageLockORM.__table__.create(engine)
+        manager = SQLiteStorageKeyLock(factory, wait_seconds=0.15, heartbeat_seconds=0)
+        guard = manager.acquire_many([keys[0]], "fence-probe")
+        assert guard is not None
+        with engine.connect() as blocker:
+            blocker.exec_driver_sql("BEGIN EXCLUSIVE")
+            start = time.monotonic()
+            try:
+                guard.verify_all()
+            except StorageLeaseLost as exc:
+                elapsed = time.monotonic() - start
+                print(f"exclusive fence: {type(exc).__name__}, elapsed={elapsed:.3f}s")
+                assert elapsed < 0.35
+            else:
+                raise AssertionError("exclusive writer unexpectedly allowed fencing")
+            finally:
+                blocker.rollback()
+        assert guard.release()
+
+        with ExitStack() as sessions:
+            for _ in range(engine.pool.size() + 10):
+                sessions.enter_context(engine.connect())
+            start = time.monotonic()
+            assert manager.acquire_many([keys[0]], "checkout-probe") is None
+            elapsed = time.monotonic() - start
+            print(f"saturated checkout: no guard, elapsed={elapsed:.3f}s")
+            assert elapsed < 0.35
+
+        held = manager.acquire_many([keys[2]], "second-key", ttl_seconds=2)
+        assert held is not None
+        start = time.monotonic()
+        assert manager.acquire_many(keys[1:], "batch-probe", ttl_seconds=0.15, wait_seconds=1) is None
+        elapsed = time.monotonic() - start
+        print(f"first lease exhausted in batch: no guard, elapsed={elapsed:.3f}s")
+        assert elapsed < 0.50
+        assert held.release()
+        retry = manager.acquire_many(keys[1:], "retry-probe", wait_seconds=1)
+        assert retry is not None
+        print(f"retry after expiry: token={retry.leases[0].lease_token}")
+        assert retry.leases[0].lease_token == 2
+        assert retry.release()
+    finally:
+        engine.dispose()

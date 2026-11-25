@@ -1,0 +1,686 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: bd72ed7218559ed5c16790df4193d82e2d07c27c
+Source: backend/app/services/source_identity.py
+
+  87: class SourceIdentityError(RuntimeError):
+  88:     def __init__(self, code: str, message: str = "") -> None:
+  89:         self.code = code
+  90:         super().__init__(f"{code}: {message}" if message else code)
+  91: 
+  92: 
+  93: def _now() -> str:
+  94:     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+  95: 
+  96: 
+  97: def _is_uuid_text(value: object, *, version: int | None = None) -> bool:
+  98:     if not isinstance(value, str) or not value:
+  99:         return False
+ 100:     try:
+ 101:         parsed = uuid.UUID(value)
+ 102:     except ValueError:
+ 103:         return False
+ 104:     if str(parsed) != value:
+ 105:         return False
+ 106:     return version is None or parsed.version == version
+ 107: 
+ 108: 
+ 109: def _has_control(value: str) -> bool:
+ 110:     return any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+ 111: 
+ 112: 
+ 113: def _sync_dir(path: Path) -> None:
+ 114:     if os.name == "nt":
+ 115:         return
+ 116:     try:
+ 117:         fd = os.open(path, os.O_RDONLY)
+ 118:     except OSError:
+ 119:         return
+ 120:     try:
+ 121:         os.fsync(fd)
+ 122:     except OSError:
+ 123:         pass
+ 124:     finally:
+ 125:         os.close(fd)
+ 126: 
+
+ 150: class _OriginView:
+ 151:     row: ImportOriginORM
+ 152:     origin_id: str
+ 153:     instance: str | None
+ 154:     document: str | None
+ 155:     payload: str | None
+ 156:     flags: list[str]
+ 157:     duplicate_group_size: int = 1
+ 158: 
+ 159: 
+ 160: def _origin_flags(instance: Any, document: Any, payload: Any) -> list[str]:
+ 161:     flags: set[str] = set()
+ 162:     if instance is None or instance == "":
+ 163:         flags.add("incomplete")
+ 164:     elif not isinstance(instance, str) or len(instance) > 64 or _has_control(instance):
+ 165:         flags.add("invalid")
+ 166:     if document is None or document == "":
+ 167:         flags.add("incomplete")
+ 168:     elif not isinstance(document, str) or not _is_uuid_text(document):
+ 169:         flags.add("invalid")
+ 170:     if payload is None or payload == "":
+ 171:         flags.add("incomplete")
+ 172:     elif not isinstance(payload, str) or not _PAYLOAD_RE.fullmatch(payload):
+ 173:         flags.add("invalid")
+ 174:     return sorted(flags)
+ 175: 
+ 176: 
+ 177: def _check_orphans(session: Session) -> None:
+ 178:     item_ids = set(session.scalars(select(KnowledgeItemORM.id)))
+ 179:     for origin_id, owner in session.execute(
+ 180:         select(ImportOriginORM.id, ImportOriginORM.item_id)
+ 181:     ):
+ 182:         if owner not in item_ids:
+ 183:             raise SourceIdentityError(
+ 184:                 SOURCE_IDENTITY_ORPHAN, f"origin {origin_id} references missing item"
+ 185:             )
+ 186: 
+ 187: 
+ 188: def _build_origins(rows: list[ImportOriginORM]) -> list[_OriginView]:
+ 189:     groups: dict[tuple[Any, Any, Any], int] = {}
+ 190:     for row in rows:
+ 191:         key = (row.source_instance_id, row.source_document_id, row.source_payload_hash)
+ 192:         groups[key] = groups.get(key, 0) + 1
+ 193:     views = []
+ 194:     for row in rows:
+ 195:         view = _OriginView(
+ 196:             row=row,
+ 197:             origin_id=str(row.id),
+ 198:             instance=row.source_instance_id,
+ 199:             document=row.source_document_id,
+ 200:             payload=row.source_payload_hash,
+ 201:             flags=_origin_flags(
+ 202:                 row.source_instance_id, row.source_document_id, row.source_payload_hash
+ 203:             ),
+ 204:         )
+ 205:         key = (row.source_instance_id, row.source_document_id, row.source_payload_hash)
+ 206:         view.duplicate_group_size = groups[key]
+ 207:         views.append(view)
+ 208:     views.sort(key=lambda view: view.origin_id)
+ 209:     return views
+ 210: 
+ 211: 
+ 212: def _origin_state(
+ 213:     views: list[_OriginView], db_instance: Any
+ 214: ) -> tuple[str, tuple[str, str] | None, str | None]:
+ 215:     """返回 (import_origin_state, 唯一有效身份对, 单记录身份摘要)。"""
+ 216:     n = len(views)
+ 217:     if n == 0:
+ 218:         return "none", None, None
+ 219:     legal = [view for view in views if not view.flags]
+ 220:     pairs = {(view.instance, view.document) for view in legal}
+ 221:     has_duplicate = any(view.duplicate_group_size > 1 for view in views)
+ 222:     has_conflict = len(pairs) >= 2
+ 223:     if len(pairs) == 1:
+ 224:         instance, _document = next(iter(pairs))
+ 225:         if db_instance is None or db_instance != instance:
+ 226:             has_conflict = True
+ 227:     if has_conflict:
+ 228:         return "conflict", None, None
+ 229:     if any("invalid" in view.flags for view in views):
+ 230:         return "invalid", None, None
+ 231:     if any("incomplete" in view.flags for view in views):
+ 232:         return "incomplete", None, None
+ 233:     if has_duplicate:
+ 234:         return "duplicate", None, None
+ 235:     if len(pairs) == 1:
+ 236:         pair = next(iter(pairs))
+ 237:         if len(legal) != len(views):
+ 238:             return "invalid", None, None
+ 239:         digest = None
+ 240:         if len(legal) == 1 and legal[0].payload:
+ 241:             digest = sha256_canonical(
+ 242:                 {
+ 243:                     "source_instance_id": legal[0].instance,
+ 244:                     "source_document_id": legal[0].document,
+ 245:                     "source_payload_hash": legal[0].payload,
+ 246:                 }
+ 247:             )
+ 248:         return "complete", pair, digest
+ 249:     # n>0 未命中任何行：实现/数据异常，保守归 invalid，绝不回落 none/complete。
+ 250:     return "invalid", None, None
+ 251: 
+ 252: 
+ 253: def build_identity_snapshots(
+ 254:     session: Session,
+ 255:     *,
+ 256:     materialized: dict[str, tuple[str, str]] | None = None,
+ 257: ) -> list[dict[str, Any]]:
+ 258:     """构造全库身份快照（在内存中应用 ``materialized`` 预测完成态）。"""
+ 259:     _check_orphans(session)
+ 260:     overrides = materialized or {}
+ 261:     items = list(
+ 262:         session.scalars(select(KnowledgeItemORM).order_by(KnowledgeItemORM.id))
+ 263:     )
+ 264:     origin_rows = list(session.scalars(select(ImportOriginORM)))
+ 265:     by_item: dict[str, list[ImportOriginORM]] = {}
+ 266:     for row in origin_rows:
+ 267:         by_item.setdefault(str(row.item_id), []).append(row)
+ 268: 
+ 269:     snapshots: list[dict[str, Any]] = []
+ 270:     for item in items:
+ 271:         item_id = str(item.id)
+ 272:         db_instance: Any = item.source_instance_id
+ 273:         if item_id in overrides:
+ 274:             db_instance = overrides[item_id][0]
+ 275:         views = _build_origins(by_item.get(item_id, []))
+ 276:         origin_state, pair, single_digest = _origin_state(views, db_instance)
+ 277:         if origin_state == "none":
+ 278:             item_state = "none"
+ 279:             valid_instance = db_instance
+ 280:             valid_document = item_id
+ 281:         elif origin_state == "complete" and pair is not None:
+ 282:             item_state = "complete"
+ 283:             valid_instance, valid_document = pair
+ 284:         else:
+ 285:             item_state = "incomplete"
+ 286:             valid_instance = None
+ 287:             valid_document = None
+ 288:         snapshot = {
+ 289:             "item_id": item_id,
+ 290:             "origin_state": item_state,
+ 291:             "db_source_instance_id": db_instance,
+ 292:             "source_instance_id": valid_instance,
+ 293:             "source_document_id": valid_document,
+ 294:             "import_origin_count": len(views),
+ 295:             "import_origin_state": origin_state,
+ 296:             "incomplete_origin_count": sum(
+ 297:                 1 for view in views if "incomplete" in view.flags
+ 298:             ),
+ 299:             "invalid_origin_count": sum(1 for view in views if "invalid" in view.flags),
+ 300:             "duplicate_origin_count": sum(
+ 301:                 1 for view in views if view.duplicate_group_size > 1
+ 302:             ),
+ 303:             "import_origins": [
+ 304:                 {
+ 305:                     "import_origin_id": view.origin_id,
+ 306:                     "source_instance_id": view.instance,
+ 307:                     "source_document_id": view.document,
+ 308:                     "source_payload_hash": view.payload,
+ 309:                     "status_flags": list(view.flags),
+ 310:                     "duplicate_group_size": view.duplicate_group_size,
+ 311:                 }
+ 312:                 for view in views
+ 313:             ],
+ 314:             "import_origin_identity_digest": single_digest,
+ 315:         }
+ 316:         snapshots.append(snapshot)
+ 317:     return snapshots
+ 318: 
+ 319: 
+ 320: def identity_audit_digest(
+ 321:     session: Session, *, materialized: dict[str, tuple[str, str]] | None = None
+ 322: ) -> str:
+ 323:     return sha256_canonical(build_identity_snapshots(session, materialized=materialized))
+ 324: 
+ 325: 
+ 326: # ---------------------------------------------------------------------------
+
+ 329: class JournalStore:
+ 330:     def __init__(self, data_dir: Path) -> None:
+ 331:         self.data_dir = Path(data_dir)
+ 332:         self.current = self.data_dir / "source-identity-journal.json"
+ 333:         self.archive_dir = self.data_dir / "source-identity-journal.archive"
+ 334: 
+ 335:     # -- 校验 ---------------------------------------------------------------
+ 336:     @staticmethod
+ 337:     def validate(record: dict[str, Any]) -> dict[str, Any]:
+ 338:         if not isinstance(record, dict) or set(record) != _TOP_FIELDS:
+ 339:             raise SourceIdentityError(JOURNAL_CORRUPT, "top-level fields mismatch")
+ 340:         if record["schema_version"] != 1:
+ 341:             raise SourceIdentityError(JOURNAL_CORRUPT, "schema_version")
+ 342:         if not _is_uuid_text(record["operation_id"], version=4):
+ 343:             raise SourceIdentityError(JOURNAL_CORRUPT, "operation_id")
+ 344:         if record["kind"] not in ("MATERIALIZE", "ROTATE"):
+ 345:             raise SourceIdentityError(JOURNAL_CORRUPT, "kind")
+ 346:         if record["phase"] not in ("PREPARED", "COMMITTED"):
+ 347:             raise SourceIdentityError(JOURNAL_CORRUPT, "phase")
+ 348:         for key in ("materialization_digest", "identity_audit_digest", "journal_checksum"):
+ 349:             if not isinstance(record[key], str) or not _DIGEST_RE.fullmatch(record[key]):
+ 350:                 raise SourceIdentityError(JOURNAL_CORRUPT, key)
+ 351:         items = record["materialization_items"]
+ 352:         if not isinstance(items, list):
+ 353:             raise SourceIdentityError(JOURNAL_CORRUPT, "materialization_items")
+ 354:         for item in items:
+ 355:             if not isinstance(item, dict) or set(item) != _ITEM_FIELDS:
+ 356:                 raise SourceIdentityError(JOURNAL_CORRUPT, "item fields")
+ 357:             if item["identity_record_version"] != 1:
+ 358:                 raise SourceIdentityError(JOURNAL_CORRUPT, "identity_record_version")
+ 359:             if not _is_uuid_text(item["item_id"]):
+ 360:                 raise SourceIdentityError(JOURNAL_CORRUPT, "item_id")
+ 361:             if not _is_uuid_text(item["source_document_id"]):
+ 362:                 raise SourceIdentityError(JOURNAL_CORRUPT, "source_document_id")
+ 363:             if not isinstance(item["source_instance_id"], str) or not item["source_instance_id"]:
+ 364:                 raise SourceIdentityError(JOURNAL_CORRUPT, "item source_instance_id")
+ 365:             if not isinstance(item["item_identity_digest"], str) or not _DIGEST_RE.fullmatch(
+ 366:                 item["item_identity_digest"]
+ 367:             ):
+ 368:                 raise SourceIdentityError(JOURNAL_CORRUPT, "item_identity_digest")
+ 369:             if item["item_identity_digest"] != item_identity_digest(item):
+ 370:                 raise SourceIdentityError(JOURNAL_CORRUPT, "item digest mismatch")
+ 371:         try:
+ 372:             expected_materialization = materialization_digest(items)
+ 373:         except CanonicalJsonError as exc:
+ 374:             raise SourceIdentityError(JOURNAL_CORRUPT, "materialization canonical") from exc
+ 375:         if record["materialization_digest"] != expected_materialization:
+ 376:             raise SourceIdentityError(JOURNAL_CORRUPT, "materialization digest mismatch")
+ 377: 
+ 378:         kind = record["kind"]
+ 379:         if kind == "MATERIALIZE":
+ 380:             if len(items) != 1:
+ 381:                 raise SourceIdentityError(JOURNAL_CORRUPT, "MATERIALIZE item count")
+ 382:             if not _is_uuid_text(record["item_id"]):
+ 383:                 raise SourceIdentityError(JOURNAL_CORRUPT, "MATERIALIZE item_id")
+ 384:             if record["item_id"] != items[0]["item_id"]:
+ 385:                 raise SourceIdentityError(JOURNAL_CORRUPT, "MATERIALIZE item mismatch")
+ 386:             if items[0]["source_document_id"] != items[0]["item_id"]:
+ 387:                 raise SourceIdentityError(JOURNAL_CORRUPT, "local document id")
+ 388:             if record["source_instance_id"] != items[0]["source_instance_id"]:
+ 389:                 raise SourceIdentityError(JOURNAL_CORRUPT, "MATERIALIZE instance mismatch")
+ 390:             if record["source_document_id"] != record["item_id"]:
+ 391:                 raise SourceIdentityError(JOURNAL_CORRUPT, "top document mismatch")
+ 392:             if record["old_instance_id"] is not None or record["target_instance_id"] is not None:
+ 393:                 raise SourceIdentityError(JOURNAL_CORRUPT, "MATERIALIZE rotate fields")
+ 394:         else:
+ 395:             if record["item_id"] is not None or record["source_instance_id"] is not None:
+ 396:                 raise SourceIdentityError(JOURNAL_CORRUPT, "ROTATE top fields")
+ 397:             if record["source_document_id"] is not None:
+ 398:                 raise SourceIdentityError(JOURNAL_CORRUPT, "ROTATE document")
+ 399:             if not _is_uuid_text(record["old_instance_id"], version=4):
+ 400:                 raise SourceIdentityError(JOURNAL_CORRUPT, "old_instance_id")
+ 401:             if not _is_uuid_text(record["target_instance_id"], version=4):
+ 402:                 raise SourceIdentityError(JOURNAL_CORRUPT, "target_instance_id")
+ 403:             if record["old_instance_id"] == record["target_instance_id"]:
+ 404:                 raise SourceIdentityError(JOURNAL_CORRUPT, "rotate same id")
+ 405:             for item in items:
+ 406:                 if item["source_instance_id"] != record["old_instance_id"]:
+ 407:                     raise SourceIdentityError(JOURNAL_CORRUPT, "rotate item instance")
+ 408:         body = {k: v for k, v in record.items() if k != "journal_checksum"}
+ 409:         try:
+ 410:             checksum = sha256_canonical(body)
+ 411:         except CanonicalJsonError as exc:
+ 412:             raise SourceIdentityError(JOURNAL_CORRUPT, "checksum canonical") from exc
+ 413:         if checksum != record["journal_checksum"]:
+ 414:             raise SourceIdentityError(JOURNAL_CORRUPT, "journal checksum mismatch")
+ 415:         return record
+ 416: 
+ 417:     def read_current(self) -> dict[str, Any] | None:
+ 418:         if not self.current.exists():
+ 419:             return None
+ 420:         try:
+ 421:             return self.validate(canonical_loads(self.current.read_bytes()))
+ 422:         except (OSError, CanonicalJsonError) as exc:
+ 423:             raise SourceIdentityError(JOURNAL_CORRUPT, "current unreadable") from exc
+ 424: 
+ 425:     # -- 写入 ---------------------------------------------------------------
+ 426:     def write_current(self, record: dict[str, Any]) -> None:
+ 427:         self.data_dir.mkdir(parents=True, exist_ok=True)
+ 428:         self._atomic_write(self.current, canonical_dumps(record).encode("utf-8"))
+ 429: 
+ 430:     def _atomic_write(self, target: Path, payload: bytes) -> None:
+ 431:         target.parent.mkdir(parents=True, exist_ok=True)
+ 432:         tmp = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+ 433:         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+ 434:         try:
+ 435:             try:
+ 436:                 write_all(fd, payload)
+ 437:                 os.fsync(fd)
+ 438:             finally:
+ 439:                 os.close(fd)
+ 440:             os.replace(tmp, target)
+ 441:         finally:
+ 442:             with suppress(OSError):
+ 443:                 os.unlink(tmp)
+ 444:         _sync_dir(target.parent)
+ 445: 
+ 446:     # -- 归档 ---------------------------------------------------------------
+ 447:     def read_archive(self) -> list[dict[str, Any]]:
+ 448:         if not self.archive_dir.exists():
+ 449:             return []
+ 450:         records = []
+ 451:         for path in sorted(self.archive_dir.glob("*.json")):
+ 452:             try:
+ 453:                 record = self.validate(canonical_loads(path.read_bytes()))
+ 454:             except (OSError, CanonicalJsonError) as exc:
+ 455:                 raise SourceIdentityError(JOURNAL_CORRUPT, f"archive {path.name}") from exc
+ 456:             if record["phase"] != "COMMITTED":
+ 457:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archived non-committed")
+ 458:             if path.name != f"{record['operation_id']}.json":
+ 459:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archive name mismatch")
+ 460:             records.append(record)
+ 461:         return records
+ 462: 
+ 463:     def archive_committed(self, record: dict[str, Any]) -> None:
+ 464:         if record["phase"] != "COMMITTED":
+ 465:             raise SourceIdentityError(JOURNAL_CORRUPT, "archive requires COMMITTED")
+ 466:         self.archive_dir.mkdir(parents=True, exist_ok=True)
+ 467:         target = self.archive_dir / f"{record['operation_id']}.json"
+ 468:         payload = canonical_dumps(record).encode("utf-8")
+ 469:         if target.exists():
+ 470:             if target.read_bytes() != payload:
+ 471:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+ 472:             return
+ 473:         tmp = self.archive_dir / f".{target.name}.{uuid.uuid4().hex}.tmp"
+ 474:         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+ 475:         try:
+ 476:             try:
+ 477:                 write_all(fd, payload)
+ 478:                 os.fsync(fd)
+ 479:             finally:
+ 480:                 os.close(fd)
+ 481:             self._publish_archive_no_overwrite(tmp, target, payload)
+ 482:         finally:
+ 483:             with suppress(OSError):
+ 484:                 os.unlink(tmp)
+ 485:         _sync_dir(self.archive_dir)
+ 486: 
+ 487:     @staticmethod
+ 488:     def _publish_archive_no_overwrite(tmp: Path, target: Path, payload: bytes) -> None:
+ 489:         """原子发布归档且绝不覆盖已有归档（P2-06）。
+ 490: 
+ 491:         先硬链接（目标存在则 ``FileExistsError``），再复核字节一致；不依赖
+ 492:         「检查 target.exists() 之后到 replace 之前无人创建」这一未验证假设。
+ 493:         硬链接不受支持时退回 O_EXCL 独占创建；已有目标仍不覆盖。
+ 494:         """
+ 495:         try:
+ 496:             os.link(tmp, target)
+ 497:         except FileExistsError:
+ 498:             pass
+ 499:         except OSError:
+ 500:             try:
+ 501:                 target_fd = os.open(
+ 502:                     target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY, 0o600
+ 503:                 )
+ 504:             except FileExistsError:
+ 505:                 pass
+ 506:             else:
+ 507:                 try:
+ 508:                     try:
+ 509:                         write_all(target_fd, payload)
+ 510:                         os.fsync(target_fd)
+ 511:                     finally:
+ 512:                         os.close(target_fd)
+ 513:                 except BaseException:
+ 514:                     # 独占创建后写入失败：移除不完整归档；current 保留。
+ 515:                     with suppress(OSError):
+ 516:                         os.unlink(target)
+ 517:                     raise
+ 518:         try:
+ 519:             existing = target.read_bytes()
+ 520:         except OSError as exc:
+ 521:             raise SourceIdentityError(JOURNAL_CORRUPT, "archive publish missing") from exc
+ 522:         if existing != payload:
+ 523:             raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+ 524: 
+ 525:     def remove_current(self) -> None:
+ 526:         try:
+ 527:             os.unlink(self.current)
+ 528:         except FileNotFoundError:
+ 529:             return
+ 530:         _sync_dir(self.data_dir)
+ 531: 
+ 532:     def committed_materialize_records(self) -> list[dict[str, Any]]:
+ 533:         records: dict[str, dict[str, Any]] = {}
+ 534:         current = self.read_current()
+ 535:         candidates = self.read_archive() + ([current] if current else [])
+ 536:         for record in candidates:
+ 537:             if record["phase"] != "COMMITTED" or record["kind"] != "MATERIALIZE":
+ 538:                 continue
+ 539:             operation_id = record["operation_id"]
+ 540:             if operation_id in records and records[operation_id] != record:
+ 541:                 raise SourceIdentityError(JOURNAL_CORRUPT, "operation id conflict")
+ 542:             records[operation_id] = record
+ 543:         return list(records.values())
+ 544: 
+ 545: 
+ 546: # ---------------------------------------------------------------------------
+ 547: # 分类与生命周期
+ 548: # ---------------------------------------------------------------------------
+ 549: @dataclass
+
+ 574: class SourceIdentityService:
+ 575:     def __init__(
+ 576:         self,
+ 577:         session_factory: sessionmaker[Session],
+ 578:         data_dir: Path,
+ 579:         instance_store: SourceInstanceIdStore | None = None,
+ 580:     ) -> None:
+ 581:         self._factory = session_factory
+ 582:         self._data_dir = Path(data_dir)
+ 583:         self._store = instance_store or SourceInstanceIdStore(self._data_dir)
+ 584:         self.journal = JournalStore(self._data_dir)
+ 585:         self._journal_lock = threading.RLock()
+ 586: 
+ 587:     # -- 快照/分类 ----------------------------------------------------------
+ 588:     def snapshots(self, session: Session) -> list[dict[str, Any]]:
+ 589:         return build_identity_snapshots(session)
+ 590: 
+ 591:     def audit_digest(self, session: Session) -> str:
+ 592:         return sha256_canonical(self.snapshots(session))
+ 593: 
+ 594:     @contextmanager
+ 595:     def identity_guard(self) -> Iterator[None]:
+ 596:         """串行化「身份分类 + 导入身份写入」与 MATERIALIZE/ROTATE。
+ 597: 
+ 598:         P1-02：导入事务必须在同一把 Journal 锁内完成分类校验、DB 写入与
+ 599:         commit，避免「导入检查时尚未物化、导出并发物化后导入再追加
+ 600:         ImportOrigin」的事务成功冲突态。恢复门在获锁后先执行。
+ 601:         """
+ 602:         with self._journal_lock:
+ 603:             self._recover_locked()
+ 604:             yield
+ 605: 
+ 606:     def has_committed_materialize(self, item_id: UUID | str) -> bool:
+ 607:         """该条目是否存在 COMMITTED MATERIALIZE 记录（含 current/archive）。"""
+ 608:         with self._journal_lock:
+ 609:             self._recover_locked()
+ 610:             return bool(self._committed_index().get(str(item_id)))
+ 611: 
+ 612:     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
+ 613:         index: dict[str, list[dict[str, Any]]] = {}
+ 614:         for record in self.journal.committed_materialize_records():
+ 615:             index.setdefault(record["item_id"], []).append(record)
+ 616:         return index
+ 617: 
+ 618:     @staticmethod
+ 619:     def _origin_materialize_conflict(
+ 620:         snapshot: dict[str, Any], records: list[dict[str, Any]]
+ 621:     ) -> bool:
+ 622:         """§22.2：ImportOrigin 与任意 COMMITTED MATERIALIZE 记录并存即冲突。
+ 623: 
+ 624:         仅检查 ImportOrigin 自身是否 complete 不足以发现跨记录冲突；
+ 625:         冲突时不选任何一条作为可信来源。
+ 626:         """
+ 627:         return snapshot["import_origin_count"] > 0 and bool(records)
+
+ 680:     # -- Journal 恢复门 -----------------------------------------------------
+ 681:     def recover_if_needed(self) -> None:
+ 682:         with self._journal_lock:
+ 683:             self._recover_locked()
+ 684: 
+ 685:     def _recover_locked(self) -> None:
+ 686:         record = self.journal.read_current()
+ 687:         if record is None:
+ 688:             return
+ 689:         if record["phase"] == "PREPARED":
+ 690:             if record["kind"] == "MATERIALIZE":
+ 691:                 self._recover_materialize(record)
+ 692:             else:
+ 693:                 self._recover_rotate(record)
+ 694:         else:
+ 695:             self._recover_committed(record)
+ 696: 
+ 697:     def _verify_record_db(self, record: dict[str, Any], session: Session) -> None:
+ 698:         # 物化清单逐条满足 Journal 记录值（RECOVERY 表：等于才接受）。
+ 699:         for entry in record["materialization_items"]:
+ 700:             item = session.get(KnowledgeItemORM, entry["item_id"])
+ 701:             if item is None:
+ 702:                 raise SourceIdentityError(JOURNAL_CORRUPT, "materialized item missing")
+ 703:             origins = session.scalar(
+ 704:                 select(ImportOriginORM.id).where(
+ 705:                     ImportOriginORM.item_id == entry["item_id"]
+ 706:                 )
+ 707:             )
+ 708:             if origins is not None:
+ 709:                 raise SourceIdentityError(
+ 710:                     SOURCE_IDENTITY_INCONSISTENT, "materialized item has origin"
+ 711:                 )
+ 712:             if item.source_instance_id != entry["source_instance_id"]:
+ 713:                 raise SourceIdentityError(
+ 714:                     SOURCE_IDENTITY_INCONSISTENT, "materialized instance mismatch"
+ 715:                 )
+ 716: 
+ 717:     def _verify_audit(self, record: dict[str, Any], session: Session) -> None:
+ 718:         if self.audit_digest(session) != record["identity_audit_digest"]:
+ 719:             raise SourceIdentityError(
+ 720:                 SOURCE_IDENTITY_INCONSISTENT, "identity audit digest mismatch"
+ 721:             )
+ 722: 
+ 723:     def _commit_and_archive(
+ 724:         self, record: dict[str, Any], session: Session
+ 725:     ) -> dict[str, Any]:
+ 726:         self._verify_audit(record, session)
+ 727:         committed = dict(record)
+ 728:         committed["phase"] = "COMMITTED"
+ 729:         committed["updated_at"] = _now()
+ 730:         body = {k: v for k, v in committed.items() if k != "journal_checksum"}
+ 731:         committed["journal_checksum"] = sha256_canonical(body)
+ 732:         self.journal.write_current(committed)
+ 733:         # 归档前从 DB 重算（写入 COMMITTED 不改变 DB，但规则要求逐次取证）。
+ 734:         self._verify_audit(committed, session)
+ 735:         self.journal.archive_committed(committed)
+ 736:         self.journal.remove_current()
+ 737:         return committed
+ 738: 
+ 739:     def _recover_materialize(self, record: dict[str, Any]) -> None:
+ 740:         entry = record["materialization_items"][0]
+ 741:         session = self._factory()
+ 742:         try:
+ 743:             item = session.get(KnowledgeItemORM, entry["item_id"])
+ 744:             if item is None:
+ 745:                 raise SourceIdentityError(JOURNAL_CORRUPT, "materialize target missing")
+ 746:             has_origin = session.scalar(
+ 747:                 select(ImportOriginORM.id).where(
+ 748:                     ImportOriginORM.item_id == entry["item_id"]
+ 749:                 )
+ 750:             )
+ 751:             if has_origin is not None:
+ 752:                 raise SourceIdentityError(
+ 753:                     SOURCE_IDENTITY_INCONSISTENT, "target has import origin"
+ 754:                 )
+ 755:             if item.source_instance_id in (None, ""):
+ 756:                 stmt = (
+ 757:                     update(KnowledgeItemORM)
+ 758:                     .where(
+ 759:                         KnowledgeItemORM.id == entry["item_id"],
+ 760:                         or_(
+ 761:                             KnowledgeItemORM.source_instance_id.is_(None),
+ 762:                             KnowledgeItemORM.source_instance_id == "",
+ 763:                         ),
+ 764:                     )
+ 765:                     .values(
+ 766:                         source_instance_id=entry["source_instance_id"],
+ 767:                         # 物化是身份元数据写，不是内容修改：保持 updated_at 不变，
+ 768:                         # 否则重复导出 payload_hash 会漂移（D23 稳定导出）。
+ 769:                         updated_at=KnowledgeItemORM.updated_at,
+ 770:                     )
+ 771:                 )
+ 772:                 if session.execute(stmt).rowcount != 1:
+ 773:                     session.rollback()
+ 774:                     raise SourceIdentityError(
+ 775:                         SOURCE_IDENTITY_INCONSISTENT, "conditional update failed"
+ 776:                     )
+ 777:                 session.commit()
+ 778:                 session.expire_all()
+ 779:                 item = session.get(KnowledgeItemORM, entry["item_id"])
+ 780:                 assert item is not None
+ 781:             if item.source_instance_id != entry["source_instance_id"]:
+ 782:                 raise SourceIdentityError(
+ 783:                     SOURCE_IDENTITY_INCONSISTENT, "materialize value conflict"
+ 784:                 )
+ 785:             self._verify_record_db(record, session)
+ 786:             self._verify_audit(record, session)
+ 787:             self._commit_and_archive(record, session)
+ 788:         except Exception:
+ 789:             session.rollback()
+ 790:             raise
+ 791:         finally:
+ 792:             session.close()
+ 793: 
+ 794:     def _recover_rotate(self, record: dict[str, Any]) -> None:
+ 795:         current_id = self._store.read()
+ 796:         target = record["target_instance_id"]
+ 797:         old = record["old_instance_id"]
+ 798:         session = self._factory()
+ 799:         try:
+ 800:             self._verify_record_db(record, session)
+ 801:             if current_id == old:
+ 802:                 self._verify_audit(record, session)
+ 803:                 self._store.replace(target)
+ 804:                 if self._store.read() != target:
+ 805:                     raise SourceIdentityError(
+ 806:                         SOURCE_IDENTITY_INCONSISTENT, "rotate id readback"
+ 807:                     )
+ 808:                 self._verify_audit(record, session)
+ 809:             elif current_id != target:
+ 810:                 raise SourceIdentityError(
+ 811:                     SOURCE_IDENTITY_INCONSISTENT, "rotate instance mismatch"
+ 812:                 )
+ 813:             self._verify_audit(record, session)
+ 814:             self._commit_and_archive(record, session)
+ 815:         finally:
+ 816:             session.close()
+ 817: 
+ 818:     def _recover_committed(self, record: dict[str, Any]) -> None:
+ 819:         session = self._factory()
+ 820:         try:
+ 821:             current_id = self._store.read()
+ 822:             if record["kind"] == "ROTATE":
+ 823:                 if current_id != record["target_instance_id"]:
+ 824:                     raise SourceIdentityError(
+ 825:                         SOURCE_IDENTITY_INCONSISTENT, "committed rotate id mismatch"
+ 826:                     )
+ 827:             else:
+ 828:                 self._verify_record_db(record, session)
+ 829:             self._verify_audit(record, session)
+ 830:             self.journal.archive_committed(record)
+ 831:             self.journal.remove_current()
+ 832:         finally:
+ 833:             session.close()
+ 834: 
+ 835:     # -- MATERIALIZE ---------------------------------------------------------
+ 836:     def ensure_local_export_identity(self, item_id: UUID | str) -> str:
+ 837:         """导出前确保本地文档有稳定身份：2b 直接复用；2a 走 Journal 物化。"""
+ 838:         with self._journal_lock:
+ 839:             self._recover_locked()
+ 840:             session = self._factory()
+ 841:             try:
+ 842:                 classified = self.classify(session, item_id)
+ 843:             finally:
+ 844:                 session.close()
+ 845:             if classified.state == "2b":
+ 846:                 assert classified.source_instance_id is not None
+ 847:                 return classified.source_instance_id
+ 848:             if classified.state == "2a":
+ 849:                 return self.materialize(item_id).source_instance_id
+ 850:             if classified.state == "1":
+ 851:                 assert classified.source_instance_id is not None
+ 852:                 return classified.source_instance_id
+ 853:             raise SourceIdentityError(
+ 854:                 SOURCE_DOCUMENT_UNMATERIALIZED,
+ 855:                 f"identity state {classified.state} cannot be materialized",
+ 856:             )
+ 857: 
+ 858:     def materialize(self, item_id: UUID | str) -> MaterializeReport:
+ 859:         with self._journal_lock:
+ 860:             # 恢复优先；恢复完成前不得分类或写身份。
+ 861:             self._recover_locked()
+ 862:             session = self._factory()
+ 863:             try:
+ 864:                 # P1-01：先做只读身份分类。冲突/非 2a 状态必须在创建实例身份
+ 865:                 # 文件之前返回，保证零身份文件、零 DB、零 Journal 写入。

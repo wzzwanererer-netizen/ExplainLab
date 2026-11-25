@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="6" time="10.581" timestamp="2026-11-24T20:38:51.392798+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_review" name="test_index_commit_failure_does_not_unapprove_review[True]" time="1.728"><failure message="assert (3 == 2)&#10; +  where 3 = len([&lt;sqlalchemy.orm.session.Session object at 0x0000025B77F57E90&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B77F57E90&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B77F54B90&gt;])">client = &lt;starlette.testclient.TestClient object at 0x0000025B778ABF50&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000025B77DC30D0&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000025B77CF10D0&gt;
+with_attachment = True
+
+    @pytest.mark.parametrize("with_attachment", [True, False])
+    def test_index_commit_failure_does_not_unapprove_review(
+        client, monkeypatch, caplog, with_attachment,
+    ):
+        item, review, staging = _pending(client, with_attachment=with_attachment)
+        sync = governance._sync_applied_action
+        commits = []
+    
+        async def flag_index_commit(session, *args):
+            await sync(session, *args)
+            session.info["fail_index_commit"] = True
+    
+        def fail_commit(session):
+            commits.append(session)
+            if session.info.get("fail_index_commit"):
+                raise RuntimeError("index commit intercepted")
+    
+        monkeypatch.setattr(governance, "_sync_applied_action", flag_index_commit)
+        event.listen(Session, "before_commit", fail_commit)
+        try:
+            response = _resolve(client, review)
+        finally:
+            event.remove(Session, "before_commit", fail_commit)
+        assert response.status_code == 200, response.text
+&gt;       assert len(commits) == 2 and commits[0] is not commits[1]
+E       assert (3 == 2)
+E        +  where 3 = len([&lt;sqlalchemy.orm.session.Session object at 0x0000025B77F57E90&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B77F57E90&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B77F54B90&gt;])
+
+backend\tests\test_attachment_review.py:321: AssertionError</failure></testcase><testcase classname="backend.tests.test_attachment_review" name="test_index_commit_failure_does_not_unapprove_review[False]" time="1.391"><failure message="assert (3 == 2)&#10; +  where 3 = len([&lt;sqlalchemy.orm.session.Session object at 0x0000025B780E4690&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B780E4690&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B78118590&gt;])">client = &lt;starlette.testclient.TestClient object at 0x0000025B77E910D0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000025B77FBBB90&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000025B77FCBB50&gt;
+with_attachment = False
+
+    @pytest.mark.parametrize("with_attachment", [True, False])
+    def test_index_commit_failure_does_not_unapprove_review(
+        client, monkeypatch, caplog, with_attachment,
+    ):
+        item, review, staging = _pending(client, with_attachment=with_attachment)
+        sync = governance._sync_applied_action
+        commits = []
+    
+        async def flag_index_commit(session, *args):
+            await sync(session, *args)
+            session.info["fail_index_commit"] = True
+    
+        def fail_commit(session):
+            commits.append(session)
+            if session.info.get("fail_index_commit"):
+                raise RuntimeError("index commit intercepted")
+    
+        monkeypatch.setattr(governance, "_sync_applied_action", flag_index_commit)
+        event.listen(Session, "before_commit", fail_commit)
+        try:
+            response = _resolve(client, review)
+        finally:
+            event.remove(Session, "before_commit", fail_commit)
+        assert response.status_code == 200, response.text
+&gt;       assert len(commits) == 2 and commits[0] is not commits[1]
+E       assert (3 == 2)
+E        +  where 3 = len([&lt;sqlalchemy.orm.session.Session object at 0x0000025B780E4690&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B780E4690&gt;, &lt;sqlalchemy.orm.session.Session object at 0x0000025B78118590&gt;])
+
+backend\tests\test_attachment_review.py:321: AssertionError</failure></testcase><testcase classname="backend.tests.test_attachment_review" name="test_review_index_failure_preserves_committed_business[ordinary_approve]" time="1.928" /><testcase classname="backend.tests.test_attachment_review" name="test_review_index_failure_preserves_committed_business[draft_apply]" time="1.091"><failure message="AssertionError: assert [] == ['updated']&#10;  &#10;  Right contains one more item: 'updated'&#10;  Use -v to get more diff">client = &lt;starlette.testclient.TestClient object at 0x0000025B78214BD0&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000025B781CF510&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000025B781E4110&gt;
+route = 'draft_apply'
+
+    @pytest.mark.parametrize("route", ["ordinary_approve", "draft_apply", "restore"])
+    def test_review_index_failure_preserves_committed_business(client, monkeypatch, caplog, route):
+        response = client.post("/api/knowledge", json={"title": "note", "content": "previous"})
+        assert response.status_code == 201
+        item = response.json()["id"]
+        submission = {
+            "item_id": item, "action": "update_item", "payload": {"content": "updated"},
+        }
+        if route == "ordinary_approve":
+            with get_session_factory()() as session:
+                session.get(KnowledgeItemORM, item).status = "active"
+                session.commit()
+            pending = client.post("/api/reviews", json=submission)
+            assert pending.status_code == 201
+            review = pending.json()["review"]["id"]
+        elif route == "restore":
+            assert client.patch(f"/api/knowledge/{item}", json={"content": "updated"}).status_code == 200
+    
+        calls = []
+    
+        async def fail_index(*args):
+            calls.append(client.get(f"/api/knowledge/{item}").json()["content"])
+            raise RuntimeError("private index error text")
+    
+        monkeypatch.setattr(governance, "_sync_applied_action", fail_index)
+        if route == "ordinary_approve":
+            result = _resolve(client, review)
+            assert result.status_code == 200 and result.json()["status"] == "approved"
+            assert _resolve(client, review).status_code == 409
+        elif route == "draft_apply":
+            result = client.post("/api/reviews", json=submission)
+            assert result.status_code == 200 and result.json()["applied"] is True
+        else:
+            result = client.post(f"/api/knowledge/{item}/versions/1/restore")
+            assert result.status_code == 200 and result.json()["content"] == "previous"
+        expected = "previous" if route == "restore" else "updated"
+&gt;       assert calls == [expected]
+E       AssertionError: assert [] == ['updated']
+E         
+E         Right contains one more item: 'updated'
+E         Use -v to get more diff
+
+backend\tests\test_attachment_review.py:369: AssertionError</failure></testcase><testcase classname="backend.tests.test_attachment_review" name="test_review_index_failure_preserves_committed_business[restore]" time="1.406"><failure message="AssertionError: assert [] == ['previous']&#10;  &#10;  Right contains one more item: 'previous'&#10;  Use -v to get more diff">client = &lt;starlette.testclient.TestClient object at 0x0000025B782BE810&gt;
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000025B782D0710&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000025B782D3810&gt;
+route = 'restore'
+
+    @pytest.mark.parametrize("route", ["ordinary_approve", "draft_apply", "restore"])
+    def test_review_index_failure_preserves_committed_business(client, monkeypatch, caplog, route):
+        response = client.post("/api/knowledge", json={"title": "note", "content": "previous"})
+        assert response.status_code == 201
+        item = response.json()["id"]
+        submission = {
+            "item_id": item, "action": "update_item", "payload": {"content": "updated"},
+        }
+        if route == "ordinary_approve":
+            with get_session_factory()() as session:
+                session.get(KnowledgeItemORM, item).status = "active"
+                session.commit()
+            pending = client.post("/api/reviews", json=submission)
+            assert pending.status_code == 201
+            review = pending.json()["review"]["id"]
+        elif route == "restore":
+            assert client.patch(f"/api/knowledge/{item}", json={"content": "updated"}).status_code == 200
+    
+        calls = []
+    
+        async def fail_index(*args):
+            calls.append(client.get(f"/api/knowledge/{item}").json()["content"])
+            raise RuntimeError("private index error text")
+    
+        monkeypatch.setattr(governance, "_sync_applied_action", fail_index)
+        if route == "ordinary_approve":
+            result = _resolve(client, review)
+            assert result.status_code == 200 and result.json()["status"] == "approved"
+            assert _resolve(client, review).status_code == 409
+        elif route == "draft_apply":
+            result = client.post("/api/reviews", json=submission)
+            assert result.status_code == 200 and result.json()["applied"] is True
+        else:
+            result = client.post(f"/api/knowledge/{item}/versions/1/restore")
+            assert result.status_code == 200 and result.json()["content"] == "previous"
+        expected = "previous" if route == "restore" else "updated"
+&gt;       assert calls == [expected]
+E       AssertionError: assert [] == ['previous']
+E         
+E         Right contains one more item: 'previous'
+E         Use -v to get more diff
+
+backend\tests\test_attachment_review.py:369: AssertionError</failure></testcase><testcase classname="backend.tests.test_attachment_review" name="test_index_failure_does_not_unapprove_review" time="1.710" /></testsuite></testsuites>

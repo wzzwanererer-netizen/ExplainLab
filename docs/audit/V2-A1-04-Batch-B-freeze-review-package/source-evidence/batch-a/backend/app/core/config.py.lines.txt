@@ -1,0 +1,47 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 9270d5edb9691ba8c45b3744d79cb1704d8975c6
+Source: backend/app/core/config.py
+
+  40:     app_name: str = "ExplainLab"
+  41:     version: str = "0.1.0"
+  42:     environment: str = "development"
+  43: 
+  44:     database_url: str = DEFAULT_DATABASE_URL
+  45:     # V2 A1-04：本机数据根（进程锁 / source-instance-id / Journal）。
+  46:     # 默认与 SQLite 数据文件同目录；测试注入临时目录以隔离。
+  47:     data_dir: Path = BACKEND_DIR / "data"
+  48:     # 同步导入身份锁有界等待（秒）；超时返回 IMPORT_LOCK_TIMEOUT。
+  49:     import_lock_wait_seconds: float = 10.0
+  50:     cors_origins: list[str] = [
+  51:         "http://localhost:5173",
+  52:         "http://127.0.0.1:5173",
+  53:     ]
+  54: 
+  55:     # 模型适配层：M1 接入 OpenAI 兼容供应商；密钥仅后端持有，绝不进入前端。
+
+  77:     @field_validator("database_url", mode="before")
+  78:     @classmethod
+  79:     def _normalize_database_url(cls, value: object) -> str:
+  80:         """空值回退默认；SQLite 相对文件路径锚定到 backend 目录。
+  81: 
+  82:         绝对路径（POSIX 以 / 开头或 Windows 含盘符）、:memory: 与非 SQLite URL 原样保留。
+  83:         """
+  84:         if not isinstance(value, str) or not value.strip():
+  85:             return DEFAULT_DATABASE_URL
+  86:         url = value.strip()
+  87:         prefix = "sqlite:///"
+  88:         if url.startswith(prefix) and ":memory:" not in url:
+  89:             path_part = url[len(prefix) :]
+  90:             if not path_part.startswith("/") and not Path(path_part).is_absolute():
+  91:                 anchored = (BACKEND_DIR / path_part).resolve()
+  92:                 return f"{prefix}{anchored.as_posix()}"
+  93:         return url
+  94: 
+  95:     @property
+  96:     def is_sqlite(self) -> bool:
+  97:         return self.database_url.startswith("sqlite")
+  98: 
+  99: 
+ 100: @lru_cache
+ 101: def get_settings() -> Settings:
+ 102:     return Settings()

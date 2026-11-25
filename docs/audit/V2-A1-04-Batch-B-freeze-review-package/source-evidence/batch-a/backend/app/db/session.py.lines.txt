@@ -1,0 +1,91 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 78a664f430c2e357d4e0ca56d0b433f324f0a225
+Source: backend/app/db/session.py
+
+  19: def create_engine_from_url(database_url: str) -> Engine:
+  20:     """按方言创建引擎。SQLite 文件库自动创建父目录。"""
+  21:     if database_url.startswith("sqlite"):
+  22:         if database_url.startswith("sqlite:///") and ":memory:" not in database_url:
+  23:             db_path = database_url.removeprefix("sqlite:///")
+  24:             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+  25:         engine = create_engine(
+  26:             database_url,
+  27:             connect_args={"check_same_thread": False},
+  28:         )
+  29: 
+  30:         # SQLite 默认不启用外键约束；显式开启后，模型声明的 ON DELETE CASCADE
+  31:         # 才会在删除知识条目时真正级联清理关系 / 版本 / 审核 / 来源，避免孤儿数据。
+  32:         # PostgreSQL 默认强制外键，无需此处理。
+  33:         # busy_timeout（K2）：写锁争用（重建写阶段 RESERVED→EXCLUSIVE 升级 / 并发写）
+  34:         # 时等待而非立即 SQLITE_BUSY，降低重建即失败概率；不改变事务隔离/日志模式等
+  35:         # 默认语义。SQLite 读阶段不持阻塞写者的锁，窗口②安全由步 7 P2 乐观前置保证。
+  36:         @event.listens_for(engine, "connect")
+  37:         def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+  38:             cursor = dbapi_connection.cursor()
+  39:             cursor.execute("PRAGMA foreign_keys=ON")
+  40:             cursor.execute("PRAGMA busy_timeout=5000")
+  41:             cursor.close()
+  42: 
+  43:         return engine
+  44:     return create_engine(database_url, pool_pre_ping=True)
+  45: 
+  46: 
+  47: _engine: Engine | None = None
+  48: _session_factory: sessionmaker[Session] | None = None
+  49: 
+  50: 
+  51: def init_db(settings: Settings | None = None) -> Engine:
+  52:     """初始化引擎与会话工厂（应用启动时调用）。"""
+  53:     global _engine, _session_factory
+  54:     settings = settings if settings is not None else get_settings()
+  55:     _engine = create_engine_from_url(settings.database_url)
+  56:     _session_factory = sessionmaker(bind=_engine, autoflush=False, expire_on_commit=False)
+  57:     return _engine
+
+  69: def get_engine() -> Engine:
+  70:     if _engine is None:
+  71:         init_db()
+  72:     assert _engine is not None
+  73:     return _engine
+  74: 
+  75: 
+  76: def get_session_factory() -> sessionmaker[Session]:
+  77:     """返回会话工厂（V2 导入/身份服务需要在线程内自建多个短会话）。"""
+  78:     if _session_factory is None:
+  79:         init_db()
+  80:     assert _session_factory is not None
+  81:     return _session_factory
+  82: 
+  83: 
+  84: def create_session() -> Session:
+  85:     """创建独立会话（V2 导入协调器在锁内自建 S1，不共享请求会话）。"""
+  86:     if _session_factory is None:
+  87:         init_db()
+  88:     assert _session_factory is not None
+  89:     return _session_factory()
+  90: 
+  91: 
+  92: def get_session() -> Generator[Session, None, None]:
+  93:     """FastAPI 依赖：每个请求一个会话。"""
+  94:     if _session_factory is None:
+  95:         init_db()
+  96:     assert _session_factory is not None
+  97:     session = _session_factory()
+  98:     try:
+  99:         yield session
+ 100:     finally:
+ 101:         session.close()
+ 102: 
+ 103: 
+ 104: @contextmanager
+ 105: def session_scope() -> Iterator[Session]:
+ 106:     """非请求场景的事务上下文（启动初始化、脚本等）：自动提交 / 回滚。"""
+ 107:     if _session_factory is None:
+ 108:         init_db()
+ 109:     assert _session_factory is not None
+ 110:     session = _session_factory()
+ 111:     try:
+ 112:         yield session
+ 113:         session.commit()
+ 114:     except Exception:
+ 115:         session.rollback()

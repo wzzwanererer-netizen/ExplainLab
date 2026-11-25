@@ -1,0 +1,395 @@
+
+====================================================================================================
+1. 启动入口：进程锁 + source-instance-id.ensure + recover_if_needed
+backend/app/main.py lines 62-107（1-based，含端点）
+====================================================================================================
+0062: def create_app(settings: Settings | None = None) -> FastAPI:
+0063:     settings = settings if settings is not None else get_settings()
+0064: 
+0065:     @asynccontextmanager
+0066:     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+0067:         if _configured_workers() > 1:
+0068:             raise RuntimeError("MULTI_WORKER_UNSUPPORTED")
+0069:         init_db(settings)
+0070:         settings.data_dir.mkdir(parents=True, exist_ok=True)
+0071:         # 单实例 OS 锁必须先于 source-instance-id 生成与任何导入/身份写操作。
+0072:         lock = ProcessLock(settings.data_dir)
+0073:         lock.acquire()
+0074:         try:
+0075:             instance_store = SourceInstanceIdStore(settings.data_dir)
+0076:             instance_store.ensure()
+0077:             coordinator = ImportCoordinator(
+0078:                 wait_seconds=settings.import_lock_wait_seconds
+0079:             )
+0080:             identity = SourceIdentityService(
+0081:                 get_session_factory(), settings.data_dir, instance_store
+0082:             )
+0083:             # 启动即过 Journal 恢复门；数据库暂不可达时保持 503，导入入口会再次恢复。
+0084:             try:
+0085:                 identity.recover_if_needed()
+0086:             except SQLAlchemyError:
+0087:                 logger.warning("启动时数据库不可达，身份 Journal 恢复延后")
+0088:             markdown_service = MarkdownService(
+0089:                 get_session_factory(), coordinator, identity, instance_store
+0090:             )
+0091:             application.state.process_lock = lock
+0092:             application.state.import_coordinator = coordinator
+0093:             application.state.source_identity = identity
+0094:             application.state.source_instance_store = instance_store
+0095:             application.state.markdown_service = markdown_service
+0096:             try:
+0097:                 with session_scope() as session:
+0098:                     ensure_default_space(session)
+0099:             except Exception:
+0100:                 # 数据库暂不可达时不阻断启动；/api/health 会如实报告 degraded，
+0101:                 # 默认空间在数据库恢复后的下次启动时幂等补建。
+0102:                 logger.warning("默认知识空间初始化失败，将在下次启动时重试", exc_info=True)
+0103:             yield
+0104:         finally:
+0105:             dispose_db()
+0106:             lock.release()
+0107: 
+
+====================================================================================================
+2. 导入入口恢复门
+backend/app/services/markdown.py lines 238-250（1-based，含端点）
+====================================================================================================
+0238:         self,
+0239:         documents: list[MarkdownImportDocument],
+0240:         *,
+0241:         space_id: str | None = None,
+0242:         manifest: dict[str, Any] | None = None,
+0243:         batch_id: str | None = None,
+0244:         reject_attachments: bool = False,
+0245:     ) -> ImportOutcome:
+0246:         if not documents:
+0247:             raise MarkdownServiceError("IMPORT_EMPTY", "no documents")
+0248:         # D23 恢复门：恢复完成前禁止分类/身份写入/新操作（含导入）。
+0249:         self._identity.recover_if_needed()
+0250:         prepared = self._preflight(documents, manifest)
+
+====================================================================================================
+3. 批量导出入口恢复门
+backend/app/services/markdown.py lines 1060-1075（1-based，含端点）
+====================================================================================================
+1060:     # ------------------------------------------------------------------ 导出
+1061:     def export_documents(
+1062:         self,
+1063:         ids: list[UUID],
+1064:         *,
+1065:         space_id: str | None = None,
+1066:         include_attachments: bool = False,
+1067:     ) -> tuple[bytes, list[dict[str, Any]]]:
+1068:         if include_attachments:
+1069:             raise MarkdownServiceError(
+1070:                 ATTACHMENT_EXPORT_UNSUPPORTED,
+1071:                 "Batch A 不支持附件导出",
+1072:             )
+1073:         self._identity.recover_if_needed()
+1074:         session = self._factory()
+1075:         try:
+
+====================================================================================================
+4. 单篇导出入口恢复门
+backend/app/services/markdown.py lines 1126-1135（1-based，含端点）
+====================================================================================================
+1126:     def export_single(self, item_id: UUID) -> ExportOutcome:
+1127:         self._identity.recover_if_needed()
+1128:         session = self._factory()
+1129:         try:
+1130:             record = MarkdownItemRepository(session).get(item_id)
+1131:         finally:
+1132:             session.close()
+1133:         if record is None:
+1134:             raise MarkdownServiceError("ITEM_NOT_FOUND", "条目不存在", status_code=404)
+1135:         return self._export_record(record)
+
+====================================================================================================
+5. recover_if_needed() 与 _recover_locked() 分派
+backend/app/services/source_identity.py lines 626-641（1-based，含端点）
+====================================================================================================
+0626:     # -- Journal 恢复门 -----------------------------------------------------
+0627:     def recover_if_needed(self) -> None:
+0628:         with self._journal_lock:
+0629:             self._recover_locked()
+0630: 
+0631:     def _recover_locked(self) -> None:
+0632:         record = self.journal.read_current()
+0633:         if record is None:
+0634:             return
+0635:         if record["phase"] == "PREPARED":
+0636:             if record["kind"] == "MATERIALIZE":
+0637:                 self._recover_materialize(record)
+0638:             else:
+0639:                 self._recover_rotate(record)
+0640:         else:
+0641:             self._recover_committed(record)
+
+====================================================================================================
+6. PREPARED MATERIALIZE 恢复（含 ImportOrigin 拒绝）
+backend/app/services/source_identity.py lines 685-738（1-based，含端点）
+====================================================================================================
+0685:     def _recover_materialize(self, record: dict[str, Any]) -> None:
+0686:         entry = record["materialization_items"][0]
+0687:         session = self._factory()
+0688:         try:
+0689:             item = session.get(KnowledgeItemORM, entry["item_id"])
+0690:             if item is None:
+0691:                 raise SourceIdentityError(JOURNAL_CORRUPT, "materialize target missing")
+0692:             has_origin = session.scalar(
+0693:                 select(ImportOriginORM.id).where(
+0694:                     ImportOriginORM.item_id == entry["item_id"]
+0695:                 )
+0696:             )
+0697:             if has_origin is not None:
+0698:                 raise SourceIdentityError(
+0699:                     SOURCE_IDENTITY_INCONSISTENT, "target has import origin"
+0700:                 )
+0701:             if item.source_instance_id in (None, ""):
+0702:                 stmt = (
+0703:                     update(KnowledgeItemORM)
+0704:                     .where(
+0705:                         KnowledgeItemORM.id == entry["item_id"],
+0706:                         or_(
+0707:                             KnowledgeItemORM.source_instance_id.is_(None),
+0708:                             KnowledgeItemORM.source_instance_id == "",
+0709:                         ),
+0710:                     )
+0711:                     .values(
+0712:                         source_instance_id=entry["source_instance_id"],
+0713:                         # 物化是身份元数据写，不是内容修改：保持 updated_at 不变，
+0714:                         # 否则重复导出 payload_hash 会漂移（D23 稳定导出）。
+0715:                         updated_at=KnowledgeItemORM.updated_at,
+0716:                     )
+0717:                 )
+0718:                 if session.execute(stmt).rowcount != 1:
+0719:                     session.rollback()
+0720:                     raise SourceIdentityError(
+0721:                         SOURCE_IDENTITY_INCONSISTENT, "conditional update failed"
+0722:                     )
+0723:                 session.commit()
+0724:                 session.expire_all()
+0725:                 item = session.get(KnowledgeItemORM, entry["item_id"])
+0726:                 assert item is not None
+0727:             if item.source_instance_id != entry["source_instance_id"]:
+0728:                 raise SourceIdentityError(
+0729:                     SOURCE_IDENTITY_INCONSISTENT, "materialize value conflict"
+0730:                 )
+0731:             self._verify_record_db(record, session)
+0732:             self._verify_audit(record, session)
+0733:             self._commit_and_archive(record, session)
+0734:         except Exception:
+0735:             session.rollback()
+0736:             raise
+0737:         finally:
+0738:             session.close()
+
+====================================================================================================
+7. PREPARED ROTATE 恢复
+backend/app/services/source_identity.py lines 740-762（1-based，含端点）
+====================================================================================================
+0740:     def _recover_rotate(self, record: dict[str, Any]) -> None:
+0741:         current_id = self._store.read()
+0742:         target = record["target_instance_id"]
+0743:         old = record["old_instance_id"]
+0744:         session = self._factory()
+0745:         try:
+0746:             self._verify_record_db(record, session)
+0747:             if current_id == old:
+0748:                 self._verify_audit(record, session)
+0749:                 self._store.replace(target)
+0750:                 if self._store.read() != target:
+0751:                     raise SourceIdentityError(
+0752:                         SOURCE_IDENTITY_INCONSISTENT, "rotate id readback"
+0753:                     )
+0754:                 self._verify_audit(record, session)
+0755:             elif current_id != target:
+0756:                 raise SourceIdentityError(
+0757:                     SOURCE_IDENTITY_INCONSISTENT, "rotate instance mismatch"
+0758:                 )
+0759:             self._verify_audit(record, session)
+0760:             self._commit_and_archive(record, session)
+0761:         finally:
+0762:             session.close()
+
+====================================================================================================
+8. COMMITTED 恢复（只补归档，不重写 DB）
+backend/app/services/source_identity.py lines 764-779（1-based，含端点）
+====================================================================================================
+0764:     def _recover_committed(self, record: dict[str, Any]) -> None:
+0765:         session = self._factory()
+0766:         try:
+0767:             current_id = self._store.read()
+0768:             if record["kind"] == "ROTATE":
+0769:                 if current_id != record["target_instance_id"]:
+0770:                     raise SourceIdentityError(
+0771:                         SOURCE_IDENTITY_INCONSISTENT, "committed rotate id mismatch"
+0772:                     )
+0773:             else:
+0774:                 self._verify_record_db(record, session)
+0775:             self._verify_audit(record, session)
+0776:             self.journal.archive_committed(record)
+0777:             self.journal.remove_current()
+0778:         finally:
+0779:             session.close()
+
+====================================================================================================
+9. COMMITTED 写入与归档：_commit_and_archive
+backend/app/services/source_identity.py lines 669-683（1-based，含端点）
+====================================================================================================
+0669:     def _commit_and_archive(
+0670:         self, record: dict[str, Any], session: Session
+0671:     ) -> dict[str, Any]:
+0672:         self._verify_audit(record, session)
+0673:         committed = dict(record)
+0674:         committed["phase"] = "COMMITTED"
+0675:         committed["updated_at"] = _now()
+0676:         body = {k: v for k, v in committed.items() if k != "journal_checksum"}
+0677:         committed["journal_checksum"] = sha256_canonical(body)
+0678:         self.journal.write_current(committed)
+0679:         # 归档前从 DB 重算（写入 COMMITTED 不改变 DB，但规则要求逐次取证）。
+0680:         self._verify_audit(committed, session)
+0681:         self.journal.archive_committed(committed)
+0682:         self.journal.remove_current()
+0683:         return committed
+
+====================================================================================================
+10. current/archive 读取、写入、归档、移除
+backend/app/services/source_identity.py lines 415-507（1-based，含端点）
+====================================================================================================
+0415:     def read_current(self) -> dict[str, Any] | None:
+0416:         if not self.current.exists():
+0417:             return None
+0418:         try:
+0419:             return self.validate(canonical_loads(self.current.read_bytes()))
+0420:         except (OSError, CanonicalJsonError) as exc:
+0421:             raise SourceIdentityError(JOURNAL_CORRUPT, "current unreadable") from exc
+0422: 
+0423:     # -- 写入 ---------------------------------------------------------------
+0424:     def write_current(self, record: dict[str, Any]) -> None:
+0425:         self.data_dir.mkdir(parents=True, exist_ok=True)
+0426:         self._atomic_write(self.current, canonical_dumps(record).encode("utf-8"))
+0427: 
+0428:     def _atomic_write(self, target: Path, payload: bytes) -> None:
+0429:         target.parent.mkdir(parents=True, exist_ok=True)
+0430:         tmp = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+0431:         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+0432:         try:
+0433:             try:
+0434:                 write_all(fd, payload)
+0435:                 os.fsync(fd)
+0436:             finally:
+0437:                 os.close(fd)
+0438:             os.replace(tmp, target)
+0439:         finally:
+0440:             with suppress(OSError):
+0441:                 os.unlink(tmp)
+0442:         _sync_dir(target.parent)
+0443: 
+0444:     # -- 归档 ---------------------------------------------------------------
+0445:     def read_archive(self) -> list[dict[str, Any]]:
+0446:         if not self.archive_dir.exists():
+0447:             return []
+0448:         records = []
+0449:         for path in sorted(self.archive_dir.glob("*.json")):
+0450:             try:
+0451:                 record = self.validate(canonical_loads(path.read_bytes()))
+0452:             except (OSError, CanonicalJsonError) as exc:
+0453:                 raise SourceIdentityError(JOURNAL_CORRUPT, f"archive {path.name}") from exc
+0454:             if record["phase"] != "COMMITTED":
+0455:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archived non-committed")
+0456:             if path.name != f"{record['operation_id']}.json":
+0457:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archive name mismatch")
+0458:             records.append(record)
+0459:         return records
+0460: 
+0461:     def archive_committed(self, record: dict[str, Any]) -> None:
+0462:         if record["phase"] != "COMMITTED":
+0463:             raise SourceIdentityError(JOURNAL_CORRUPT, "archive requires COMMITTED")
+0464:         self.archive_dir.mkdir(parents=True, exist_ok=True)
+0465:         target = self.archive_dir / f"{record['operation_id']}.json"
+0466:         payload = canonical_dumps(record).encode("utf-8")
+0467:         if target.exists():
+0468:             if target.read_bytes() != payload:
+0469:                 raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+0470:             return
+0471:         tmp = self.archive_dir / f".{target.name}.{uuid.uuid4().hex}.tmp"
+0472:         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+0473:         try:
+0474:             try:
+0475:                 write_all(fd, payload)
+0476:                 os.fsync(fd)
+0477:             finally:
+0478:                 os.close(fd)
+0479:             if target.exists():
+0480:                 if target.read_bytes() != payload:
+0481:                     raise SourceIdentityError(JOURNAL_CORRUPT, "archive content conflict")
+0482:             else:
+0483:                 os.replace(tmp, target)
+0484:         finally:
+0485:             with suppress(OSError):
+0486:                 os.unlink(tmp)
+0487:         _sync_dir(self.archive_dir)
+0488: 
+0489:     def remove_current(self) -> None:
+0490:         try:
+0491:             os.unlink(self.current)
+0492:         except FileNotFoundError:
+0493:             return
+0494:         _sync_dir(self.data_dir)
+0495: 
+0496:     def committed_materialize_records(self) -> list[dict[str, Any]]:
+0497:         records: dict[str, dict[str, Any]] = {}
+0498:         current = self.read_current()
+0499:         candidates = self.read_archive() + ([current] if current else [])
+0500:         for record in candidates:
+0501:             if record["phase"] != "COMMITTED" or record["kind"] != "MATERIALIZE":
+0502:                 continue
+0503:             operation_id = record["operation_id"]
+0504:             if operation_id in records and records[operation_id] != record:
+0505:                 raise SourceIdentityError(JOURNAL_CORRUPT, "operation id conflict")
+0506:             records[operation_id] = record
+0507:         return list(records.values())
+
+====================================================================================================
+11. 服务内部恢复门：ensure_local_export_identity 与 materialize
+backend/app/services/source_identity.py lines 782-810（1-based，含端点）
+====================================================================================================
+0782:     def ensure_local_export_identity(self, item_id: UUID | str) -> str:
+0783:         """导出前确保本地文档有稳定身份：2b 直接复用；2a 走 Journal 物化。"""
+0784:         with self._journal_lock:
+0785:             self._recover_locked()
+0786:             session = self._factory()
+0787:             try:
+0788:                 classified = self.classify(session, item_id)
+0789:             finally:
+0790:                 session.close()
+0791:             if classified.state == "2b":
+0792:                 assert classified.source_instance_id is not None
+0793:                 return classified.source_instance_id
+0794:             if classified.state == "2a":
+0795:                 return self.materialize(item_id).source_instance_id
+0796:             if classified.state == "1":
+0797:                 assert classified.source_instance_id is not None
+0798:                 return classified.source_instance_id
+0799:             raise SourceIdentityError(
+0800:                 SOURCE_DOCUMENT_UNMATERIALIZED,
+0801:                 f"identity state {classified.state} cannot be materialized",
+0802:             )
+0803: 
+0804:     def materialize(self, item_id: UUID | str) -> MaterializeReport:
+0805:         with self._journal_lock:
+0806:             self._recover_locked()
+0807:             target = self._store.ensure()
+0808:             session = self._factory()
+0809:             try:
+0810:                 classified = self.classify(session, item_id)
+
+====================================================================================================
+12. 服务内部恢复门：rotate
+backend/app/services/source_identity.py lines 880-883（1-based，含端点）
+====================================================================================================
+0880:     def rotate(self, target_instance_id: str | None = None) -> RotateReport:
+0881:         with self._journal_lock:
+0882:             self._recover_locked()
+0883:             old = self._store.ensure()

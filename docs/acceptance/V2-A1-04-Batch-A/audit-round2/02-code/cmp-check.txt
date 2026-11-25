@@ -1,0 +1,25 @@
+# 逐字节比较（工作树 vs 02-code 副本）
+# 时间：2026-11-22T04:06:27+08:00
+# 方法：cmp -s <工作树> <副本>; echo cmp_exit=$?
+backend/app/services/source_identity.py  source_identity.py  cmp_exit=0
+backend/app/services/source_instance_id.py  source_instance_id.py  cmp_exit=0
+backend/app/services/file_write.py  file_write.py  cmp_exit=0
+backend/tests/test_markdown_batch_a_identity.py  test_markdown_batch_a_identity.py  cmp_exit=0
+backend/tests/test_batch_a_file_write.py  test_batch_a_file_write.py  cmp_exit=0
+
+# SHA-256（工作树与副本各自计算）
+backend/app/services/source_identity.py
+1fd4e2e2d49246e82a71f38e88cbed4ca0fa192a7906b7225f912a8051ec43c1 *backend/app/services/source_identity.py
+1fd4e2e2d49246e82a71f38e88cbed4ca0fa192a7906b7225f912a8051ec43c1 *docs/acceptance/V2-A1-04-Batch-A/audit-round2/02-code/source_identity.py
+backend/app/services/source_instance_id.py
+96ae5fe80c46115b95356aaed347865afaff15e5943676b4b65a69f5ddd8de3f *backend/app/services/source_instance_id.py
+96ae5fe80c46115b95356aaed347865afaff15e5943676b4b65a69f5ddd8de3f *docs/acceptance/V2-A1-04-Batch-A/audit-round2/02-code/source_instance_id.py
+backend/app/services/file_write.py
+64dc50821af7ff5f6536494c68570d1499e3c7e0b4123b347577b7388c56bd04 *backend/app/services/file_write.py
+64dc50821af7ff5f6536494c68570d1499e3c7e0b4123b347577b7388c56bd04 *docs/acceptance/V2-A1-04-Batch-A/audit-round2/02-code/file_write.py
+backend/tests/test_markdown_batch_a_identity.py
+055b05a5de5ec743d713ef17a267c6e221b8225a6df52920f1b2be20ebaaf942 *backend/tests/test_markdown_batch_a_identity.py
+055b05a5de5ec743d713ef17a267c6e221b8225a6df52920f1b2be20ebaaf942 *docs/acceptance/V2-A1-04-Batch-A/audit-round2/02-code/test_markdown_batch_a_identity.py
+backend/tests/test_batch_a_file_write.py
+a9cf54c9663db910f9571fb072dbd0dfc2b3e15ffecec56acd42f4b95598e36d *backend/tests/test_batch_a_file_write.py
+a9cf54c9663db910f9571fb072dbd0dfc2b3e15ffecec56acd42f4b95598e36d *docs/acceptance/V2-A1-04-Batch-A/audit-round2/02-code/test_batch_a_file_write.py

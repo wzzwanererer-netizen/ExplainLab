@@ -1,0 +1,758 @@
+/* ==========================================================================
+   Nesti Fluent — Desktop Workspace Shell & Module Layouts
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--nf-bg-window);
+  color: var(--nf-text-primary);
+  font-family: var(--nf-font-sans);
+  font-size: 13px;
+  line-height: 1.48;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Scoped Scrollbars */
+.nf-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.nf-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nf-scroll::-webkit-scrollbar-thumb {
+  background: var(--nf-border-default);
+  border-radius: 99px;
+}
+.nf-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--nf-border-strong);
+}
+
+/* App Frame */
+.nf-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  min-width: 960px;
+  background: var(--nf-bg-window);
+}
+
+/* 1. Windows Desktop Titlebar */
+.nf-titlebar {
+  height: var(--nf-titlebar-h);
+  display: grid;
+  grid-template-columns: 264px 1fr auto;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--nf-bg-window);
+  border-bottom: 1px solid var(--nf-border-subtle);
+  user-select: none;
+  gap: 12px;
+}
+
+.nf-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Official Nesti Brand Logo Slot — NEVER tinted by dynamic theme */
+.nf-nesti-logo-slot {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #ffffff 0%, #e5edfa 100%);
+  border: 1px solid #c9d9f5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2463eb;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 2px rgba(36, 99, 235, 0.14);
+  flex-shrink: 0;
+}
+
+.nf-brand-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--nf-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nf-brand-sep {
+  color: var(--nf-border-strong);
+  font-weight: 400;
+}
+
+.nf-brand-module {
+  color: var(--nf-text-secondary);
+  font-weight: 500;
+}
+
+.nf-global-search-trigger {
+  justify-self: center;
+  width: 100%;
+  max-width: 420px;
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--nf-bg-surface);
+  border: 1px solid var(--nf-border-default);
+  border-radius: var(--nf-radius-sm);
+  color: var(--nf-text-muted);
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+.nf-global-search-trigger:hover {
+  border-color: var(--nf-border-strong);
+  color: var(--nf-text-secondary);
+}
+
+.nf-kbd {
+  margin-left: auto;
+  font-family: var(--nf-font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--nf-bg-surface-subtle);
+  border: 1px solid var(--nf-border-subtle);
+  color: var(--nf-text-muted);
+}
+
+.nf-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nf-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--nf-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--nf-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.nf-icon-btn:hover {
+  background: var(--nf-bg-surface-hover);
+  color: var(--nf-text-primary);
+}
+.nf-icon-btn.active {
+  background: var(--nf-accent-soft);
+  color: var(--nf-accent);
+  border-color: var(--nf-accent-border);
+}
+
+.nf-badge-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nf-accent);
+}
+
+.nf-window-controls {
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--nf-border-subtle);
+  gap: 2px;
+}
+
+/* 2. Body Area: Primary Rail + Module Subnav + Workspace + Inspector */
+.nf-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Nesti Shell Primary Rail */
+.nf-rail {
+  width: var(--nf-rail-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 4px;
+  background: var(--nf-bg-window);
+  border-right: 1px solid var(--nf-border-subtle);
+}
+
+.nf-rail-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--nf-radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--nf-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s, color 0.12s;
+}
+.nf-rail-btn:hover {
+  background: var(--nf-bg-surface-hover);
+  color: var(--nf-text-primary);
+}
+.nf-rail-btn.active {
+  background: var(--nf-accent-soft);
+  color: var(--nf-module-icon);
+}
+.nf-rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--nf-accent);
+}
+
+.nf-rail-spacer {
+  flex: 1;
+}
+
+/* ExplainLab Module Secondary Navigation */
+.nf-subnav {
+  width: var(--nf-subnav-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--nf-bg-canvas);
+  border-right: 1px solid var(--nf-border-subtle);
+  padding: 10px 8px;
+  gap: 2px;
+  overflow-y: auto;
+}
+.nf-subnav.collapsed {
+  display: none;
+}
+
+.nf-subnav-section {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nf-text-muted);
+  padding: 10px 10px 4px;
+}
+
+.nf-nav-item {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--nf-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--nf-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 450;
+  transition: background 0.12s, color 0.12s;
+}
+.nf-nav-item:hover {
+  background: var(--nf-bg-surface-hover);
+  color: var(--nf-text-primary);
+}
+.nf-nav-item.active {
+  background: var(--nf-accent-soft);
+  color: var(--nf-accent);
+  font-weight: 600;
+}
+.nf-nav-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--nf-font-mono);
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--nf-bg-surface);
+  border: 1px solid var(--nf-border-subtle);
+  color: var(--nf-text-secondary);
+}
+.nf-nav-item.active .nf-nav-count {
+  background: var(--nf-accent);
+  border-color: var(--nf-accent);
+  color: var(--nf-text-on-accent);
+}
+
+/* Workspace Center Column */
+.nf-workspace-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--nf-bg-canvas);
+}
+
+/* Multi-tab bar */
+.nf-tabbar {
+  height: 34px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 10px;
+  gap: 4px;
+  background: var(--nf-bg-window);
+  border-bottom: 1px solid var(--nf-border-subtle);
+  flex-shrink: 0;
+}
+
+.nf-tab {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--nf-radius-sm) var(--nf-radius-sm) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--nf-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.nf-tab:hover {
+  background: var(--nf-bg-surface-hover);
+  color: var(--nf-text-primary);
+}
+.nf-tab.active {
+  background: var(--nf-bg-canvas);
+  border-color: var(--nf-border-subtle);
+  color: var(--nf-text-primary);
+  font-weight: 500;
+  position: relative;
+}
+.nf-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--nf-bg-canvas);
+}
+
+.nf-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Right Collapsible Inspector */
+.nf-inspector {
+  width: var(--nf-inspector-w);
+  flex-shrink: 0;
+  background: var(--nf-bg-surface);
+  border-left: 1px solid var(--nf-border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.nf-inspector.hidden {
+  display: none;
+}
+.nf-inspector-header {
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--nf-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.nf-inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--nf-pane-pad);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 3. Bottom Status Bar */
+.nf-statusbar {
+  height: var(--nf-statusbar-h);
+  padding: 0 12px;
+  background: var(--nf-bg-window);
+  border-top: 1px solid var(--nf-border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11.5px;
+  color: var(--nf-text-secondary);
+  flex-shrink: 0;
+}
+.nf-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nf-status-success);
+  display: inline-block;
+  margin-right: 5px;
+}
+.nf-status-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Reusable Desktop Controls */
+.nf-toolbar {
+  height: 42px;
+  padding: 0 14px;
+  background: var(--nf-bg-surface);
+  border-bottom: 1px solid var(--nf-border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.nf-toolbar-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-right: 6px;
+}
+
+.nf-btn {
+  height: var(--nf-control-height);
+  padding: 0 11px;
+  border-radius: var(--nf-radius-sm);
+  border: 1px solid var(--nf-border-default);
+  background: var(--nf-bg-surface);
+  color: var(--nf-text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.nf-btn:hover:not(:disabled) {
+  background: var(--nf-bg-surface-hover);
+  border-color: var(--nf-border-strong);
+}
+.nf-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.nf-btn-primary {
+  background: var(--nf-accent);
+  border-color: var(--nf-accent);
+  color: var(--nf-text-on-accent);
+}
+.nf-btn-primary:hover:not(:disabled) {
+  background: var(--nf-accent-hover);
+  border-color: var(--nf-accent-hover);
+}
+.nf-btn-danger {
+  color: var(--nf-status-danger);
+  border-color: rgba(214, 62, 79, 0.35);
+}
+.nf-btn-danger:hover:not(:disabled) {
+  background: var(--nf-status-danger-bg);
+}
+
+.nf-input,
+.nf-select,
+.nf-textarea {
+  height: var(--nf-control-height);
+  padding: 0 10px;
+  border-radius: var(--nf-radius-sm);
+  border: 1px solid var(--nf-border-default);
+  background: var(--nf-bg-surface);
+  color: var(--nf-text-primary);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.nf-textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.nf-input:focus,
+.nf-select:focus,
+.nf-textarea:focus {
+  border-color: var(--nf-accent);
+  box-shadow: 0 0 0 2px var(--nf-accent-subtle);
+}
+
+.nf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--nf-bg-surface-hover);
+  color: var(--nf-text-secondary);
+}
+.nf-pill.accent {
+  background: var(--nf-accent-soft);
+  color: var(--nf-accent);
+}
+.nf-pill.success {
+  background: var(--nf-status-success-bg);
+  color: var(--nf-status-success);
+}
+.nf-pill.warning {
+  background: var(--nf-status-warning-bg);
+  color: var(--nf-status-warning);
+}
+.nf-pill.danger {
+  background: var(--nf-status-danger-bg);
+  color: var(--nf-status-danger);
+}
+
+.nf-pane {
+  background: var(--nf-bg-surface);
+  border: 1px solid var(--nf-border-subtle);
+  border-radius: var(--nf-radius-md);
+  box-shadow: var(--nf-shadow-sm);
+}
+
+.nf-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--nf-border-subtle);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* Dense Desktop Table */
+.nf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.nf-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--nf-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--nf-border-subtle);
+  background: var(--nf-bg-surface-subtle);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+.nf-table td {
+  padding: 0 10px;
+  height: var(--nf-row-height);
+  border-bottom: 1px solid var(--nf-border-subtle);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.nf-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.nf-table tbody tr:hover {
+  background: var(--nf-bg-surface-hover);
+}
+.nf-table tbody tr.selected {
+  background: var(--nf-accent-soft);
+}
+
+/* Split Layouts */
+.nf-split-2 {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  overflow: hidden;
+}
+.nf-split-pane-left {
+  border-right: 1px solid var(--nf-border-subtle);
+  background: var(--nf-bg-surface-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.nf-split-pane-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--nf-bg-canvas);
+}
+
+/* Segmented Control */
+.nf-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--nf-radius-sm);
+  background: var(--nf-bg-surface-hover);
+  border: 1px solid var(--nf-border-subtle);
+  gap: 2px;
+}
+.nf-segmented button {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--nf-radius-xs);
+  background: transparent;
+  color: var(--nf-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.nf-segmented button.active {
+  background: var(--nf-bg-surface);
+  color: var(--nf-text-primary);
+  box-shadow: var(--nf-shadow-sm);
+}
+
+/* Diff View */
+.nf-diff {
+  font-family: var(--nf-font-mono);
+  font-size: 12px;
+  border: 1px solid var(--nf-border-subtle);
+  border-radius: var(--nf-radius-sm);
+  overflow: hidden;
+}
+.nf-diff-line {
+  padding: 4px 10px;
+  white-space: pre-wrap;
+}
+.nf-diff-del {
+  background: var(--nf-status-danger-bg);
+  color: var(--nf-status-danger);
+}
+.nf-diff-add {
+  background: var(--nf-status-success-bg);
+  color: var(--nf-status-success);
+}
+
+/* Knowledge Map Canvas */
+.nf-map-stage {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--nf-bg-canvas);
+  background-image: radial-gradient(var(--nf-graph-grid) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+.nf-map-float {
+  position: absolute;
+  background: var(--nf-bg-glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--nf-border-default);
+  border-radius: var(--nf-radius-md);
+  box-shadow: var(--nf-shadow-md);
+}
+.nf-map-node {
+  position: absolute;
+  width: 210px;
+  padding: 9px 12px;
+  background: var(--nf-bg-surface);
+  border: 1px solid var(--nf-border-default);
+  border-radius: var(--nf-radius-md);
+  box-shadow: var(--nf-shadow-sm);
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+.nf-map-node:hover {
+  border-color: var(--nf-accent);
+  box-shadow: var(--nf-shadow-md);
+}
+.nf-map-node.selected {
+  border-color: var(--nf-accent);
+  box-shadow: 0 0 0 2px var(--nf-accent-soft), var(--nf-shadow-md);
+}
+.nf-map-node.archived {
+  border-style: dashed;
+  opacity: 0.62;
+}
+
+/* Modal / Command Palette */
+.nf-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--nf-bg-overlay);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 90px;
+  z-index: 100;
+}
+.nf-modal-backdrop.hidden {
+  display: none;
+}
+.nf-command-box {
+  width: 540px;
+  background: var(--nf-bg-surface);
+  border: 1px solid var(--nf-border-default);
+  border-radius: var(--nf-radius-lg);
+  box-shadow: var(--nf-shadow-lg);
+  overflow: hidden;
+}
+
+.nf-mono {
+  font-family: var(--nf-font-mono);
+}
+.nf-muted {
+  color: var(--nf-text-muted);
+}
+.nf-secondary {
+  color: var(--nf-text-secondary);
+}
+.nf-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

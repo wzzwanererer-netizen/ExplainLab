@@ -1,0 +1,45 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 108585e2ea0bfac2977edf015953e6332ad03158
+Source: backend/app/services/governance.py
+
+ 169: class SQLAlchemyReviewRepository:
+ 170:     """ReviewRepository 端口的 SQLAlchemy 实现。payload 以 JSON 文本存储。"""
+ 171: 
+ 172:     def __init__(self, session: Session) -> None:
+ 173:         self._session = session
+ 174: 
+ 175:     def save_review(self, review: ReviewRequest) -> ReviewRequest:
+ 176:         row = ReviewRequestORM(
+ 177:             id=str(review.id),
+ 178:             item_id=str(review.item_id),
+ 179:             action=review.action.value,
+ 180:             payload=json.dumps(review.payload, ensure_ascii=False),
+ 181:             reason=review.reason,
+ 182:             status=review.status.value,
+ 183:             created_at=review.created_at,
+ 184:             resolved_at=review.resolved_at,
+ 185:             resolution_note=review.resolution_note,
+ 186:         )
+ 187:         self._session.add(row)
+ 188:         self._session.flush()
+ 189:         return _to_review(row)
+ 190: 
+ 191:     def get_review(self, review_id: UUID) -> ReviewRequest | None:
+ 192:         row = self._session.get(ReviewRequestORM, str(review_id))
+ 193:         return _to_review(row) if row is not None else None
+ 194: 
+ 195:     def list_reviews(self, status: ReviewStatus | None = None) -> list[ReviewRequest]:
+ 196:         stmt = select(ReviewRequestORM).order_by(ReviewRequestORM.created_at.desc())
+ 197:         if status is not None:
+ 198:             stmt = stmt.where(ReviewRequestORM.status == status.value)
+ 199:         return [_to_review(row) for row in self._session.scalars(stmt)]
+ 200: 
+ 201:     def update_review(self, review: ReviewRequest) -> ReviewRequest:
+ 202:         row = self._session.get(ReviewRequestORM, str(review.id))
+ 203:         if row is None:
+ 204:             raise NotFoundError(f"审核单不存在: {review.id}")
+ 205:         row.status = review.status.value
+ 206:         row.resolved_at = review.resolved_at
+ 207:         row.resolution_note = review.resolution_note
+ 208:         self._session.flush()
+ 209:         return _to_review(row)

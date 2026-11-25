@@ -1,0 +1,6 @@
+### python / node / uv / pytest versions
+Python 3.11.9
+v22.23.2
+uv 0.13.6 (329bf9448 2026-10-26 x86_64-pc-windows-msvc)
+pytest 9.2.0
+EXIT_CODE=0

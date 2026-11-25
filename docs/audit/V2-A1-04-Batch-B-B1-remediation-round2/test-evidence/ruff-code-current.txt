@@ -1,0 +1,3 @@
+# Command: .venv/Scripts/python.exe -m ruff check backend knowledge-core
+All checks passed!
+exit_code=0

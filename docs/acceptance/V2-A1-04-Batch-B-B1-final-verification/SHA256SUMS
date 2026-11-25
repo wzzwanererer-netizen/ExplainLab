@@ -1,0 +1,15 @@
+503dc59a89b68578df9fbfedb65b357c4c1f854ed158b7a5722a79469802d486  docs/acceptance/ExplainLab-B1-Round3-Linux-Input.zip
+9c31b8b92c689b8a753883ddb9e6259a756bda1d3c176530abc38e7da631913f  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/README.md
+5056a7b5e483a776101951a3d84ed5f37f7867f909da64e79aee921326bb3df3  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/acceptance-matrix.md
+58f98c03f06645debd4e4e8a5d42eacd85a345eac25fd5683842f291e06fd869  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/host-probe.py.txt
+71ca29bfd11e8e31a3b49106e08bd052af751a05228b18b25718e77f9db1b081  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/host-probe.txt
+3cd42da635c65fb72728804b784413f0e02f4351a166191d842751f01b830b75  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/hypervisors.txt
+f3cd9ed868ae1705527c381ef440696646a8df7eff69acb75dfb5029b4e1faed  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/source-preparation-initial.txt
+caa98911ed43d8ccf5b4f9f2d8e55ac1c706e0ee3f3fc22e21c04650510c489b  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/source-preparation.py.txt
+bc0541c383fa12da5ac357eb61c0447612de58d7351084e51b4eecd7d654a75c  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/source-preparation.txt
+1615c75699932c1712bfdaa2f33e1eea974eb5cc1984e2bfe15b58e221ce7be1  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/git-state.md
+ff25ec48ac4aa0b77e489de671a5beafb9516f942c8268fdc7cda508dd0ebc5f  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/linux-environment-report.md
+c3306aa962f6c51907a857d922e0b5a7479abc743c9cdc510fa8a4d925f80175  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/posix-acceptance-report.md
+ac3a0125d2bf6ade6567829a07d796590c9237ef1bc8038ada7e511e9f57dd5f  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/postgresql-acceptance-report.md
+22eee8de5f6082b7ff64a3cee07b763efe928b3c897e01a48bb18bdc4951396c  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/postgresql-environment-report.md
+ad4c6a1ed1179a5efc84e9eb9f0042e6546dfffefca9de27ccbfdfa32897f62b  docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/remaining-risks.md

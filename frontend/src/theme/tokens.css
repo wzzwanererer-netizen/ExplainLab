@@ -1,0 +1,172 @@
+/* Nesti Fluent Design System Tokens — Windows 11 Mica Desktop / Light & Dark / 6 Presets */
+
+:root,
+[data-theme="light"] {
+  --nf-brand-primary: #2463eb;
+  --nf-brand-glacier: #79caff;
+  --nf-brand-violet: #8785ef;
+  --nf-brand-ice: #e5edfa;
+  --nf-brand-offwhite: #f5f8fc;
+  --nf-brand-navy: #243247;
+
+  /* Windows 11 Mica / Layered Desktop Surfaces */
+  --nf-bg-window: #e9eff8;
+  --nf-mica-window: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--nf-accent) 7%, #eaf0f8) 0%,
+    #eef3fa 48%,
+    color-mix(in srgb, var(--nf-brand-glacier) 11%, #edf2fa) 100%
+  );
+  --nf-bg-canvas: #f7f9fd;
+  --nf-bg-surface: #ffffff;
+  --nf-bg-surface-subtle: #f3f6fb;
+  --nf-bg-surface-hover: #e8eef7;
+  --nf-bg-surface-active: #dde6f5;
+  --nf-bg-glass: rgba(255, 255, 255, 0.78);
+  --nf-bg-overlay: rgba(15, 23, 42, 0.36);
+
+  --nf-text-primary: #1b273a;
+  --nf-text-secondary: #4a5b75;
+  --nf-text-muted: #7687a0;
+  --nf-text-on-accent: #ffffff;
+
+  --nf-border-subtle: rgba(36, 50, 71, 0.08);
+  --nf-border-default: rgba(36, 50, 71, 0.14);
+  --nf-border-strong: rgba(36, 50, 71, 0.24);
+
+  --nf-status-success: #0f9d75;
+  --nf-status-success-bg: rgba(15, 157, 117, 0.10);
+  --nf-status-warning: #c97a08;
+  --nf-status-warning-bg: rgba(201, 122, 8, 0.11);
+  --nf-status-danger: #d63e4f;
+  --nf-status-danger-bg: rgba(214, 62, 79, 0.10);
+  --nf-status-info: #2463eb;
+  --nf-status-info-bg: rgba(36, 99, 235, 0.10);
+
+  --nf-accent: #2463eb;
+  --nf-accent-hover: #1d4ed8;
+  --nf-accent-secondary: #79caff;
+  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 12%, transparent);
+  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 8%, transparent);
+  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 30%, transparent);
+  --nf-module-icon: var(--nf-accent);
+
+  --nf-shadow-sm: 0 1px 2px rgba(24, 39, 64, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  --nf-shadow-md: 0 4px 14px rgba(24, 39, 64, 0.07), 0 1px 3px rgba(24, 39, 64, 0.04);
+  --nf-shadow-lg: 0 16px 36px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
+  --nf-workspace-shadow: -2px -1px 12px rgba(24, 39, 64, 0.04);
+
+  --nf-radius-xs: 4px;
+  --nf-radius-sm: 6px;
+  --nf-radius-md: 8px;
+  --nf-radius-lg: 11px;
+  --nf-row-height: 34px;
+  --nf-control-height: 29px;
+
+  --nf-font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
+  --nf-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  --nf-graph-grid: #dce5f2;
+  --nf-graph-edge-related: #64748b;
+  --nf-graph-edge-depends: #2463eb;
+  --nf-graph-edge-refines: #0f9d75;
+  --nf-graph-edge-duplicate: #d63e4f;
+  --nf-graph-edge-contradicts: #d63e4f;
+
+  /* 统一 --nesti-* 语义别名（供星图、Markdown 知识库、流式对话实时联动主题） */
+  --nesti-accent: var(--nf-accent);
+  --nesti-surface-0: var(--nf-bg-canvas);
+  --nesti-surface-1: var(--nf-bg-surface);
+  --nesti-surface-2: var(--nf-bg-surface-subtle);
+  --nesti-surface-hover: var(--nf-bg-surface-hover);
+  --nesti-border-subtle: var(--nf-border-subtle);
+  --nesti-border-strong: var(--nf-border-default);
+  --nesti-text-primary: var(--nf-text-primary);
+  --nesti-text-secondary: var(--nf-text-secondary);
+  --nesti-text-tertiary: var(--nf-text-muted);
+}
+
+[data-theme="dark"] {
+  --nf-bg-window: #0b1019;
+  --nf-mica-window: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--nf-accent) 10%, #0b1019) 0%,
+    #0d131f 52%,
+    #0a101a 100%
+  );
+  --nf-bg-canvas: #101724;
+  --nf-bg-surface: #151f30;
+  --nf-bg-surface-subtle: #111927;
+  --nf-bg-surface-hover: #1c283d;
+  --nf-bg-surface-active: #22324d;
+  --nf-bg-glass: rgba(17, 25, 39, 0.84);
+  --nf-bg-overlay: rgba(4, 8, 15, 0.65);
+
+  --nf-text-primary: #e7effa;
+  --nf-text-secondary: #a2b3cc;
+  --nf-text-muted: #6f83a0;
+  --nf-text-on-accent: #ffffff;
+
+  --nf-border-subtle: rgba(148, 163, 184, 0.12);
+  --nf-border-default: rgba(148, 163, 184, 0.20);
+  --nf-border-strong: rgba(148, 163, 184, 0.32);
+
+  --nf-status-success: #34d399;
+  --nf-status-success-bg: rgba(52, 211, 153, 0.13);
+  --nf-status-warning: #fbbf24;
+  --nf-status-warning-bg: rgba(251, 191, 36, 0.13);
+  --nf-status-danger: #f87171;
+  --nf-status-danger-bg: rgba(248, 113, 113, 0.14);
+  --nf-status-info: #60a5fa;
+  --nf-status-info-bg: rgba(96, 165, 250, 0.14);
+
+  --nf-accent: #4c82f7;
+  --nf-accent-hover: #6495ff;
+  --nf-accent-secondary: #79caff;
+  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 18%, transparent);
+  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 12%, transparent);
+  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 36%, transparent);
+  --nf-module-icon: #79caff;
+
+  --nf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nf-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.38);
+  --nf-shadow-lg: 0 18px 40px rgba(0, 0, 0, 0.55);
+  --nf-workspace-shadow: -2px -1px 16px rgba(0, 0, 0, 0.28);
+
+  --nf-graph-grid: #1e2a3f;
+  --nf-graph-edge-related: #94a3b8;
+  --nf-graph-edge-depends: #60a5fa;
+  --nf-graph-edge-refines: #34d399;
+  --nf-graph-edge-duplicate: #f87171;
+  --nf-graph-edge-contradicts: #f87171;
+}
+
+/* Six Preset Accent Palettes */
+[data-preset="glacier"] { --nf-accent: #2463eb; --nf-accent-hover: #1d4ed8; --nf-module-icon: #2463eb; }
+[data-theme="dark"][data-preset="glacier"] { --nf-accent: #4c82f7; --nf-accent-hover: #6495ff; --nf-module-icon: #79caff; }
+
+[data-preset="iris"] { --nf-accent: #6d5ce7; --nf-accent-hover: #5b48d6; --nf-module-icon: #6d5ce7; }
+[data-theme="dark"][data-preset="iris"] { --nf-accent: #8785ef; --nf-accent-hover: #9f9df5; --nf-module-icon: #a79bff; }
+
+[data-preset="emerald"] { --nf-accent: #0f9d75; --nf-accent-hover: #0b8260; --nf-module-icon: #0f9d75; }
+[data-theme="dark"][data-preset="emerald"] { --nf-accent: #22b88a; --nf-accent-hover: #34d399; --nf-module-icon: #6ee7b7; }
+
+[data-preset="amber"] { --nf-accent: #d97706; --nf-accent-hover: #b45309; --nf-module-icon: #d97706; }
+[data-theme="dark"][data-preset="amber"] { --nf-accent: #f59e0b; --nf-accent-hover: #fbbf24; --nf-module-icon: #fcd34d; }
+
+[data-preset="graphite"] { --nf-accent: #475569; --nf-accent-hover: #334155; --nf-module-icon: #475569; }
+[data-theme="dark"][data-preset="graphite"] { --nf-accent: #7c8ea6; --nf-accent-hover: #94a3b8; --nf-module-icon: #cbd5e1; }
+
+[data-preset="sakura"] { --nf-accent: #db4b7d; --nf-accent-hover: #be3566; --nf-module-icon: #db4b7d; }
+[data-theme="dark"][data-preset="sakura"] { --nf-accent: #ec6b99; --nf-accent-hover: #f48bb0; --nf-module-icon: #f9a8d4; }
+
+[data-density="compact"] { --nf-row-height: 29px; --nf-control-height: 26px; }
+[data-density="comfortable"] { --nf-row-height: 34px; --nf-control-height: 29px; }
+[data-density="spacious"] { --nf-row-height: 40px; --nf-control-height: 34px; }
+
+[data-radius="sharp"] { --nf-radius-xs: 2px; --nf-radius-sm: 3px; --nf-radius-md: 4px; --nf-radius-lg: 6px; }
+[data-radius="balanced"] { --nf-radius-xs: 4px; --nf-radius-sm: 6px; --nf-radius-md: 8px; --nf-radius-lg: 11px; }
+[data-radius="soft"] { --nf-radius-xs: 6px; --nf-radius-sm: 8px; --nf-radius-md: 11px; --nf-radius-lg: 15px; }
+
+[data-shadow="none"] { --nf-shadow-sm: none; --nf-shadow-md: none; --nf-shadow-lg: 0 4px 12px rgba(20, 31, 48, 0.08); }
+[data-shadow="elevated"] { --nf-shadow-sm: 0 2px 4px rgba(24, 39, 64, 0.08); --nf-shadow-md: 0 8px 20px rgba(24, 39, 64, 0.11); --nf-shadow-lg: 0 18px 40px rgba(24, 39, 64, 0.16); }

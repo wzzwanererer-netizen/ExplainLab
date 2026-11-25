@@ -1,0 +1,448 @@
+
+====================================================================================================
+1. ImportOrigin 视图、状态与快照（import_origin_count / import_origin_state 来源）
+backend/app/services/source_identity.py lines 148-317（1-based，含端点）
+====================================================================================================
+0148: class _OriginView:
+0149:     row: ImportOriginORM
+0150:     origin_id: str
+0151:     instance: str | None
+0152:     document: str | None
+0153:     payload: str | None
+0154:     flags: list[str]
+0155:     duplicate_group_size: int = 1
+0156: 
+0157: 
+0158: def _origin_flags(instance: Any, document: Any, payload: Any) -> list[str]:
+0159:     flags: set[str] = set()
+0160:     if instance is None or instance == "":
+0161:         flags.add("incomplete")
+0162:     elif not isinstance(instance, str) or len(instance) > 64 or _has_control(instance):
+0163:         flags.add("invalid")
+0164:     if document is None or document == "":
+0165:         flags.add("incomplete")
+0166:     elif not isinstance(document, str) or not _is_uuid_text(document):
+0167:         flags.add("invalid")
+0168:     if payload is None or payload == "":
+0169:         flags.add("incomplete")
+0170:     elif not isinstance(payload, str) or not _PAYLOAD_RE.fullmatch(payload):
+0171:         flags.add("invalid")
+0172:     return sorted(flags)
+0173: 
+0174: 
+0175: def _check_orphans(session: Session) -> None:
+0176:     item_ids = set(session.scalars(select(KnowledgeItemORM.id)))
+0177:     for origin_id, owner in session.execute(
+0178:         select(ImportOriginORM.id, ImportOriginORM.item_id)
+0179:     ):
+0180:         if owner not in item_ids:
+0181:             raise SourceIdentityError(
+0182:                 SOURCE_IDENTITY_ORPHAN, f"origin {origin_id} references missing item"
+0183:             )
+0184: 
+0185: 
+0186: def _build_origins(rows: list[ImportOriginORM]) -> list[_OriginView]:
+0187:     groups: dict[tuple[Any, Any, Any], int] = {}
+0188:     for row in rows:
+0189:         key = (row.source_instance_id, row.source_document_id, row.source_payload_hash)
+0190:         groups[key] = groups.get(key, 0) + 1
+0191:     views = []
+0192:     for row in rows:
+0193:         view = _OriginView(
+0194:             row=row,
+0195:             origin_id=str(row.id),
+0196:             instance=row.source_instance_id,
+0197:             document=row.source_document_id,
+0198:             payload=row.source_payload_hash,
+0199:             flags=_origin_flags(
+0200:                 row.source_instance_id, row.source_document_id, row.source_payload_hash
+0201:             ),
+0202:         )
+0203:         key = (row.source_instance_id, row.source_document_id, row.source_payload_hash)
+0204:         view.duplicate_group_size = groups[key]
+0205:         views.append(view)
+0206:     views.sort(key=lambda view: view.origin_id)
+0207:     return views
+0208: 
+0209: 
+0210: def _origin_state(
+0211:     views: list[_OriginView], db_instance: Any
+0212: ) -> tuple[str, tuple[str, str] | None, str | None]:
+0213:     """返回 (import_origin_state, 唯一有效身份对, 单记录身份摘要)。"""
+0214:     n = len(views)
+0215:     if n == 0:
+0216:         return "none", None, None
+0217:     legal = [view for view in views if not view.flags]
+0218:     pairs = {(view.instance, view.document) for view in legal}
+0219:     has_duplicate = any(view.duplicate_group_size > 1 for view in views)
+0220:     has_conflict = len(pairs) >= 2
+0221:     if len(pairs) == 1:
+0222:         instance, _document = next(iter(pairs))
+0223:         if db_instance is None or db_instance != instance:
+0224:             has_conflict = True
+0225:     if has_conflict:
+0226:         return "conflict", None, None
+0227:     if any("invalid" in view.flags for view in views):
+0228:         return "invalid", None, None
+0229:     if any("incomplete" in view.flags for view in views):
+0230:         return "incomplete", None, None
+0231:     if has_duplicate:
+0232:         return "duplicate", None, None
+0233:     if len(pairs) == 1:
+0234:         pair = next(iter(pairs))
+0235:         if len(legal) != len(views):
+0236:             return "invalid", None, None
+0237:         digest = None
+0238:         if len(legal) == 1 and legal[0].payload:
+0239:             digest = sha256_canonical(
+0240:                 {
+0241:                     "source_instance_id": legal[0].instance,
+0242:                     "source_document_id": legal[0].document,
+0243:                     "source_payload_hash": legal[0].payload,
+0244:                 }
+0245:             )
+0246:         return "complete", pair, digest
+0247:     # n>0 未命中任何行：实现/数据异常，保守归 invalid，绝不回落 none/complete。
+0248:     return "invalid", None, None
+0249: 
+0250: 
+0251: def build_identity_snapshots(
+0252:     session: Session,
+0253:     *,
+0254:     materialized: dict[str, tuple[str, str]] | None = None,
+0255: ) -> list[dict[str, Any]]:
+0256:     """构造全库身份快照（在内存中应用 ``materialized`` 预测完成态）。"""
+0257:     _check_orphans(session)
+0258:     overrides = materialized or {}
+0259:     items = list(
+0260:         session.scalars(select(KnowledgeItemORM).order_by(KnowledgeItemORM.id))
+0261:     )
+0262:     origin_rows = list(session.scalars(select(ImportOriginORM)))
+0263:     by_item: dict[str, list[ImportOriginORM]] = {}
+0264:     for row in origin_rows:
+0265:         by_item.setdefault(str(row.item_id), []).append(row)
+0266: 
+0267:     snapshots: list[dict[str, Any]] = []
+0268:     for item in items:
+0269:         item_id = str(item.id)
+0270:         db_instance: Any = item.source_instance_id
+0271:         if item_id in overrides:
+0272:             db_instance = overrides[item_id][0]
+0273:         views = _build_origins(by_item.get(item_id, []))
+0274:         origin_state, pair, single_digest = _origin_state(views, db_instance)
+0275:         if origin_state == "none":
+0276:             item_state = "none"
+0277:             valid_instance = db_instance
+0278:             valid_document = item_id
+0279:         elif origin_state == "complete" and pair is not None:
+0280:             item_state = "complete"
+0281:             valid_instance, valid_document = pair
+0282:         else:
+0283:             item_state = "incomplete"
+0284:             valid_instance = None
+0285:             valid_document = None
+0286:         snapshot = {
+0287:             "item_id": item_id,
+0288:             "origin_state": item_state,
+0289:             "db_source_instance_id": db_instance,
+0290:             "source_instance_id": valid_instance,
+0291:             "source_document_id": valid_document,
+0292:             "import_origin_count": len(views),
+0293:             "import_origin_state": origin_state,
+0294:             "incomplete_origin_count": sum(
+0295:                 1 for view in views if "incomplete" in view.flags
+0296:             ),
+0297:             "invalid_origin_count": sum(1 for view in views if "invalid" in view.flags),
+0298:             "duplicate_origin_count": sum(
+0299:                 1 for view in views if view.duplicate_group_size > 1
+0300:             ),
+0301:             "import_origins": [
+0302:                 {
+0303:                     "import_origin_id": view.origin_id,
+0304:                     "source_instance_id": view.instance,
+0305:                     "source_document_id": view.document,
+0306:                     "source_payload_hash": view.payload,
+0307:                     "status_flags": list(view.flags),
+0308:                     "duplicate_group_size": view.duplicate_group_size,
+0309:                 }
+0310:                 for view in views
+0311:             ],
+0312:             "import_origin_identity_digest": single_digest,
+0313:         }
+0314:         snapshots.append(snapshot)
+0315:     return snapshots
+0316: 
+0317: 
+
+====================================================================================================
+2. committed_materialize_records()：只汇总 COMMITTED MATERIALIZE（archive + current）
+backend/app/services/source_identity.py lines 496-507（1-based，含端点）
+====================================================================================================
+0496:     def committed_materialize_records(self) -> list[dict[str, Any]]:
+0497:         records: dict[str, dict[str, Any]] = {}
+0498:         current = self.read_current()
+0499:         candidates = self.read_archive() + ([current] if current else [])
+0500:         for record in candidates:
+0501:             if record["phase"] != "COMMITTED" or record["kind"] != "MATERIALIZE":
+0502:                 continue
+0503:             operation_id = record["operation_id"]
+0504:             if operation_id in records and records[operation_id] != record:
+0505:                 raise SourceIdentityError(JOURNAL_CORRUPT, "operation id conflict")
+0506:             records[operation_id] = record
+0507:         return list(records.values())
+
+====================================================================================================
+3. _committed_index()：按 item_id 建立记录索引
+backend/app/services/source_identity.py lines 558-562（1-based，含端点）
+====================================================================================================
+0558:     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
+0559:         index: dict[str, list[dict[str, Any]]] = {}
+0560:         for record in self.journal.committed_materialize_records():
+0561:             index.setdefault(record["item_id"], []).append(record)
+0562:         return index
+
+====================================================================================================
+4. P1 并存冲突判定 helper
+backend/app/services/source_identity.py lines 564-573（1-based，含端点）
+====================================================================================================
+0564:     @staticmethod
+0565:     def _origin_materialize_conflict(
+0566:         snapshot: dict[str, Any], records: list[dict[str, Any]]
+0567:     ) -> bool:
+0568:         """§22.2：ImportOrigin 与任意 COMMITTED MATERIALIZE 记录并存即冲突。
+0569: 
+0570:         仅检查 ImportOrigin 自身是否 complete 不足以发现跨记录冲突；
+0571:         冲突时不选任何一条作为可信来源。
+0572:         """
+0573:         return snapshot["import_origin_count"] > 0 and bool(records)
+
+====================================================================================================
+5. classify() 全部分支（状态 3 早退位于原状态 1/3 之前）
+backend/app/services/source_identity.py lines 575-624（1-based，含端点）
+====================================================================================================
+0575:     def classify(self, session: Session, item_id: UUID | str) -> ClassifiedIdentity:
+0576:         item = session.get(KnowledgeItemORM, str(item_id))
+0577:         if item is None:
+0578:             raise SourceIdentityError(SOURCE_IDENTITY_INCONSISTENT, "item not found")
+0579:         snapshot = next(
+0580:             (
+0581:                 row
+0582:                 for row in build_identity_snapshots(session)
+0583:                 if row["item_id"] == str(item.id)
+0584:             ),
+0585:             None,
+0586:         )
+0587:         if snapshot is None:  # pragma: no cover - build 覆盖全部 item
+0588:             raise SourceIdentityError(SOURCE_IDENTITY_INCONSISTENT, "snapshot missing")
+0589:         records = self._committed_index().get(str(item.id), [])
+0590:         matching = [
+0591:             record
+0592:             for record in records
+0593:             if record["source_instance_id"] == item.source_instance_id
+0594:             and record["source_document_id"] == str(item.id)
+0595:         ]
+0596:         origin_state = snapshot["import_origin_state"]
+0597:         if self._origin_materialize_conflict(snapshot, records):
+0598:             # §22.2：任何 ImportOrigin 与本地 MATERIALIZE 记录并存均为冲突态，
+0599:             # 即使 ImportOrigin 自身为 complete。不得任选一条作为可信来源。
+0600:             return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+0601:         if snapshot["import_origin_count"] > 0:
+0602:             if origin_state == "complete":
+0603:                 return ClassifiedIdentity(
+0604:                     str(item.id),
+0605:                     "1",
+0606:                     snapshot["source_instance_id"],
+0607:                     snapshot["source_document_id"],
+0608:                     snapshot,
+0609:                 )
+0610:             return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+0611:         has_instance = bool(item.source_instance_id)
+0612:         if not has_instance:
+0613:             if records:
+0614:                 return ClassifiedIdentity(str(item.id), "4", None, None, snapshot)
+0615:             return ClassifiedIdentity(str(item.id), "2a", None, str(item.id), snapshot)
+0616:         if len(matching) == 1 and len(records) == 1:
+0617:             return ClassifiedIdentity(
+0618:                 str(item.id),
+0619:                 "2b",
+0620:                 item.source_instance_id,
+0621:                 str(item.id),
+0622:                 snapshot,
+0623:             )
+0624:         return ClassifiedIdentity(str(item.id), "4", None, None, snapshot)
+
+====================================================================================================
+6. classify 生产调用入口 A：ensure_local_export_identity
+backend/app/services/source_identity.py lines 782-803（1-based，含端点）
+====================================================================================================
+0782:     def ensure_local_export_identity(self, item_id: UUID | str) -> str:
+0783:         """导出前确保本地文档有稳定身份：2b 直接复用；2a 走 Journal 物化。"""
+0784:         with self._journal_lock:
+0785:             self._recover_locked()
+0786:             session = self._factory()
+0787:             try:
+0788:                 classified = self.classify(session, item_id)
+0789:             finally:
+0790:                 session.close()
+0791:             if classified.state == "2b":
+0792:                 assert classified.source_instance_id is not None
+0793:                 return classified.source_instance_id
+0794:             if classified.state == "2a":
+0795:                 return self.materialize(item_id).source_instance_id
+0796:             if classified.state == "1":
+0797:                 assert classified.source_instance_id is not None
+0798:                 return classified.source_instance_id
+0799:             raise SourceIdentityError(
+0800:                 SOURCE_DOCUMENT_UNMATERIALIZED,
+0801:                 f"identity state {classified.state} cannot be materialized",
+0802:             )
+0803: 
+
+====================================================================================================
+7. classify 生产调用入口 B：materialize
+backend/app/services/source_identity.py lines 804-826（1-based，含端点）
+====================================================================================================
+0804:     def materialize(self, item_id: UUID | str) -> MaterializeReport:
+0805:         with self._journal_lock:
+0806:             self._recover_locked()
+0807:             target = self._store.ensure()
+0808:             session = self._factory()
+0809:             try:
+0810:                 classified = self.classify(session, item_id)
+0811:                 if classified.state == "2b":
+0812:                     existing = next(
+0813:                         (
+0814:                             record["operation_id"]
+0815:                             for record in self._committed_index().get(str(item_id), [])
+0816:                         ),
+0817:                         "",
+0818:                     )
+0819:                     return MaterializeReport(str(item_id), existing, False, target)
+0820:                 if classified.state != "2a":
+0821:                     raise SourceIdentityError(
+0822:                         SOURCE_DOCUMENT_UNMATERIALIZED,
+0823:                         f"identity state {classified.state}",
+0824:                     )
+0825:                 entry = {
+0826:                     "item_id": str(item_id),
+
+====================================================================================================
+8. classify 生产调用入口 C：rotate
+backend/app/services/source_identity.py lines 880-908（1-based，含端点）
+====================================================================================================
+0880:     def rotate(self, target_instance_id: str | None = None) -> RotateReport:
+0881:         with self._journal_lock:
+0882:             self._recover_locked()
+0883:             old = self._store.ensure()
+0884:             target = target_instance_id or str(uuid.uuid4())
+0885:             if not _is_uuid_text(target, version=4):
+0886:                 raise SourceIdentityError(SOURCE_IDENTITY_INCONSISTENT, "target not UUIDv4")
+0887:             if target == old:
+0888:                 raise SourceIdentityError(SOURCE_IDENTITY_INCONSISTENT, "target equals old")
+0889: 
+0890:             session = self._factory()
+0891:             try:
+0892:                 all_ids = list(session.scalars(select(KnowledgeItemORM.id)))
+0893:                 pre_materialized: list[str] = []
+0894:                 for raw_id in all_ids:
+0895:                     classified = self.classify(session, raw_id)
+0896:                     if classified.state == "2a":
+0897:                         self.materialize(raw_id)
+0898:                         pre_materialized.append(str(raw_id))
+0899:                     elif classified.state == "3":
+0900:                         # 状态 3 不物化、不改写；rotate 本身允许继续（来源原样保留）。
+0901:                         continue
+0902:                     elif classified.state == "4":
+0903:                         raise SourceIdentityError(
+0904:                             SOURCE_IDENTITY_INCONSISTENT,
+0905:                             f"document {raw_id} is identity state 4",
+0906:                         )
+0907:             finally:
+0908:                 session.close()
+
+====================================================================================================
+9. classify 生产调用入口 D：_export_record（由两个公开导出方法调用）
+backend/app/services/markdown.py lines 1137-1163（1-based，含端点）
+====================================================================================================
+1137:     def _export_record(self, record: MarkdownItemRecord) -> ExportOutcome:
+1138:         assert_exporter_metadata_clean(record.extra_metadata)
+1139:         for key in SOURCE_IDENTITY_KEYS:
+1140:             if key in record.extra_metadata:
+1141:                 raise ExporterMetadataError(f"用户 metadata 占用来源身份保留键 {key}")
+1142:         warnings: list[str] = []
+1143:         source_instance: str | None = None
+1144:         source_document: str | None = None
+1145:         # D23：先过恢复门；2a 需要 MATERIALIZE；2b 由 COMMITTED Journal 证明；3/4 不认领。
+1146:         session = self._factory()
+1147:         try:
+1148:             classified = self._identity.classify(session, record.id)
+1149:         finally:
+1150:             session.close()
+1151:         if classified.state == "2a":
+1152:             source_instance = self._identity.ensure_local_export_identity(record.id)
+1153:             source_document = str(record.id)
+1154:         elif classified.state == "2b":
+1155:             source_instance = classified.source_instance_id
+1156:             source_document = str(record.id)
+1157:         elif classified.state == "1":
+1158:             source_instance = classified.source_instance_id
+1159:             source_document = classified.source_document_id
+1160:         else:
+1161:             warnings.append("identity_incomplete")
+1162:         if source_document is None:
+1163:             source_document = str(record.id) if classified.state in ("2a", "2b", "1") else None
+
+====================================================================================================
+10. _export_record 的调用者：export_documents
+backend/app/services/markdown.py lines 1061-1095（1-based，含端点）
+====================================================================================================
+1061:     def export_documents(
+1062:         self,
+1063:         ids: list[UUID],
+1064:         *,
+1065:         space_id: str | None = None,
+1066:         include_attachments: bool = False,
+1067:     ) -> tuple[bytes, list[dict[str, Any]]]:
+1068:         if include_attachments:
+1069:             raise MarkdownServiceError(
+1070:                 ATTACHMENT_EXPORT_UNSUPPORTED,
+1071:                 "Batch A 不支持附件导出",
+1072:             )
+1073:         self._identity.recover_if_needed()
+1074:         session = self._factory()
+1075:         try:
+1076:             repo = MarkdownItemRepository(session)
+1077:             if ids:
+1078:                 records = [repo.get(item_id) for item_id in ids]
+1079:                 records = [record for record in records if record is not None]
+1080:             else:
+1081:                 records = repo.list_items(space_id=space_id)
+1082:         finally:
+1083:             session.close()
+1084:         if not records:
+1085:             raise MarkdownServiceError("EXPORT_EMPTY", "无可导出条目")
+1086:         exports: list[ExportOutcome] = []
+1087:         errors: list[dict[str, str]] = []
+1088:         for record in records:
+1089:             try:
+1090:                 exports.append(self._export_record(record))
+1091:             except (MarkdownServiceError, ExporterMetadataError) as exc:
+1092:                 code = getattr(exc, "code", "EXPORT_FAILED")
+1093:                 errors.append({"item_id": str(record.id), "error": code})
+1094:         if not exports:
+1095:             raise MarkdownServiceError("EXPORT_FAILED", "全部条目导出失败", status_code=409)
+
+====================================================================================================
+11. _export_record 的调用者：export_single
+backend/app/services/markdown.py lines 1126-1135（1-based，含端点）
+====================================================================================================
+1126:     def export_single(self, item_id: UUID) -> ExportOutcome:
+1127:         self._identity.recover_if_needed()
+1128:         session = self._factory()
+1129:         try:
+1130:             record = MarkdownItemRepository(session).get(item_id)
+1131:         finally:
+1132:             session.close()
+1133:         if record is None:
+1134:             raise MarkdownServiceError("ITEM_NOT_FOUND", "条目不存在", status_code=404)
+1135:         return self._export_record(record)

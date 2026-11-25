@@ -7,25 +7,26 @@ Core ``ReviewService`` 只应用 title/content/status/space 四字段；导入 e
   回滚整个事务，审核单保持 PENDING。
 - reject：没有任何导入写入；本模块只提供显式空操作，便于测试断言。
 
-附件在 Batch A 不支持：envelope 携带附件时返回稳定码
-``ATTACHMENT_REVIEW_UNSUPPORTED``，且在写任何导入字段前失败。
+附件引用只消费业务写事务之前生成的发布计划。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.services.attachment_promotion import PublishedAttachments
 from app.services.links import build_link_restorer
 from app.services.markdown import (
     ATTACHMENT_REVIEW_UNSUPPORTED,
     IMPORT_ENVELOPE_INVALID,
     MarkdownServiceError,
 )
-from app.services.markdown_item_repository import MarkdownItemRepository
+from app.services.markdown_item_repository import MarkdownItemRecord, MarkdownItemRepository
 from app.services.repositories_v2 import (
     SQLAlchemyImportOriginRepository,
     SQLAlchemyTagChangeLogRepository,
@@ -67,6 +68,23 @@ def envelope_from_review(review: ReviewRequest) -> ImportEnvelope | None:
     return _envelope(review.payload)
 
 
+@dataclass(frozen=True)
+class ReviewAttachmentPlan:
+    review_id: UUID
+    context_digest: str
+    published: PublishedAttachments
+
+    def require_match(self, review: ReviewRequest, envelope: ImportEnvelope) -> None:
+        if (
+            self.review_id != review.id
+            or self.published.target != review.item_id
+            or self.context_digest != envelope.context_digest
+            or [entry.model_dump(mode="json") for entry in self.published.manifest]
+            != envelope.attachments
+        ):
+            raise MarkdownServiceError(IMPORT_ENVELOPE_INVALID, status_code=409)
+
+
 class ImportReviewHook:
     """在同一事务内补齐导入审核的非 Core 字段。"""
 
@@ -78,13 +96,9 @@ class ImportReviewHook:
         self._origins = SQLAlchemyImportOriginRepository(session)
         self._logs = SQLAlchemyTagChangeLogRepository(session)
 
-    def apply_approved(self, review: ReviewRequest, envelope: ImportEnvelope) -> None:
-        if envelope.attachments:
-            raise MarkdownServiceError(
-                ATTACHMENT_REVIEW_UNSUPPORTED,
-                "Batch A 不支持附件审核应用",
-                status_code=400,
-            )
+    def validate_target(
+        self, review: ReviewRequest, envelope: ImportEnvelope, *, attachments: bool,
+    ) -> tuple[MarkdownItemRecord, list[ImportOrigin]]:
         if envelope.target_item_id is not None and str(review.item_id) != str(
             envelope.target_item_id
         ):
@@ -106,7 +120,12 @@ class ImportReviewHook:
             raise MarkdownServiceError(
                 "IMPORT_FAILED", "审核条目不存在", status_code=409
             )
-        if self._identity.has_committed_materialize(record.id):
+        materialized = (
+            self._identity.has_recovered_materialize(record.id)
+            if attachments
+            else self._identity.has_committed_materialize(record.id)
+        )
+        if materialized:
             # §22.2：审核批准时条目已被物化 → 追加 ImportOrigin 会造成冲突态。
             # 在写任何导入字段前 fail-closed；路由回滚整个审核事务。
             raise MarkdownServiceError(
@@ -115,11 +134,12 @@ class ImportReviewHook:
                 status_code=409,
             )
 
-        # 来源身份：仅当 envelope 提供完整合法身份时认领；不覆盖其他身份。
+        origins = []
         if envelope.source_instance_id and envelope.source_document_id:
+            origins = self._origins.list_for_item(record.id)
             pairs = {
                 (origin.source_instance_id, str(origin.source_document_id))
-                for origin in self._origins.list_for_item(record.id)
+                for origin in origins
             }
             incoming = {
                 (envelope.source_instance_id, str(envelope.source_document_id))
@@ -130,8 +150,20 @@ class ImportReviewHook:
                     "目标条目来源身份与审核 envelope 不一致",
                     status_code=409,
                 )
+        return record, origins
+
+    def apply_approved(
+        self, review: ReviewRequest, envelope: ImportEnvelope,
+        plan: ReviewAttachmentPlan | None = None,
+    ) -> None:
+        if envelope.attachments:
+            if plan is None:
+                raise MarkdownServiceError(ATTACHMENT_REVIEW_UNSUPPORTED, status_code=400)
+            plan.require_match(review, envelope)
+        record, origins = self.validate_target(review, envelope, attachments=plan is not None)
+        if envelope.source_instance_id and envelope.source_document_id:
             existing_versions = {
-                origin.source_payload_hash for origin in self._origins.list_for_item(record.id)
+                origin.source_payload_hash for origin in origins
             }
             if envelope.source_payload_hash not in existing_versions:
                 self._origins.save_origin(
@@ -188,6 +220,8 @@ class ImportReviewHook:
             updated_at=record.updated_at or datetime.now(UTC),
         )
         build_link_restorer(self._session).restore(item, envelope.links, record.content)
+        if plan is not None:
+            plan.published.save_references(self._session, review.item_id)
 
     def apply_rejected(self, review: ReviewRequest) -> None:
         """拒绝导入审核：不写 ImportOrigin / item / tags / links。"""

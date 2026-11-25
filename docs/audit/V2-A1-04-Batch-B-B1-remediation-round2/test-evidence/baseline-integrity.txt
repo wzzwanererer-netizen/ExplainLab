@@ -1,0 +1,41 @@
+OK docs/audit/V2-A1-04-Batch-B-freeze/architecture-freeze-record.md
+OK docs/audit/V2-A1-04-Batch-B-freeze/b1-development-baseline.md
+OK docs/audit/V2-A1-04-Batch-B-freeze/document-consistency-report.md
+OK docs/audit/V2-A1-04-Batch-B-freeze/freeze-decision-log.md
+OK docs/plans/V2-A1-04-Batch-B/acceptance-plan.md
+OK docs/plans/V2-A1-04-Batch-B/active-review-integration.md
+OK docs/plans/V2-A1-04-Batch-B/api-contracts.md
+OK docs/plans/V2-A1-04-Batch-B/architecture.md
+OK docs/plans/V2-A1-04-Batch-B/attachment-lifecycle.md
+OK docs/plans/V2-A1-04-Batch-B/gc-and-orphan-recovery.md
+OK docs/plans/V2-A1-04-Batch-B/implementation-roadmap.md
+OK docs/plans/V2-A1-04-Batch-B/README.md
+OK docs/plans/V2-A1-04-Batch-B/risk-register.md
+OK docs/plans/V2-A1-04-Batch-B/storage-and-lock-contract.md
+CHANGED (B1 remediation source) backend/app/core/config.py
+CHANGED (B1 remediation source) backend/app/main.py
+CHANGED (B1 remediation source) backend/app/services/repositories_v2.py
+CHANGED (B1 remediation source) backend/app/db/storage_lock.py
+CHANGED (B1 remediation source) backend/app/services/attachment_storage.py
+CHANGED (B1 remediation source) backend/tests/test_attachment_storage.py
+CHANGED (B1 remediation source) backend/tests/test_attachment_windows.py
+CHANGED (B1 remediation source) backend/tests/test_storage_lock_sqlite.py
+CHANGED (B1 remediation source) backend/tests/test_storage_lock_pg.py
+CHANGED (B1 remediation source) backend/tests/test_attachment_gc.py
+CHANGED (B1 remediation source) backend/tests/test_attachment_pg.py
+OK docs/audit/V2-A1-04-Batch-B-B1/README.md
+OK docs/audit/V2-A1-04-Batch-B-B1/b1-implementation-report.md
+OK docs/audit/V2-A1-04-Batch-B-B1/b1-acceptance-report.md
+OK docs/audit/V2-A1-04-Batch-B-B1/known-issues-and-risks.md
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/environment.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/git-status.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pg-availability.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-full.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-t01-t02-storage-windows.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-t02-windows-real.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-t03-lock-sqlite.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-t03-t04-pg-skipped.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/pytest-t04-repository-sqlite.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/ruff-check.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/ruff-code.txt
+OK docs/audit/V2-A1-04-Batch-B-B1/raw/ruff-repo-wide.txt

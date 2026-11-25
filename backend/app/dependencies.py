@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request
 
 from app.core.config import Settings, get_settings
+from app.services.attachments import AttachmentService
 from app.services.markdown import MarkdownService
 from app.services.model import build_embed_adapter, build_model_adapter
 from app.services.source_identity import SourceIdentityService
@@ -58,4 +59,11 @@ def get_markdown_service(request: Request) -> MarkdownService:
     service = getattr(request.app.state, "markdown_service", None)
     if service is None:
         raise HTTPException(status_code=503, detail="markdown_service_unavailable")
+    return service
+
+
+def get_attachment_service(request: Request) -> AttachmentService:
+    service = getattr(request.app.state, "attachment_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
     return service

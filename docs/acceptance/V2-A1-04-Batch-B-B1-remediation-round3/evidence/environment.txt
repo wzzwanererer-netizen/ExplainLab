@@ -1,0 +1,14 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/environment-probe.py.txt
+platform Windows-10-10.0.26300-SP0
+python 3.11.9 sqlite 3.45.1
+sqlalchemy 2.1.8 psycopg 3.3.9
+EXPLAINLAB_PG_TEST_URL set False
+psql False
+pg_ctl False
+docker False
+wsl True
+localhost 5432 probe PermissionError
+exit_code=0
+# Command: wsl -l -q
+wsl_exit_code=-1
+Wsl/E_ACCESSDENIED

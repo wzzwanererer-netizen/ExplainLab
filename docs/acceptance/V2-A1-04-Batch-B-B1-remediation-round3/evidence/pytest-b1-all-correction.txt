@@ -1,0 +1,17 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_sqlite.py
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 194 items
+
+backend\tests\test_attachment_gc.py .......................              [ 11%]
+backend\tests\test_attachment_pg.py ssss                                 [ 13%]
+backend\tests\test_attachment_storage.py ..........sF..............s.... [ 29%]
+.............s.....................................s...................  [ 66%]
+backend\tests\test_attachment_windows.py ...s..                          [ 69%]
+backend\tests\test_storage_lock_pg_faults.py ..................          [ 78%]
+backend\tests\test_storage_lock_pg.py sssssssssssss                      [ 85%]

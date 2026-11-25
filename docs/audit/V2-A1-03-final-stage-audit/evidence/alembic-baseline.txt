@@ -1,0 +1,16 @@
+### alembic heads (expect single 0006_v2_markdown_kb)
+0006_v2_markdown_kb (head)
+
+### alembic current (dev SQLite DB backend/data/explainlab.db)
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+0005_m5_experiments
+
+### migration files
+alembic/versions/0001_baseline.py
+alembic/versions/0002_m1_core.py
+alembic/versions/0003_m2_governance.py
+alembic/versions/0004_m3_retrieval.py
+alembic/versions/0005_m5_experiments.py
+alembic/versions/0006_v2_markdown_kb.py
+EXIT_CODE=0

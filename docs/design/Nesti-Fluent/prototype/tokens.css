@@ -1,0 +1,286 @@
+/* ==========================================================================
+   Nesti Fluent Design System — Token Architecture (v1.0 Draft)
+   Layers:
+     1. Brand Primitive Tokens (--nf-brand-*)
+     2. Semantic Tokens (--nf-bg-*, --nf-text-*, --nf-border-*, --nf-accent-*)
+     3. Component Tokens (--nf-titlebar-*, --nf-rail-*, --nf-inspector-*, ...)
+   Compatible with Tailwind CSS v4 @theme and Standalone / Embedded Nesti shells.
+   ========================================================================== */
+
+:root,
+[data-theme="light"] {
+  /* 1. Brand Primitives (Immutable Nesti Identity) */
+  --nf-brand-primary: #2463eb;
+  --nf-brand-glacier: #79caff;
+  --nf-brand-violet: #8785ef;
+  --nf-brand-ice: #e5edfa;
+  --nf-brand-offwhite: #f5f8fc;
+  --nf-brand-navy: #243247;
+
+  /* 2. Semantic Surfaces & Elevation (Light Mode — Mica-inspired soft layers) */
+  --nf-bg-window: #eef3fa;
+  --nf-bg-canvas: #f5f8fc;
+  --nf-bg-surface: #ffffff;
+  --nf-bg-surface-subtle: #f8fafd;
+  --nf-bg-surface-hover: #edf2fa;
+  --nf-bg-surface-active: #e5edfa;
+  --nf-bg-glass: rgba(245, 248, 252, 0.82);
+  --nf-bg-overlay: rgba(20, 31, 48, 0.34);
+
+  /* 2. Semantic Typography */
+  --nf-text-primary: #243247;
+  --nf-text-secondary: #51627b;
+  --nf-text-muted: #7687a0;
+  --nf-text-on-accent: #ffffff;
+
+  /* 2. Semantic Borders */
+  --nf-border-subtle: #e2e9f3;
+  --nf-border-default: #cfd9e8;
+  --nf-border-strong: #b4c3d8;
+
+  /* 2. Semantic Status Colors */
+  --nf-status-success: #0f9d75;
+  --nf-status-success-bg: rgba(15, 157, 117, 0.10);
+  --nf-status-warning: #c97a08;
+  --nf-status-warning-bg: rgba(201, 122, 8, 0.11);
+  --nf-status-danger: #d63e4f;
+  --nf-status-danger-bg: rgba(214, 62, 79, 0.10);
+  --nf-status-info: #2463eb;
+  --nf-status-info-bg: rgba(36, 99, 235, 0.10);
+
+  /* 2. Dynamic Accent Tokens (Default: Glacier Blue) */
+  --nf-accent: #2463eb;
+  --nf-accent-hover: #1d4ed8;
+  --nf-accent-secondary: #79caff;
+  --nf-accent-soft: #e5edfa;
+  --nf-accent-subtle: rgba(36, 99, 235, 0.08);
+  --nf-accent-border: rgba(36, 99, 235, 0.28);
+  --nf-module-icon: #2463eb;
+
+  /* 2. Elevation & Shadows (Restrained desktop elevation) */
+  --nf-shadow-sm: 0 1px 2px rgba(24, 39, 64, 0.05);
+  --nf-shadow-md: 0 4px 12px rgba(24, 39, 64, 0.07), 0 1px 2px rgba(24, 39, 64, 0.04);
+  --nf-shadow-lg: 0 12px 28px rgba(24, 39, 64, 0.12), 0 2px 6px rgba(24, 39, 64, 0.06);
+
+  /* 2. Geometry & Density Defaults */
+  --nf-radius-xs: 4px;
+  --nf-radius-sm: 6px;
+  --nf-radius-md: 8px;
+  --nf-radius-lg: 10px;
+  --nf-space-unit: 4px;
+  --nf-row-height: 36px;
+  --nf-control-height: 30px;
+  --nf-pane-pad: 14px;
+
+  /* 2. Typography Stack */
+  --nf-font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
+  --nf-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* 3. Component Tokens */
+  --nf-titlebar-h: 40px;
+  --nf-rail-w: 52px;
+  --nf-subnav-w: 212px;
+  --nf-inspector-w: 320px;
+  --nf-statusbar-h: 26px;
+  --nf-graph-grid: #dce5f2;
+  --nf-graph-edge-related: #64748b;
+  --nf-graph-edge-depends: #2463eb;
+  --nf-graph-edge-refines: #0f9d75;
+  --nf-graph-edge-duplicate: #d63e4f;
+  --nf-graph-edge-contradicts: #d63e4f;
+}
+
+[data-theme="dark"] {
+  --nf-bg-window: #0b111a;
+  --nf-bg-canvas: #0f1622;
+  --nf-bg-surface: #151e2e;
+  --nf-bg-surface-subtle: #111927;
+  --nf-bg-surface-hover: #1c273b;
+  --nf-bg-surface-active: #21304a;
+  --nf-bg-glass: rgba(15, 22, 34, 0.84);
+  --nf-bg-overlay: rgba(4, 8, 15, 0.62);
+
+  --nf-text-primary: #e6eef9;
+  --nf-text-secondary: #a2b3cc;
+  --nf-text-muted: #6f83a0;
+  --nf-text-on-accent: #ffffff;
+
+  --nf-border-subtle: #1f2b3f;
+  --nf-border-default: #293852;
+  --nf-border-strong: #394d6e;
+
+  --nf-status-success: #34d399;
+  --nf-status-success-bg: rgba(52, 211, 153, 0.13);
+  --nf-status-warning: #fbbf24;
+  --nf-status-warning-bg: rgba(251, 191, 36, 0.13);
+  --nf-status-danger: #f87171;
+  --nf-status-danger-bg: rgba(248, 113, 113, 0.14);
+  --nf-status-info: #60a5fa;
+  --nf-status-info-bg: rgba(96, 165, 250, 0.14);
+
+  /* Adjusted luminance for WCAG AA contrast on dark surfaces */
+  --nf-accent: #4c82f7;
+  --nf-accent-hover: #6495ff;
+  --nf-accent-secondary: #79caff;
+  --nf-accent-soft: rgba(76, 130, 247, 0.18);
+  --nf-accent-subtle: rgba(76, 130, 247, 0.12);
+  --nf-accent-border: rgba(121, 202, 255, 0.34);
+  --nf-module-icon: #79caff;
+
+  --nf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --nf-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.36);
+  --nf-shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.48);
+
+  --nf-graph-grid: #1e2a3f;
+  --nf-graph-edge-related: #94a3b8;
+  --nf-graph-edge-depends: #60a5fa;
+  --nf-graph-edge-refines: #34d399;
+  --nf-graph-edge-duplicate: #f87171;
+  --nf-graph-edge-contradicts: #f87171;
+}
+
+/* Six Preset Accent Palettes */
+[data-preset="glacier"] {
+  --nf-accent: #2463eb;
+  --nf-accent-hover: #1d4ed8;
+  --nf-accent-secondary: #79caff;
+  --nf-accent-soft: #e5edfa;
+  --nf-accent-subtle: rgba(36, 99, 235, 0.08);
+  --nf-accent-border: rgba(36, 99, 235, 0.28);
+  --nf-module-icon: #2463eb;
+}
+[data-theme="dark"][data-preset="glacier"] {
+  --nf-accent: #4c82f7;
+  --nf-accent-hover: #6495ff;
+  --nf-accent-soft: rgba(76, 130, 247, 0.18);
+  --nf-module-icon: #79caff;
+}
+
+[data-preset="iris"] {
+  --nf-accent: #6d5ce7;
+  --nf-accent-hover: #5b48d6;
+  --nf-accent-secondary: #a79bff;
+  --nf-accent-soft: #eeebfd;
+  --nf-accent-subtle: rgba(109, 92, 231, 0.09);
+  --nf-accent-border: rgba(109, 92, 231, 0.30);
+  --nf-module-icon: #6d5ce7;
+}
+[data-theme="dark"][data-preset="iris"] {
+  --nf-accent: #8785ef;
+  --nf-accent-hover: #9f9df5;
+  --nf-accent-soft: rgba(135, 133, 239, 0.20);
+  --nf-module-icon: #a79bff;
+}
+
+[data-preset="emerald"] {
+  --nf-accent: #0f9d75;
+  --nf-accent-hover: #0b8260;
+  --nf-accent-secondary: #6ee7b7;
+  --nf-accent-soft: #e3f7f0;
+  --nf-accent-subtle: rgba(15, 157, 117, 0.09);
+  --nf-accent-border: rgba(15, 157, 117, 0.30);
+  --nf-module-icon: #0f9d75;
+}
+[data-theme="dark"][data-preset="emerald"] {
+  --nf-accent: #22b88a;
+  --nf-accent-hover: #34d399;
+  --nf-accent-soft: rgba(34, 184, 138, 0.18);
+  --nf-module-icon: #6ee7b7;
+}
+
+[data-preset="amber"] {
+  --nf-accent: #d97706;
+  --nf-accent-hover: #b45309;
+  --nf-accent-secondary: #fcd34d;
+  --nf-accent-soft: #fef3e2;
+  --nf-accent-subtle: rgba(217, 119, 6, 0.10);
+  --nf-accent-border: rgba(217, 119, 6, 0.30);
+  --nf-module-icon: #d97706;
+}
+[data-theme="dark"][data-preset="amber"] {
+  --nf-accent: #f59e0b;
+  --nf-accent-hover: #fbbf24;
+  --nf-accent-soft: rgba(245, 158, 11, 0.18);
+  --nf-module-icon: #fcd34d;
+}
+
+[data-preset="graphite"] {
+  --nf-accent: #475569;
+  --nf-accent-hover: #334155;
+  --nf-accent-secondary: #94a3b8;
+  --nf-accent-soft: #e9eef4;
+  --nf-accent-subtle: rgba(71, 85, 105, 0.10);
+  --nf-accent-border: rgba(71, 85, 105, 0.28);
+  --nf-module-icon: #475569;
+}
+[data-theme="dark"][data-preset="graphite"] {
+  --nf-accent: #7c8ea6;
+  --nf-accent-hover: #94a3b8;
+  --nf-accent-soft: rgba(148, 163, 184, 0.18);
+  --nf-module-icon: #cbd5e1;
+}
+
+[data-preset="sakura"] {
+  --nf-accent: #db4b7d;
+  --nf-accent-hover: #be3566;
+  --nf-accent-secondary: #f9a8d4;
+  --nf-accent-soft: #fdebf2;
+  --nf-accent-subtle: rgba(219, 75, 125, 0.09);
+  --nf-accent-border: rgba(219, 75, 125, 0.30);
+  --nf-module-icon: #db4b7d;
+}
+[data-theme="dark"][data-preset="sakura"] {
+  --nf-accent: #ec6b99;
+  --nf-accent-hover: #f48bb0;
+  --nf-accent-soft: rgba(236, 107, 153, 0.18);
+  --nf-module-icon: #f9a8d4;
+}
+
+/* Density Modifiers */
+[data-density="compact"] {
+  --nf-row-height: 30px;
+  --nf-control-height: 26px;
+  --nf-pane-pad: 10px;
+}
+[data-density="comfortable"] {
+  --nf-row-height: 36px;
+  --nf-control-height: 30px;
+  --nf-pane-pad: 14px;
+}
+[data-density="spacious"] {
+  --nf-row-height: 44px;
+  --nf-control-height: 34px;
+  --nf-pane-pad: 18px;
+}
+
+/* Radius Modifiers */
+[data-radius="sharp"] {
+  --nf-radius-xs: 2px;
+  --nf-radius-sm: 3px;
+  --nf-radius-md: 4px;
+  --nf-radius-lg: 6px;
+}
+[data-radius="balanced"] {
+  --nf-radius-xs: 4px;
+  --nf-radius-sm: 6px;
+  --nf-radius-md: 8px;
+  --nf-radius-lg: 10px;
+}
+[data-radius="soft"] {
+  --nf-radius-xs: 6px;
+  --nf-radius-sm: 8px;
+  --nf-radius-md: 11px;
+  --nf-radius-lg: 14px;
+}
+
+/* Shadow Modifiers */
+[data-shadow="none"] {
+  --nf-shadow-sm: none;
+  --nf-shadow-md: none;
+  --nf-shadow-lg: 0 4px 12px rgba(20, 31, 48, 0.08);
+}
+[data-shadow="elevated"] {
+  --nf-shadow-sm: 0 2px 4px rgba(24, 39, 64, 0.08);
+  --nf-shadow-md: 0 8px 20px rgba(24, 39, 64, 0.11), 0 2px 4px rgba(24, 39, 64, 0.05);
+  --nf-shadow-lg: 0 18px 40px rgba(24, 39, 64, 0.16), 0 4px 10px rgba(24, 39, 64, 0.08);
+}

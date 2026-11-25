@@ -1,0 +1,8 @@
+# Command: .venv/Scripts/python.exe -m pytest -ra -p no:cacheprovider knowledge-core/tests/test_markdown_canonical.py knowledge-core/tests/test_markdown_codec.py knowledge-core/tests/test_markdown_frontmatter.py knowledge-core/tests/test_markdown_service.py knowledge-core/tests/test_markdown_links.py knowledge-core/tests/test_markdown_link_service.py knowledge-core/tests/test_interfaces.py backend/tests/test_links.py backend/tests/test_links_http.py backend/tests/test_governance.py backend/tests/test_governance_links.py backend/tests/test_knowledge.py backend/tests/test_markdown_batch_a_identity.py backend/tests/test_markdown_batch_a_import_conflict.py backend/tests/test_markdown_batch_a_import_export.py backend/tests/test_batch_a_fault_injection.py
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]

@@ -13,16 +13,30 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { api } from "../api/client";
-import type { KnowledgeItem, KnowledgeStatus, Space } from "../api/types";
+import type {
+  GraphResponse,
+  KnowledgeItem,
+  KnowledgeStatus,
+  RelationType,
+  Space,
+} from "../api/types";
 import {
+  edgeVisual,
   layoutWithElk,
   NODE_HEIGHT,
   NODE_WIDTH,
   RELATION_LABEL,
   STATUS_LABEL,
+  toMapElements,
   type MapElements,
 } from "../lib/graphLayout";
+import {
+  DEFAULT_FORCE_CONFIG,
+  getNeighborhood,
+  type ForceConfig,
+} from "../lib/obsidianForce";
 import { KnowledgeDetail } from "./KnowledgeDetail";
+import { ObsidianGraphCanvas } from "./ObsidianGraphCanvas";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -34,32 +48,48 @@ type KnowledgeNodeData = {
   archived: boolean;
 };
 
-/** 自定义节点：标题 + 状态徽章；归档灰显虚线框。 */
+type ViewMode = "obsidian" | "layered";
+type LocalScope = "global" | "hop1" | "hop2";
+
+/** 层级视图自定义节点（保留 ELK 架构图模式作为可选视图）。 */
 function KnowledgeNode({ data }: NodeProps<Node<KnowledgeNodeData>>) {
   return (
     <div
-      style={{ width: NODE_WIDTH, minHeight: NODE_HEIGHT }}
-      className={`flex flex-col justify-center gap-1 rounded-lg border bg-slate-900 px-3 py-2 ${
-        data.archived
-          ? "border-dashed border-slate-600 opacity-50"
-          : "border-slate-600"
+      style={{
+        width: NODE_WIDTH,
+        minHeight: NODE_HEIGHT,
+        background: "var(--nesti-surface-1)",
+        borderColor: "var(--nesti-border-strong)",
+      }}
+      className={`flex flex-col justify-center gap-1 rounded-lg border px-3 py-2 shadow-sm ${
+        data.archived ? "border-dashed opacity-55" : ""
       }`}
     >
-      <span className="truncate text-sm font-medium text-slate-100" title={data.title}>
+      <span
+        className="truncate text-sm font-medium"
+        style={{ color: "var(--nesti-text-primary)" }}
+        title={data.title}
+      >
         {data.title}
       </span>
-      <span className="w-fit rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+      <span
+        className="w-fit rounded-full px-2 py-0.5 text-xs"
+        style={{
+          background: "var(--nesti-surface-2)",
+          color: "var(--nesti-text-secondary)",
+        }}
+      >
         {STATUS_LABEL[data.status]}
       </span>
       <Handle
         type="target"
         position={Position.Top}
-        style={{ width: 6, height: 6, background: "#64748b", border: "none" }}
+        style={{ width: 6, height: 6, background: "var(--nesti-accent)", border: "none" }}
       />
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{ width: 6, height: 6, background: "#64748b", border: "none" }}
+        style={{ width: 6, height: 6, background: "var(--nesti-accent)", border: "none" }}
       />
     </div>
   );
@@ -67,47 +97,56 @@ function KnowledgeNode({ data }: NodeProps<Node<KnowledgeNodeData>>) {
 
 const nodeTypes = { knowledge: KnowledgeNode };
 
-const LEGEND_RELATIONS = Object.entries(RELATION_LABEL) as [
-  keyof typeof RELATION_LABEL,
-  string,
-][];
+const ALL_RELATIONS = Object.keys(RELATION_LABEL) as RelationType[];
 
 /**
- * M4 知识地图：React Flow 渲染 + ELK 自动布局。
- * 节点=知识条目、边=知识关系；点击节点打开治理详情；归档开关呈现合并闭环；
- * 切页签/刷新/治理变更后重取，保证与数据库实时一致。数据均来自真实 API。
+ * 知识地图：默认 Obsidian 风格力导向星图（支持悬停聚光灯、物理拖拽、局部 1/2 跳图谱、
+ * 关系筛选、物理参数调节），并保留 ELK 层级视图切换；点击节点打开右侧治理详情。
  */
 export function KnowledgeMap() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spaceId, setSpaceId] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [elements, setElements] = useState<MapElements | null>(null);
-  const [nodeCount, setNodeCount] = useState(0);
+  const [rawGraph, setRawGraph] = useState<GraphResponse | null>(null);
+  const [layeredElements, setLayeredElements] = useState<MapElements | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<KnowledgeItem | null>(null);
 
-  const loadGraph = useCallback(
-    async (targetSpace: string, archived: boolean) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const graph = await api.getGraph({
-          spaceId: targetSpace || null,
-          includeArchived: archived,
-        });
-        setNodeCount(graph.nodes.length);
-        setElements(await layoutWithElk(graph));
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  // Obsidian 图谱专属交互状态
+  const [viewMode, setViewMode] = useState<ViewMode>("obsidian");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [localScope, setLocalScope] = useState<LocalScope>("global");
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [enabledRelations, setEnabledRelations] = useState<Record<RelationType, boolean>>({
+    related: true,
+    depends_on: true,
+    refines: true,
+    duplicate_of: true,
+    contradicts: true,
+  });
+  const [forceConfig, setForceConfig] = useState<ForceConfig>(DEFAULT_FORCE_CONFIG);
+  const [showArrows, setShowArrows] = useState(true);
+  const [showEdgeLabels, setShowEdgeLabels] = useState(false);
+  const [reheatToken, setReheatToken] = useState(0);
+
+  const loadGraph = useCallback(async (targetSpace: string, archived: boolean) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const graph = await api.getGraph({
+        spaceId: targetSpace || null,
+        includeArchived: archived,
+      });
+      setRawGraph(graph);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -122,8 +161,61 @@ export function KnowledgeMap() {
   useEffect(() => {
     setSelectedId(null);
     setSelectedItem(null);
+    setLocalScope("global");
     void loadGraph(spaceId, includeArchived);
   }, [spaceId, includeArchived, loadGraph]);
+
+  // 根据关系筛选 + 局部图谱作用域计算当前可见子图
+  const { visibleGraph, elements, edgeTypes } = useMemo(() => {
+    if (!rawGraph) {
+      return {
+        visibleGraph: null as GraphResponse | null,
+        elements: { nodes: [], edges: [] } as MapElements,
+        edgeTypes: new Map<string, RelationType>(),
+      };
+    }
+
+    const filteredEdges = rawGraph.edges.filter(
+      (e) => enabledRelations[e.relation_type],
+    );
+
+    let finalNodes = rawGraph.nodes;
+    let finalEdges = filteredEdges;
+
+    if (localScope !== "global" && selectedId) {
+      const hops: 1 | 2 = localScope === "hop1" ? 1 : 2;
+      const hood = getNeighborhood(
+        filteredEdges.map((e) => ({
+          id: e.id,
+          source: e.source_id,
+          target: e.target_id,
+        })),
+        selectedId,
+        hops,
+      );
+      finalNodes = rawGraph.nodes.filter((n) => hood.nodeIds.has(n.id));
+      finalEdges = filteredEdges.filter((e) => hood.edgeIds.has(e.id));
+    }
+
+    const subGraph: GraphResponse = { nodes: finalNodes, edges: finalEdges };
+    const mapEls = toMapElements(subGraph);
+    const typeMap = new Map<string, RelationType>(
+      finalEdges.map((e) => [e.id, e.relation_type]),
+    );
+    return { visibleGraph: subGraph, elements: mapEls, edgeTypes: typeMap };
+  }, [rawGraph, enabledRelations, localScope, selectedId]);
+
+  // 仅当切换到“层级视图”时计算 ELK 坐标
+  useEffect(() => {
+    if (viewMode !== "layered" || !visibleGraph) return;
+    let cancelled = false;
+    void layoutWithElk(visibleGraph).then((res) => {
+      if (!cancelled) setLayeredElements(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, visibleGraph]);
 
   async function openDetail(itemId: string) {
     setError(null);
@@ -143,47 +235,64 @@ export function KnowledgeMap() {
       } catch {
         setSelectedId(null);
         setSelectedItem(null);
+        setLocalScope("global");
       }
     }
   }, [loadGraph, spaceId, includeArchived, selectedId]);
 
   const flowNodes = useMemo<Node<KnowledgeNodeData>[]>(
     () =>
-      (elements?.nodes ?? []).map((n) => ({
+      (layeredElements?.nodes ?? []).map((n) => ({
         id: n.id,
         type: "knowledge",
         position: n.position,
         data: { title: n.title, status: n.status, archived: n.archived },
       })),
-    [elements],
+    [layeredElements],
   );
 
   const flowEdges = useMemo<Edge[]>(
     () =>
-      (elements?.edges ?? []).map((e) => ({
+      (layeredElements?.edges ?? []).map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
         label: e.label,
         style: { stroke: e.color, strokeDasharray: e.dashed ? "6 3" : undefined },
         markerEnd: e.arrow ? { type: MarkerType.ArrowClosed, color: e.color } : undefined,
-        labelStyle: { fill: "#cbd5e1", fontSize: 10 },
-        labelBgStyle: { fill: "#0f172a" },
+        labelStyle: { fill: "var(--nesti-text-secondary)", fontSize: 10 },
+        labelBgStyle: { fill: "var(--nesti-surface-1)" },
       })),
-    [elements],
+    [layeredElements],
   );
 
-  const inputClass =
-    "rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-slate-500";
+  const toggleRelation = (type: RelationType) => {
+    setEnabledRelations((prev) => ({ ...prev, [type]: !prev[type] }));
+  };
+
+  const totalNodes = elements.nodes.length;
+  const totalEdges = elements.edges.length;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="flex h-full flex-col gap-3">
+      {/* 顶部工具栏（Nesti Fluent 风格） */}
+      <div
+        className="flex flex-wrap items-center gap-2.5 rounded-xl border px-3.5 py-2.5 shadow-xs"
+        style={{
+          background: "var(--nesti-surface-1)",
+          borderColor: "var(--nesti-border-subtle)",
+        }}
+      >
         <select
           value={spaceId}
           onChange={(e) => setSpaceId(e.target.value)}
           aria-label="地图空间"
-          className={inputClass}
+          className="rounded-lg border px-2.5 py-1.5 text-sm outline-none"
+          style={{
+            background: "var(--nesti-surface-0)",
+            borderColor: "var(--nesti-border-subtle)",
+            color: "var(--nesti-text-primary)",
+          }}
         >
           <option value="">全部空间</option>
           {spaces.map((s) => (
@@ -193,56 +302,154 @@ export function KnowledgeMap() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-sm text-slate-300">
+
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="高亮搜索节点…"
+          aria-label="搜索图谱节点"
+          className="w-44 rounded-lg border px-2.5 py-1.5 text-sm outline-none sm:w-56"
+          style={{
+            background: "var(--nesti-surface-0)",
+            borderColor: "var(--nesti-border-subtle)",
+            color: "var(--nesti-text-primary)",
+          }}
+        />
+
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-sm"
+          style={{ color: "var(--nesti-text-secondary)" }}
+        >
           <input
             type="checkbox"
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
             aria-label="显示归档"
-            className="h-4 w-4 accent-slate-300"
+            className="h-4 w-4 rounded accent-[var(--nesti-accent)]"
           />
           显示归档
         </label>
+
+        {/* 星图 / 层级 视图切换 */}
+        <div
+          className="inline-flex rounded-lg border p-0.5 text-xs"
+          style={{
+            background: "var(--nesti-surface-0)",
+            borderColor: "var(--nesti-border-subtle)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setViewMode("obsidian")}
+            className="rounded-md px-2.5 py-1 font-medium transition-colors"
+            style={
+              viewMode === "obsidian"
+                ? { background: "var(--nesti-accent)", color: "#ffffff" }
+                : { color: "var(--nesti-text-secondary)" }
+            }
+          >
+            星图模式
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("layered")}
+            className="rounded-md px-2.5 py-1 font-medium transition-colors"
+            style={
+              viewMode === "layered"
+                ? { background: "var(--nesti-accent)", color: "#ffffff" }
+                : { color: "var(--nesti-text-secondary)" }
+            }
+          >
+            层级视图
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={() => void loadGraph(spaceId, includeArchived)}
           disabled={loading}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+          className="rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--nesti-surface-hover)] disabled:opacity-40"
+          style={{
+            borderColor: "var(--nesti-border-subtle)",
+            color: "var(--nesti-text-secondary)",
+          }}
         >
           {loading ? "加载中…" : "刷新"}
         </button>
-        <span className="ml-auto text-xs text-slate-500">
-          节点 {nodeCount} · 边 {elements?.edges.length ?? 0}
+
+        <span
+          className="ml-auto rounded-full px-2.5 py-0.5 text-xs tabular-nums"
+          style={{
+            background: "var(--nesti-surface-2)",
+            color: "var(--nesti-text-secondary)",
+          }}
+        >
+          节点 {totalNodes} · 边 {totalEdges}
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-        <span className="text-slate-500">图例：</span>
-        {LEGEND_RELATIONS.map(([type, label]) => (
-          <span key={type} className="flex items-center gap-1">
-            <span
-              className="inline-block h-0.5 w-4"
-              style={{
-                backgroundColor:
-                  type === "duplicate_of" || type === "contradicts"
-                    ? "#f87171"
-                    : type === "depends_on"
-                      ? "#60a5fa"
-                      : type === "refines"
-                        ? "#34d399"
-                        : "#94a3b8",
-              }}
-            />
-            {label}
-            {type === "duplicate_of" ? "（虚线）" : ""}
-          </span>
-        ))}
-      </div>
+      {/* 主库 + 动态 Agent 副库快捷切换条 */}
+      {spaces.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setSpaceId("")}
+            className="rounded-full border px-3 py-1 font-medium transition-colors"
+            style={
+              spaceId === ""
+                ? {
+                    background: "var(--nesti-accent)",
+                    borderColor: "var(--nesti-accent)",
+                    color: "#ffffff",
+                  }
+                : {
+                    background: "var(--nesti-surface-1)",
+                    borderColor: "var(--nesti-border-subtle)",
+                    color: "var(--nesti-text-secondary)",
+                  }
+            }
+          >
+            全部星图（主库 + 副库）
+          </button>
+          {spaces.map((s) => {
+            const active = spaceId === s.id;
+            const isAgent = s.name.startsWith("Agent ·");
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSpaceId(s.id)}
+                className="rounded-full border px-3 py-1 font-medium transition-colors"
+                style={
+                  active
+                    ? {
+                        background: "var(--nesti-accent)",
+                        borderColor: "var(--nesti-accent)",
+                        color: "#ffffff",
+                      }
+                    : {
+                        background: "var(--nesti-surface-1)",
+                        borderColor: "var(--nesti-border-subtle)",
+                        color: "var(--nesti-text-secondary)",
+                      }
+                }
+              >
+                {s.kind === "personal"
+                  ? `${s.name}（主库）`
+                  : isAgent
+                    ? `${s.name}（副库）`
+                    : s.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300"
+          className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500"
         >
           {error}
         </div>
@@ -250,23 +457,52 @@ export function KnowledgeMap() {
       {notice && (
         <div
           role="status"
-          className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300"
+          className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-600 dark:text-emerald-400"
         >
           {notice}
         </div>
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="relative h-[480px] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950 lg:w-auto lg:min-w-0 lg:flex-1">
+      {/* 主画布 + 右侧详情检查器 */}
+      <div className="flex min-h-[560px] flex-1 flex-col gap-3 lg:flex-row">
+        <div
+          className="relative min-h-[560px] flex-1 overflow-hidden rounded-xl border shadow-xs"
+          style={{
+            background: "var(--nesti-surface-0)",
+            borderColor: "var(--nesti-border-subtle)",
+          }}
+        >
           {loading ? (
-            <p role="status" className="p-6 text-sm text-slate-400">
+            <p
+              role="status"
+              className="p-6 text-sm"
+              style={{ color: "var(--nesti-text-secondary)" }}
+            >
               正在加载知识地图…
             </p>
-          ) : nodeCount === 0 ? (
-            <p className="p-6 text-sm text-slate-500">
+          ) : totalNodes === 0 ? (
+            <p
+              className="p-6 text-sm"
+              style={{ color: "var(--nesti-text-secondary)" }}
+            >
               当前空间暂无可展示的知识节点。可在「对话」提取或「知识库」新增知识，
               或开启「显示归档」查看已归档条目。
             </p>
+          ) : viewMode === "obsidian" ? (
+            <ObsidianGraphCanvas
+              elements={elements}
+              edgeTypes={edgeTypes}
+              selectedId={selectedId}
+              searchQuery={searchQuery}
+              config={forceConfig}
+              showArrows={showArrows}
+              showEdgeLabels={showEdgeLabels}
+              reheatToken={reheatToken}
+              onSelectNode={(id) => void openDetail(id)}
+              onDoubleClickNode={(id) => {
+                void openDetail(id);
+              }}
+            />
           ) : (
             <ReactFlow
               nodes={flowNodes}
@@ -277,26 +513,297 @@ export function KnowledgeMap() {
               minZoom={0.2}
               maxZoom={2}
             >
-              <Background color="#1e293b" gap={16} />
+              <Background color="var(--nesti-border-subtle)" gap={18} />
               <Controls />
             </ReactFlow>
           )}
-        </div>
 
-        {selectedId && selectedItem && (
-          <aside className="w-full shrink-0 space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-4 lg:w-96">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">知识详情</h3>
+          {/* Obsidian 风格右上角浮动图谱设置面板 */}
+          {!loading && totalNodes > 0 && (
+            <div className="absolute right-3 top-3 z-10 flex flex-col items-end">
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedId(null);
-                  setSelectedItem(null);
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="rounded-lg border px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-md transition-colors hover:bg-[var(--nesti-surface-hover)]"
+                style={{
+                  background: "var(--nesti-surface-1)",
+                  borderColor: "var(--nesti-border-subtle)",
+                  color: "var(--nesti-text-primary)",
                 }}
-                className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
               >
-                关闭
+                {settingsOpen ? "收起图谱面板" : "图谱设置"}
               </button>
+
+              {settingsOpen && (
+                <div
+                  className="mt-2 w-64 space-y-3 rounded-xl border p-3 text-xs shadow-lg backdrop-blur-md"
+                  style={{
+                    background: "var(--nesti-surface-1)",
+                    borderColor: "var(--nesti-border-subtle)",
+                    color: "var(--nesti-text-secondary)",
+                  }}
+                >
+                  {/* 局部图谱切换 */}
+                  <div className="space-y-1.5">
+                    <div
+                      className="flex items-center justify-between font-semibold"
+                      style={{ color: "var(--nesti-text-primary)" }}
+                    >
+                      <span>视野范围</span>
+                      {!selectedId && (
+                        <span className="text-[10px] font-normal opacity-70">
+                          点击节点启用局部
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(
+                        [
+                          ["global", "全局"],
+                          ["hop1", "1 跳"],
+                          ["hop2", "2 跳"],
+                        ] as const
+                      ).map(([scope, label]) => {
+                        const disabled = scope !== "global" && !selectedId;
+                        const active = localScope === scope;
+                        return (
+                          <button
+                            key={scope}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => setLocalScope(scope)}
+                            className="rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-40"
+                            style={
+                              active
+                                ? {
+                                    background: "var(--nesti-accent)",
+                                    borderColor: "var(--nesti-accent)",
+                                    color: "#ffffff",
+                                  }
+                                : {
+                                    background: "var(--nesti-surface-0)",
+                                    borderColor: "var(--nesti-border-subtle)",
+                                    color: "var(--nesti-text-secondary)",
+                                  }
+                            }
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 关系筛选 & 图例 */}
+                  <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: "var(--nesti-border-subtle)" }}>
+                    <div
+                      className="font-semibold"
+                      style={{ color: "var(--nesti-text-primary)" }}
+                    >
+                      关系筛选与图例
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {ALL_RELATIONS.map((type) => {
+                        const visual = edgeVisual(type);
+                        return (
+                          <label
+                            key={type}
+                            className="flex cursor-pointer items-center gap-1.5"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={enabledRelations[type]}
+                              onChange={() => toggleRelation(type)}
+                              className="h-3.5 w-3.5 accent-[var(--nesti-accent)]"
+                            />
+                            <span
+                              className="inline-block h-0.5 w-3 shrink-0"
+                              style={{
+                                backgroundColor: visual.color,
+                                borderTop: visual.dashed
+                                  ? `2px dashed ${visual.color}`
+                                  : undefined,
+                              }}
+                            />
+                            <span className="truncate">{RELATION_LABEL[type]}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 星图物理参数与显示选项 */}
+                  {viewMode === "obsidian" && (
+                    <div
+                      className="space-y-2 border-t pt-2.5"
+                      style={{ borderColor: "var(--nesti-border-subtle)" }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span
+                          className="font-semibold"
+                          style={{ color: "var(--nesti-text-primary)" }}
+                        >
+                          星图力学与显示
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForceConfig(DEFAULT_FORCE_CONFIG);
+                            setReheatToken((t) => t + 1);
+                          }}
+                          className="text-[11px] hover:underline"
+                          style={{ color: "var(--nesti-accent)" }}
+                        >
+                          重置并散开
+                        </button>
+                      </div>
+
+                      <label className="block space-y-0.5">
+                        <div className="flex justify-between text-[11px]">
+                          <span>节点大小</span>
+                          <span className="tabular-nums">
+                            {forceConfig.nodeScale.toFixed(1)}x
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0.6}
+                          max={1.8}
+                          step={0.1}
+                          value={forceConfig.nodeScale}
+                          onChange={(e) =>
+                            setForceConfig((c) => ({
+                              ...c,
+                              nodeScale: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full accent-[var(--nesti-accent)]"
+                        />
+                      </label>
+
+                      <label className="block space-y-0.5">
+                        <div className="flex justify-between text-[11px]">
+                          <span>节点斥力</span>
+                          <span className="tabular-nums">
+                            {Math.round(forceConfig.repulsion)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={2000}
+                          max={15000}
+                          step={400}
+                          value={forceConfig.repulsion}
+                          onChange={(e) =>
+                            setForceConfig((c) => ({
+                              ...c,
+                              repulsion: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full accent-[var(--nesti-accent)]"
+                        />
+                      </label>
+
+                      <label className="block space-y-0.5">
+                        <div className="flex justify-between text-[11px]">
+                          <span>连线距离</span>
+                          <span className="tabular-nums">
+                            {Math.round(forceConfig.linkDistance)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={90}
+                          max={340}
+                          step={10}
+                          value={forceConfig.linkDistance}
+                          onChange={(e) =>
+                            setForceConfig((c) => ({
+                              ...c,
+                              linkDistance: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full accent-[var(--nesti-accent)]"
+                        />
+                      </label>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <label className="flex cursor-pointer items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={showArrows}
+                            onChange={(e) => setShowArrows(e.target.checked)}
+                            className="h-3.5 w-3.5 accent-[var(--nesti-accent)]"
+                          />
+                          <span>方向箭头</span>
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={showEdgeLabels}
+                            onChange={(e) => setShowEdgeLabels(e.target.checked)}
+                            className="h-3.5 w-3.5 accent-[var(--nesti-accent)]"
+                          />
+                          <span>常显边标签</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 右侧知识详情检查器 */}
+        {selectedId && selectedItem && (
+          <aside
+            className="w-full shrink-0 space-y-3 overflow-y-auto rounded-xl border p-4 shadow-xs lg:w-96"
+            style={{
+              background: "var(--nesti-surface-1)",
+              borderColor: "var(--nesti-border-subtle)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h3
+                className="text-sm font-semibold"
+                style={{ color: "var(--nesti-text-primary)" }}
+              >
+                知识详情
+              </h3>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLocalScope((prev) => (prev === "global" ? "hop1" : "global"))
+                  }
+                  className="rounded-md border px-2 py-1 text-xs transition-colors hover:bg-[var(--nesti-surface-hover)]"
+                  style={{
+                    borderColor: "var(--nesti-border-subtle)",
+                    color:
+                      localScope !== "global"
+                        ? "var(--nesti-accent)"
+                        : "var(--nesti-text-secondary)",
+                  }}
+                >
+                  {localScope === "global" ? "局部图谱" : "返回全局"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(null);
+                    setSelectedItem(null);
+                    setLocalScope("global");
+                  }}
+                  className="rounded-md border px-2 py-1 text-xs transition-colors hover:bg-[var(--nesti-surface-hover)]"
+                  style={{
+                    borderColor: "var(--nesti-border-subtle)",
+                    color: "var(--nesti-text-secondary)",
+                  }}
+                >
+                  关闭
+                </button>
+              </div>
             </div>
             <KnowledgeDetail
               item={selectedItem}

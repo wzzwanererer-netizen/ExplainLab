@@ -13,11 +13,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models import ImportOriginORM, KnowledgeItemORM, SourceRefORM
-from knowledge_core.domain.entities import SourceRef, SourceType
+from knowledge_core.domain.entities import KnowledgeStatus, SourceRef, SourceType
 
 __all__ = ["MarkdownItemRecord", "MarkdownItemRepository"]
 
@@ -74,6 +74,20 @@ class MarkdownItemRepository:
     def get(self, item_id: UUID | str) -> MarkdownItemRecord | None:
         orm = self.session.get(KnowledgeItemORM, str(item_id))
         return None if orm is None else self._to_record(orm)
+
+    def lock_for_import(self, item_id: UUID) -> None:
+        """Serialize an attachment import with concurrent changes to its target."""
+        item = KnowledgeItemORM
+        predicate = item.id == str(item_id)
+        if self.session.get_bind().dialect.name == "postgresql":
+            self.session.execute(select(item.id).where(predicate).with_for_update())
+        else:
+            self.session.execute(
+                update(item)
+                .where(predicate, item.status != KnowledgeStatus.ARCHIVED.value)
+                .values(status=item.status, updated_at=item.updated_at)
+                .execution_options(synchronize_session=False)
+            )
 
     def list_items(self, *, space_id: str | None = None) -> list[MarkdownItemRecord]:
         stmt = select(KnowledgeItemORM).order_by(KnowledgeItemORM.created_at)

@@ -1,0 +1,65 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/host-probe.py.txt
+started_at 2026-11-23T11:14:12.019660+00:00
+platform Windows-10-10.0.26300-SP0 AMD64
+command wsl.exe --version
+WSL 版本: 3.0.5.0
+
+内核版本: 6.18.58.1-1
+
+WSLg 版本: 1.0.79
+
+MSRDC 版本: 1.2.7391
+
+Direct3D 版本: 1.611.1-81528511
+
+DXCore 版本: 10.0.26100.1-240331-1435.ge-release
+
+Windows 版本: 10.0.26300.9974
+exit_code 0
+command wsl.exe --status
+拒绝访问。 
+
+错误代码： Wsl/E_ACCESSDENIED
+
+如果此错误是意外错误，请考虑搜索现有问题或在 https://github.com/microsoft/WSL/issues 提交新问题。
+exit_code 4294967295
+command wsl.exe -l -v
+拒绝访问。 
+
+错误代码： Wsl/E_ACCESSDENIED
+
+如果此错误是意外错误，请考虑搜索现有问题或在 https://github.com/microsoft/WSL/issues 提交新问题。
+exit_code 4294967295
+command wsl.exe -e uname -a
+拒绝访问。 
+
+错误代码： Wsl/E_ACCESSDENIED
+
+如果此错误是意外错误，请考虑搜索现有问题或在 https://github.com/microsoft/WSL/issues 提交新问题。
+exit_code 4294967295
+command sc.exe query WslService
+[SC] EnumQueryServicesStatus:OpenService FAILED 5:
+
+
+
+Access is denied.
+exit_code 5
+command sc.exe query LxssManager
+[SC] EnumQueryServicesStatus:OpenService FAILED 1060:
+
+
+
+The specified service does not exist as an installed service.
+exit_code 1060
+vmrun on_path False
+VBoxManage on_path False
+ssh on_path True
+docker on_path False
+podman on_path False
+psql on_path False
+pg_ctl on_path False
+EXPLAINLAB_PG_TEST_URL configured False
+TCP 127.0.0.1:5432 PermissionError winerror 10013
+windows imports 3.11.9 3.45.1 3.3.9 2.1.8 0.162.5 1.20.1
+finished_at 2026-11-23T11:14:13.335777+00:00
+probe_exit_code=0

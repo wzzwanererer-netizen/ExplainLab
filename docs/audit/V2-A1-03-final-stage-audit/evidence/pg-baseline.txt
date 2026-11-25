@@ -1,0 +1,36 @@
+### PG server status
+pg_ctl: server is running (PID: 50260)
+D:/ExplainLab-pg/pgsql/bin/postgres.exe "-D" "D:/ExplainLab-pg/data"
+
+### PG version (real connection, -d URI -c)
+                          version                           
+------------------------------------------------------------
+ PostgreSQL 16.8, compiled by Visual C++ build 1942, 64-bit
+(1 row)
+
+
+### PG test DB link table exists (real)
+                             Table "public.knowledge_link"
+           Column           |           Type           | Collation | Nullable | Default 
+----------------------------+--------------------------+-----------+----------+---------
+ id                         | character varying(36)    |           | not null | 
+ source_item_id             | character varying(36)    |           | not null | 
+ target_item_id             | character varying(36)    |           |          | 
+ target_title               | character varying(500)   |           | not null | 
+ alias                      | character varying(500)   |           |          | 
+ normalized_link_key        | character varying(1024)  |           | not null | 
+ link_normalization_version | integer                  |           | not null | 
+ resolution                 | character varying(20)    |           | not null | 
+ cross_space                | boolean                  |           | not null | 
+ created_at                 | timestamp with time zone |           | not null | 
+ updated_at                 | timestamp with time zone |           | not null | 
+Indexes:
+    "knowledge_link_pkey" PRIMARY KEY, btree (id)
+    "ix_knowledge_link_normalized_link_key" btree (normalized_link_key)
+    "ix_knowledge_link_target_item_id" btree (target_item_id)
+    "uq_link_source_key" UNIQUE CONSTRAINT, btree (source_item_id, normalized_link_key)
+Foreign-key constraints:
+    "knowledge_link_source_item_id_fkey" FOREIGN KEY (source_item_id) REFERENCES knowledge_item(id) ON DELETE CASCADE
+    "knowledge_link_target_item_id_fkey" FOREIGN KEY (target_item_id) REFERENCES knowledge_item(id) ON DELETE SET NULL
+
+EXIT_CODE=0

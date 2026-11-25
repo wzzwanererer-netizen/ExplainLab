@@ -1,0 +1,72 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_sqlite.py -k 'client_deadline or context_release_failure or close_failure or discards_first_lease or independent_fencing or pool_checkout or only_link_syscall or sqlite_db or pg_heartbeat_is_drained or final_fencing_reloads or pg_connect_deadline or pg_busy_advisory'
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 194 items / 166 deselected / 28 selected
+
+backend\tests\test_attachment_storage.py ..........sF                    [ 42%]
+backend\tests\test_storage_lock_pg_faults.py ............                [ 85%]
+backend\tests\test_storage_lock_sqlite.py ....                           [100%]
+
+================================== FAILURES ===================================
+_______ test_sqlite_db_parent_reparse_flag_rejected_before_side_effects _______
+
+tmp_path = WindowsPath('C:/Users/wzz/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{9835dd9c-b5d1-484d-8359-cdb74ab1842c}/Temp/pytest-of-wzz/pytest-0/test_sqlite_db_parent_reparse_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002BAD624D850>
+
+    def test_sqlite_db_parent_reparse_flag_rejected_before_side_effects(tmp_path, monkeypatch):
+        data_dir = tmp_path / "data"
+        db_parent = data_dir / "redirected-db-parent"
+        db_parent.mkdir(parents=True)
+        original = Path.lstat
+    
+        def lstat(path):
+            info = original(path)
+            if path == db_parent:
+                return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400)
+            return info
+    
+        monkeypatch.setattr(Path, "lstat", lstat)
+        settings = _settings(
+            tmp_path, data_dir=data_dir, database_url=f"sqlite:///{(db_parent / 'app.db').as_posix()}",
+        )
+        with pytest.raises(StorageRootError, match="not a real directory"):
+>           validate_storage_roots(settings)
+
+backend\tests\test_attachment_storage.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_storage.py:412: in validate_storage_roots
+    layout = preflight_storage_roots(settings)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\app\services\attachment_storage.py:372: in preflight_storage_roots
+    _directory_chain(db_path.parent, allow_missing=True)
+backend\app\services\attachment_storage.py:218: in _directory_chain
+    info = current.lstat()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('C:/Users/wzz/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{9835dd9c-b5d1-484d-8359-cdb74ab1842c}/Temp/pytest-of-wzz/pytest-0/test_sqlite_db_parent_reparse_0/data/redirected-db-parent')
+
+    def lstat(path):
+        info = original(path)
+        if path == db_parent:
+>           return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400)
+                   ^^^^^^^^^^^^^^^
+E           NameError: name 'SimpleNamespace' is not defined
+
+backend\tests\test_attachment_storage.py:224: NameError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_attachment_storage.py:205: cannot create a Windows junction or symlink
+FAILED backend/tests/test_attachment_storage.py::test_sqlite_db_parent_reparse_flag_rejected_before_side_effects
+===== 1 failed, 26 passed, 1 skipped, 166 deselected, 1 warning in 6.06s ======
+exit_code=1

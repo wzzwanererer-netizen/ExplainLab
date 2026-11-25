@@ -1,0 +1,18 @@
+Full suite: 1430 passed, 213 skipped, 0 failed, exit 0.
+EXPLAINLAB_PG_TEST_URL is unset.
+
+Breakdown:
+- 210 skipped by real-PostgreSQL gates (EXPLAINLAB_PG_TEST_URL unavailable).
+- 3 skipped by platform/volume gates:
+  1. backend/tests/test_attachment_storage.py:54 - Linux real filesystem mount required.
+  2. backend/tests/test_attachment_storage.py:762 - Windows opened-file rename path replacement evidence skipped.
+  3. backend/tests/test_attachment_windows.py:174 - no writable second Windows volume selected.
+
+Definition:
+- 210 + 3 = 213.
+- Skips are NOT passes.
+- No PostgreSQL success is claimed.
+- No real cross-volume Windows success is claimed.
+- B1/B2 targeted regression: 7 skipped, all real-PG or Windows platform gates; not passes.
+
+B3-T01 test file: 34 passed, 0 skipped.

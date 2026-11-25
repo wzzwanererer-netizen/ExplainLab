@@ -1,0 +1,1558 @@
+--- round2/backend/app/core/config.py
++++ round3/backend/app/core/config.py
+@@ -123,8 +123,8 @@
+         prefix = "sqlite:///"
+         if url.startswith(prefix) and ":memory:" not in url:
+             path_part = url[len(prefix) :]
+-            if not path_part.startswith("/") and not Path(path_part).is_absolute():
+-                anchored = (BACKEND_DIR / path_part).resolve()
++            if not path_part.startswith(("/", "file:")) and not Path(path_part).is_absolute():
++                anchored = BACKEND_DIR / path_part
+                 return f"{prefix}{anchored.as_posix()}"
+         return url
+ 
+@@ -236,4 +236,4 @@
+ 
+ @lru_cache
+ def get_settings() -> Settings:
+-    return Settings()+    return Settings()
+--- round2/backend/app/db/session.py
++++ round3/backend/app/db/session.py
+@@ -7,28 +7,82 @@
+ from __future__ import annotations
+ 
+ import sqlite3
++import threading
+ import time
+ from collections.abc import Callable, Generator, Iterator
+-from contextlib import contextmanager
++from concurrent.futures import Future
++from contextlib import contextmanager, suppress
++from contextvars import ContextVar, copy_context
+ from pathlib import Path
+ from typing import TypeVar
+ 
++from psycopg import Connection as PsycopgConnection
++from psycopg.errors import _WaitTimeout as PsycopgWaitTimeout
+ from sqlalchemy import Engine, create_engine, event
++from sqlalchemy.engine import make_url
+ from sqlalchemy.exc import OperationalError
++from sqlalchemy.exc import TimeoutError as PoolTimeout
+ from sqlalchemy.orm import Session, sessionmaker
++from sqlalchemy.pool import QueuePool
+ 
+ from app.core.config import Settings, get_settings
++
++_checkout_deadline: ContextVar[float | None] = ContextVar("db_checkout_deadline", default=None)
++
++
++class _BudgetQueuePool(QueuePool):
++    """Keep SQLAlchemy's checkout algorithm with a per-call queue timeout."""
++
++    @property
++    def _timeout(self):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return self._configured_timeout
++        return min(self._configured_timeout, max(0.0, deadline - time.monotonic()))
++
++    @_timeout.setter
++    def _timeout(self, value):
++        self._configured_timeout = value
++
++
++class _CheckoutPsycopgConnection(PsycopgConnection):
++    def wait(self, gen, interval=0.1, timeout=None):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return super().wait(gen, interval=interval, timeout=timeout)
++        remaining = max(0.0, deadline - time.monotonic())
++        try:
++            return super().wait(
++                gen, interval=interval,
++                timeout=remaining if timeout is None else min(remaining, timeout),
++            )
++        except PsycopgWaitTimeout:
++            self.pgconn.finish()
++            raise
++
++
++@contextmanager
++def checkout_budget(deadline: float):
++    current = _checkout_deadline.get()
++    token = _checkout_deadline.set(min(current, deadline) if current is not None else deadline)
++    try:
++        yield
++    finally:
++        _checkout_deadline.reset(token)
+ 
+ 
+ def create_engine_from_url(database_url: str) -> Engine:
+     """按方言创建引擎。SQLite 文件库自动创建父目录。"""
+     if database_url.startswith("sqlite"):
+-        if database_url.startswith("sqlite:///") and ":memory:" not in database_url:
+-            db_path = database_url.removeprefix("sqlite:///")
++        url = make_url(database_url)
++        db_path = url.database
++        file_db = bool(db_path and ":memory:" not in db_path and url.query.get("mode") != "memory")
++        if file_db and url.query.get("uri") != "true":
+             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+         engine = create_engine(
+             database_url,
+             connect_args={"check_same_thread": False},
++            **({"poolclass": _BudgetQueuePool} if file_db else {}),
+         )
+ 
+         # SQLite 默认不启用外键约束；显式开启后，模型声明的 ON DELETE CASCADE
+@@ -45,7 +99,24 @@
+             cursor.close()
+ 
+         return engine
+-    return create_engine(database_url, pool_pre_ping=True)
++    engine = create_engine(database_url, pool_pre_ping=True, poolclass=_BudgetQueuePool)
++    configure_postgres_checkout(engine)
++    return engine
++
++
++def configure_postgres_checkout(engine: Engine) -> None:
++    if engine.dialect.driver != "psycopg":
++        return
++
++    @event.listens_for(engine, "do_connect")
++    def _connect_postgres(_dialect, _record, args, kwargs):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return _CheckoutPsycopgConnection.connect(*args, **kwargs)
++        return bounded_db_call(
++            lambda: _CheckoutPsycopgConnection.connect(*args, **kwargs), deadline,
++            on_abandon=_close_late_connection,
++        )
+ 
+ 
+ _engine: Engine | None = None
+@@ -124,6 +195,52 @@
+ _T = TypeVar("_T")
+ 
+ 
++class DatabaseDeadline(TimeoutError):
++    """The database call did not finish within the caller's budget."""
++
++    def __init__(self, *, started: bool = False):
++        self.started = started
++
++
++def bounded_db_call(
++    operation: Callable[[], _T], deadline: float, *, on_abandon=None,
++) -> _T:
++    """Bound the caller's wait. Abandoned work retains resource ownership."""
++    remaining = deadline - time.monotonic()
++    if remaining <= 0:
++        raise DatabaseDeadline()
++    result: Future[_T] = Future()
++    context = copy_context()
++
++    def run():
++        try:
++            result.set_result(context.run(operation))
++        except BaseException as exc:
++            result.set_exception(exc)
++
++    threading.Thread(target=run, name="storage-db-call", daemon=True).start()
++    try:
++        return result.result(timeout=max(0.0, deadline - time.monotonic()))
++    except BaseException as exc:
++        # A timeout raised by the operation itself is kept in its original form.
++        if isinstance(exc, TimeoutError) and result.done() and result.exception() is exc:
++            raise
++        if isinstance(exc, TimeoutError) or not isinstance(exc, Exception):
++            if on_abandon is not None:
++                result.add_done_callback(lambda done: threading.Thread(
++                    target=on_abandon, args=(done,), name="storage-db-cleanup", daemon=True,
++                ).start())
++            if isinstance(exc, TimeoutError):
++                raise DatabaseDeadline(started=True) from exc
++        raise
++
++
++def _close_late_connection(result: Future) -> None:
++    if result.exception() is None:
++        with suppress(Exception):
++            result.result().close()
++
++
+ class SQLiteWriteTimeout(TimeoutError):
+     """The caller's write transaction could not complete within its budget."""
+ 
+@@ -142,6 +259,49 @@
+         raise SQLiteWriteTimeout("SQLite write budget exhausted")
+     return int(remaining * 1000)
+ 
++
++@contextmanager
++def sqlite_connection_budget(connection, deadline: float):
++    previous_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
++    connection.exec_driver_sql(f"PRAGMA busy_timeout={_sqlite_remaining_ms(deadline)}")
++    try:
++        yield
++    finally:
++        connection.exec_driver_sql(f"PRAGMA busy_timeout={previous_timeout}")
++
++
++@contextmanager
++def _sqlite_checkout(engine, deadline: float):
++    with checkout_budget(deadline):
++        try:
++            if isinstance(engine.pool, QueuePool) and not isinstance(engine.pool, _BudgetQueuePool):
++                connection = bounded_db_call(
++                    engine.connect, deadline, on_abandon=_close_late_connection,
++                )
++            else:
++                connection = engine.connect()
++        except (PoolTimeout, DatabaseDeadline) as exc:
++            raise SQLiteWriteTimeout("SQLite connection checkout budget exhausted") from exc
++        with connection:
++            _sqlite_remaining_ms(deadline)
++            yield connection
++
++
++@contextmanager
++def sqlite_fence_session(factory, session: Session | None, deadline: float):
++    if session is None:
++        with (
++            _sqlite_checkout(factory.kw["bind"], deadline) as connection,
++            factory(bind=connection) as reader,
++            sqlite_connection_budget(connection, deadline),
++        ):
++            yield reader
++        return
++    try:
++        with checkout_budget(deadline), sqlite_connection_budget(session.connection(), deadline):
++            yield session
++    except PoolTimeout as exc:
++        raise SQLiteWriteTimeout("SQLite fencing checkout budget exhausted") from exc
+ 
+ def run_sqlite_write(
+     factory: sessionmaker[Session],
+@@ -155,7 +315,7 @@
+     while True:
+         _sqlite_remaining_ms(deadline)
+         try:
+-            with factory.kw["bind"].connect() as connection:
++            with _sqlite_checkout(factory.kw["bind"], deadline) as connection:
+                 previous_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
+                 try:
+                     with factory(bind=connection) as session:
+--- round2/backend/app/db/storage_lock.py
++++ round3/backend/app/db/storage_lock.py
+@@ -20,16 +20,27 @@
+ import time
+ import uuid
+ from collections.abc import Iterable
+-from concurrent.futures import Future
+-from concurrent.futures import TimeoutError as FutureTimeout
++from contextlib import contextmanager, suppress
+ from datetime import UTC, datetime, timedelta
+ 
++from psycopg import Connection as PsycopgConnection
++from psycopg.errors import _WaitTimeout as PsycopgWaitTimeout
+ from sqlalchemy import Engine, select, text, update
+-from sqlalchemy.exc import DBAPIError
++from sqlalchemy.exc import DBAPIError, OperationalError
++from sqlalchemy.exc import TimeoutError as PoolTimeout
+ from sqlalchemy.orm import Session, sessionmaker
+-from sqlalchemy.pool import NullPool
+-
+-from app.db.session import SQLiteWriteTimeout, run_sqlite_write
++from sqlalchemy.pool import NullPool, QueuePool
++
++from app.db.session import (
++    DatabaseDeadline,
++    SQLiteWriteTimeout,
++    bounded_db_call,
++    checkout_budget,
++    configure_postgres_checkout,
++    is_sqlite_busy,
++    run_sqlite_write,
++    sqlite_fence_session,
++)
+ from app.models import StorageLockORM
+ from knowledge_core.domain.entities import StorageLease, utcnow
+ 
+@@ -52,6 +63,7 @@
+ STORAGE_LOCK_UNAVAILABLE = "STORAGE_LOCK_UNAVAILABLE"
+ 
+ _POLL_SECONDS = 0.05
++_PG_CLEANUP_RESERVE = 0.02
+ _MAX_KEYS = 100
+ 
+ 
+@@ -196,11 +208,31 @@
+         )
+         self._thread.start()
+ 
+-    def stop_heartbeat(self) -> None:
++    def _deadline(self) -> float:
++        return time.monotonic() + min(self.manager.wait_seconds, self.ttl_seconds)
++
++    def _wait_failure(self, phase: str):
++        if self.manager.manager_name == "postgresql":
++            return PostgresLockFailure(phase, "deadline")
++        return StorageLeaseLost(f"{phase} deadline")
++
++    @contextmanager
++    def _serialized(self, deadline: float, phase: str):
++        if not self._state_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
++            raise self._wait_failure(phase)
++        try:
++            yield
++        finally:
++            self._state_lock.release()
++
++    def stop_heartbeat(self, deadline: float | None = None) -> bool:
+         self._stop.set()
+         thread = self._thread
+         if thread is not None and thread is not threading.current_thread():
+-            thread.join()
++            deadline = self._deadline() if deadline is None else deadline
++            thread.join(timeout=max(0.0, deadline - time.monotonic()))
++            return not thread.is_alive()
++        return True
+ 
+     def _heartbeat_loop(self) -> None:
+         while not self._stop.wait(self.heartbeat_seconds):
+@@ -232,35 +264,69 @@
+                 self._mark_abort(STORAGE_LEASE_LOST)
+             return ok
+ 
+-    def verify_all(self, session: Session | None = None) -> None:
++    def verify_all(self, session: Session | None = None, *, deadline: float | None = None) -> None:
++        deadline = self._deadline() if deadline is None else min(deadline, self._deadline())
+         # Final PG verification retains token row locks in session until commit.
+         # Drain the heartbeat before taking those locks and never restart it.
+-        if session is not None and self.manager.manager_name == "postgresql":
+-            self.stop_heartbeat()
++        final_pg = session is not None and self.manager.manager_name == "postgresql"
++        if final_pg and not self.stop_heartbeat(deadline):
++            self._abort = True
++            raise self._wait_failure("verify")
++        try:
++            with self._serialized(deadline, "verify"):
++                self.assert_active()
++                if final_pg:
++                    self._final_fencing = True
++                try:
++                    if not self.manager._verify_guard(self, session, deadline):
++                        raise StorageLeaseLost()
++                except BaseException:
++                    self._abort = True
++                    raise
++        except BaseException:
++            self._abort = True
++            raise
++
++    def release(self) -> bool:
++        deadline = time.monotonic() + self.manager.wait_seconds
++        try:
++            if not self.stop_heartbeat(deadline):
++                raise self._wait_failure("release")
++            with self._serialized(deadline, "release"):
++                return self._release_locked(deadline)
++        except StorageLockError:
++            if not self._released:
++                self._abort = True
++                threading.Thread(
++                    target=self._deferred_release, name="storage-guard-cleanup", daemon=True,
++                ).start()
++            raise
++
++    def _release_locked(self, deadline: float) -> bool:
++        if self._released:
++            return True
++        self._released = True
++        return self.manager._release_guard(self, deadline)
++
++    def _deferred_release(self):
+         with self._state_lock:
+-            self.assert_active()
+-            if session is not None and self.manager.manager_name == "postgresql":
+-                self._final_fencing = True
+             try:
+-                if not self.manager._verify_guard(self, session):
+-                    raise StorageLeaseLost()
+-            except BaseException:
+-                self._mark_abort(STORAGE_LEASE_LOST)
+-                raise
+-
+-    def release(self) -> bool:
+-        self.stop_heartbeat()
+-        with self._state_lock:
+-            if self._released:
+-                return True
+-            self._released = True
+-            return self.manager._release_guard(self)
++                if self._release_locked(time.monotonic() + self.manager.wait_seconds):
++                    return
++            except Exception:  # noqa: BLE001 - cleanup cannot change the business outcome
++                pass
++            logger.warning("STORAGE_LOCK_RELEASE_FAILED")
+ 
+     def __enter__(self) -> LockGuard:
+         return self
+ 
+     def __exit__(self, *_exc: object) -> None:
+-        self.release()
++        try:
++            if self.release():
++                return
++        except Exception:  # noqa: BLE001 - preserve the business result and traceback
++            pass
++        logger.warning("STORAGE_LOCK_RELEASE_FAILED")
+ 
+ 
+ class _BaseStorageKeyLock:
+@@ -301,27 +367,38 @@
+         if not self._registry.register(owner, keys):
+             return None
+         deadline = time.monotonic() + max(0.0, wait)
++        batch_deadline = deadline
+         leases: list[StorageLease] = []
+         try:
+             for index, key in enumerate(keys):
+-                remaining = deadline - time.monotonic()
++                remaining = batch_deadline - time.monotonic()
+                 if remaining <= 0:
+                     self._release_leases(leases, deadline)
+                     self._registry.unregister(owner, keys)
+                     return None
+                 lease = self._acquire_batch_key(
+-                    key, owner, ttl_seconds=ttl, deadline=deadline, index=index
++                    key, owner, ttl_seconds=ttl, deadline=batch_deadline, index=index
+                 )
+                 if lease is None:
+                     self._release_leases(leases, deadline)
+                     self._registry.unregister(owner, keys)
+                     return None
+                 leases.append(lease)
++                ttl_remaining = (lease.lease_expires_at - utcnow()).total_seconds()
++                batch_deadline = min(batch_deadline, time.monotonic() + ttl_remaining)
++            guard = LockGuard(self, leases, ttl_seconds=ttl, heartbeat_seconds=heartbeat)
++            if time.monotonic() >= batch_deadline:
++                raise StorageLeaseLost()
++            if len(leases) > 1:
++                guard.verify_all(deadline=batch_deadline)
++        except StorageLeaseLost:
++            self._release_leases(leases, deadline)
++            self._registry.unregister(owner, keys)
++            return None
+         except BaseException:
+             self._release_leases(leases, deadline)
+             self._registry.unregister(owner, keys)
+             raise
+-        guard = LockGuard(self, leases, ttl_seconds=ttl, heartbeat_seconds=heartbeat)
+         guard.start_heartbeat()
+         return guard
+ 
+@@ -394,10 +471,10 @@
+         ttl = guard.ttl_seconds if ttl_seconds is None else ttl_seconds
+         return all(self._renew_lease(lease, ttl) for lease in guard.leases)
+ 
+-    def _verify_guard(self, guard: LockGuard, session: Session | None) -> bool:
++    def _verify_guard(self, guard: LockGuard, session: Session | None, deadline: float) -> bool:
+         return all(self._verify_lease(lease) for lease in guard.leases)
+ 
+-    def _release_guard(self, guard: LockGuard) -> bool:
++    def _release_guard(self, guard: LockGuard, deadline: float) -> bool:
+         ok = True
+         for lease in reversed(guard.leases):
+             try:
+@@ -523,17 +600,41 @@
+         return self._renew_leases((lease,), ttl_seconds)
+ 
+     def _verify_lease(self, lease: StorageLease) -> bool:
+-        with self._session_factory() as session:
+-            return _lease_matches(_reload_lock_row(session, lease.storage_key), lease)
+-
+-    def _verify_guard(self, guard: LockGuard, session: Session | None) -> bool:
+-        if session is not None:
+-            return all(
+-                _lease_matches(_reload_lock_row(session, lease.storage_key), lease)
+-                for lease in guard.leases
+-            )
+-        with self._session_factory() as reader:
+-            return self._verify_guard(guard, reader)
++        deadline = time.monotonic() + self.wait_seconds
++        try:
++            return self._verify_leases((lease,), None, deadline)
++        except StorageLeaseLost:
++            return False
++
++    def _verify_guard(self, guard: LockGuard, session: Session | None, deadline: float) -> bool:
++        return self._verify_leases(guard.leases, session, deadline)
++
++    def _verify_leases(self, leases, session, deadline: float) -> bool:
++        def read() -> bool:
++            with sqlite_fence_session(self._session_factory, session, deadline) as reader:
++                rows = {
++                    row.storage_key: row for row in reader.scalars(
++                        select(StorageLockORM)
++                        .where(StorageLockORM.storage_key.in_([lease.storage_key for lease in leases]))
++                        .execution_options(populate_existing=True)
++                    )
++                }
++                now = utcnow()
++                return time.monotonic() < deadline and all(
++                    _lease_matches(rows.get(lease.storage_key), lease, now)
++                    for lease in leases
++                )
++
++        try:
++            if session is None and isinstance(self._session_factory.kw["bind"].pool, QueuePool):
++                return bounded_db_call(read, deadline)
++            return read()
++        except (SQLiteWriteTimeout, DatabaseDeadline) as exc:
++            raise StorageLeaseLost("SQLite fencing deadline") from exc
++        except OperationalError as exc:
++            if not is_sqlite_busy(exc):
++                raise
++            raise StorageLeaseLost("SQLite fencing remained busy") from exc
+ 
+     @staticmethod
+     def _clear_leases(session: Session, leases: Iterable[StorageLease]) -> bool:
+@@ -563,6 +664,18 @@
+         except SQLiteWriteTimeout:
+             return False
+ 
++    def _release_guard(self, guard: LockGuard, deadline: float) -> bool:
++        try:
++            return run_sqlite_write(
++                self._session_factory,
++                lambda session: self._clear_leases(session, reversed(guard.leases)),
++                deadline=deadline,
++            )
++        except (SQLiteWriteTimeout, DBAPIError):
++            return False
++        finally:
++            self._registry.unregister(guard.leases[0].owner, guard.keys)
++
+     def _release_leases(self, leases: list[StorageLease], deadline: float) -> None:
+         if not leases:
+             return
+@@ -587,13 +700,13 @@
+     ).scalar_one_or_none()
+ 
+ 
+-def _lease_matches(row: StorageLockORM | None, lease: StorageLease) -> bool:
++def _lease_matches(row: StorageLockORM | None, lease: StorageLease, now: datetime) -> bool:
+     if row is None:
+         return False
+     return (
+         row.owner == lease.owner
+         and row.lease_token == lease.lease_token
+-        and _aware(row.lease_expires_at) > utcnow()
++        and _aware(row.lease_expires_at) > now
+     )
+ 
+ 
+@@ -635,8 +748,43 @@
+     return executor.execute(statement, parameters or {})
+ 
+ 
++@contextmanager
++def _pg_transport_budget(connection, deadline: float):
++    """Give synchronous psycopg I/O its own client-side deadline."""
++    driver = connection.connection.driver_connection
++    if not isinstance(driver, PsycopgConnection):
++        yield
++        return
++    original_wait = driver.wait
++    instance_wait = vars(driver).get("wait")
++
++    def wait(generator, interval=0.1, timeout=None):
++        remaining = _pg_remaining(deadline)
++        try:
++            return original_wait(
++                generator, interval=interval,
++                timeout=remaining if timeout is None else min(remaining, timeout),
++            )
++        except PsycopgWaitTimeout:
++            # A timed-out operation can still be active. End the physical session
++            # before SQLAlchemy or the business unit of work can reuse it.
++            driver.pgconn.finish()
++            raise
++
++    driver.wait = wait
++    try:
++        yield
++    finally:
++        if instance_wait is None:
++            del driver.wait
++        else:
++            driver.wait = instance_wait
++
++
+ def _pg_reason(exc: DBAPIError) -> str:
+     sqlstate = getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None) or ""
++    if isinstance(exc.orig, PsycopgWaitTimeout):
++        return "SQL deadline"
+     if exc.connection_invalidated or sqlstate.startswith("08"):
+         return "session disconnected"
+     if sqlstate in {"55P03", "57014"}:
+@@ -644,13 +792,28 @@
+     return "SQL error"
+ 
+ 
+-def _close_pg(connection) -> None:
++def _close_pg(connection, *, abort=False) -> None:
+     if connection is not None:
+-        try:
++        driver = None
++        try:
++            if not connection.closed and not connection.invalidated:
++                driver = connection.connection.driver_connection
++            if abort and isinstance(driver, PsycopgConnection):
++                driver.pgconn.finish()
+             connection.close()  # NullPool closes the physical connection
+-        except DBAPIError:
+-            connection.invalidate()
+-            logger.warning("PostgreSQL dedicated connection close failed")
++        except Exception:  # noqa: BLE001 - best effort physical invalidation
++            if isinstance(driver, PsycopgConnection):
++                with suppress(Exception):
++                    driver.pgconn.finish()
++            with suppress(Exception):
++                connection.invalidate()
++            logger.warning("STORAGE_LOCK_RELEASE_FAILED")
++            raise
++
++
++def _cleanup_pg_after_call(connection, _result=None) -> None:
++    with suppress(Exception):
++        _close_pg(connection, abort=True)
+ 
+ 
+ class PostgresStorageKeyLock(_BaseStorageKeyLock):
+@@ -692,41 +855,27 @@
+         # libpq accepts whole seconds. The caller also bounds its wait using the
+         # exact remaining budget; a late connection is closed by its own thread.
+         timeout = max(2, math.ceil(_pg_remaining(deadline)))
+-        result: Future = Future()
+-
+-        def abandon() -> None:
+-            if not result.cancel():
+-                result.add_done_callback(
+-                    lambda done: _close_pg(done.result()) if done.exception() is None else None
+-                )
+-
+-        def connect() -> None:
+-            try:
+-                engine = create_engine(
+-                    self._engine.url, poolclass=NullPool,
+-                    connect_args={"connect_timeout": timeout},
+-                )
+-                connection = engine.connect()
+-            except BaseException as exc:
+-                if result.set_running_or_notify_cancel():
+-                    result.set_exception(exc)
+-            else:
+-                if result.set_running_or_notify_cancel():
+-                    result.set_result(connection)
+-                else:
+-                    _close_pg(connection)
+-
+-        threading.Thread(target=connect, name="storage-lock-pg-connect", daemon=True).start()
+-        try:
+-            return result.result(timeout=_pg_remaining(deadline))
+-        except (FutureTimeout, _PostgresDeadline) as exc:
+-            abandon()
++        def connect():
++            engine = create_engine(
++                self._engine.url, poolclass=NullPool,
++                connect_args={"connect_timeout": timeout},
++            )
++            if not isinstance(engine, Engine):
++                return engine.connect()
++            configure_postgres_checkout(engine)
++            with checkout_budget(deadline):
++                return engine.connect()
++
++        try:
++            return bounded_db_call(
++                connect, deadline, on_abandon=lambda done: (
++                    _cleanup_pg_after_call(done.result()) if done.exception() is None else None
++                ),
++            )
++        except DatabaseDeadline as exc:
+             raise PostgresLockFailure("connect", "connection deadline") from exc
+         except DBAPIError as exc:
+             raise PostgresLockFailure("connect", "connection failed") from exc
+-        except BaseException:
+-            abandon()
+-            raise
+ 
+     def acquire_many(
+         self,
+@@ -756,14 +905,22 @@
+         try:
+             connection = self._connect(deadline)
+             phase = "advisory acquisition"
+-            for identity in sorted({_advisory_identity(key) for key in keys}):
+-                if not self._try_advisory(connection, identity, deadline):
+-                    return None
+-                acquired.append(identity)
+-            _pg_apply_budget(connection, deadline)
+-            connection.commit()
+-            phase = "token UPSERT"
+-            leases = self._write_tokens(connection, keys, owner, ttl, deadline)
++            dedicated = connection
++            try:
++                leases = bounded_db_call(
++                    lambda: self._acquire_connected(dedicated, keys, owner, ttl, deadline, acquired),
++                    deadline,
++                    on_abandon=lambda _: _cleanup_pg_after_call(dedicated),
++                )
++            except DatabaseDeadline as exc:
++                if exc.started:
++                    connection = None  # the operation retains ownership through cleanup
++                raise PostgresLockFailure(phase, "deadline") from exc
++            except (KeyboardInterrupt, SystemExit):
++                connection = None
++                raise
++            if leases is None:
++                return None
+             state = _PostgresGuardState(connection=connection, identities=tuple(acquired))
+             guard = _PostgresLockGuard(
+                 self, leases, ttl_seconds=ttl, heartbeat_seconds=heartbeat, state=state,
+@@ -781,9 +938,26 @@
+         finally:
+             if not handed_off:
+                 try:
+-                    self._finish_connection(connection, acquired, deadline)
++                    self._bounded_finish(connection, acquired, deadline)
+                 finally:
+                     self._registry.unregister(owner, keys)
++
++    def _acquire_connected(self, connection, keys, owner, ttl, deadline, acquired):
++        phase = "advisory acquisition"
++        try:
++            with _pg_transport_budget(connection, deadline):
++                for identity in sorted({_advisory_identity(key) for key in keys}):
++                    if not self._try_advisory(connection, identity, deadline):
++                        return None
++                    acquired.append(identity)
++                _pg_apply_budget(connection, deadline)
++                connection.commit()
++                phase = "token UPSERT"
++                return self._write_tokens(connection, keys, owner, ttl, deadline)
++        except _PostgresDeadline as exc:
++            raise PostgresLockFailure(phase, "deadline") from exc
++        except DBAPIError as exc:
++            raise PostgresLockFailure(phase, _pg_reason(exc)) from exc
+ 
+     def _try_advisory(self, connection, identity: tuple[int, int], deadline: float) -> bool:
+         classid, objid = identity
+@@ -795,10 +969,10 @@
+             if held:
+                 return True
+             remaining = deadline - time.monotonic()
+-            if remaining <= 0:
++            if remaining <= _PG_CLEANUP_RESERVE:
+                 return False
+-            time.sleep(min(_POLL_SECONDS, remaining))
+-            if deadline - time.monotonic() < 0.001:
++            time.sleep(min(_POLL_SECONDS, (remaining - _PG_CLEANUP_RESERVE) / 2))
++            if deadline - time.monotonic() <= _PG_CLEANUP_RESERVE:
+                 return False
+ 
+     def _write_tokens(
+@@ -839,17 +1013,37 @@
+                 if deadline <= time.monotonic():
+                     connection.invalidate()
+                     return
+-                if connection.in_transaction():
+-                    connection.rollback()
+-                for classid, objid in reversed(identities):
+-                    _pg_execute(
+-                        connection, text("SELECT pg_advisory_unlock(:classid, :objid)"),
+-                        deadline, {"classid": classid, "objid": objid},
+-                    )
++                with _pg_transport_budget(connection, deadline):
++                    if connection.in_transaction():
++                        connection.rollback()
++                    for classid, objid in reversed(identities):
++                        _pg_execute(
++                            connection, text("SELECT pg_advisory_unlock(:classid, :objid)"),
++                            deadline, {"classid": classid, "objid": objid},
++                        )
++                    if connection.in_transaction():
++                        connection.rollback()
+         except (DBAPIError, _PostgresDeadline):
+             logger.debug("Explicit advisory unlock incomplete; closing dedicated connection")
+         finally:
+-            _close_pg(connection)
++            _close_pg(connection, abort=deadline <= time.monotonic())
++
++    def _bounded_finish(self, connection, identities, deadline: float, *, strict=False) -> None:
++        if connection is None:
++            return
++        if deadline <= time.monotonic():
++            threading.Thread(target=_cleanup_pg_after_call, args=(connection,), daemon=True).start()
++            if strict:
++                raise _PostgresDeadline()
++            return
++        try:
++            bounded_db_call(lambda: self._finish_connection(connection, identities, deadline), deadline)
++        except DatabaseDeadline as exc:
++            if strict:
++                raise _PostgresDeadline() from exc
++        except Exception:  # noqa: BLE001 - acquisition failure remains primary
++            if strict:
++                raise
+ 
+     def _renew_lease(self, lease: StorageLease, ttl_seconds: float) -> bool:
+         return False
+@@ -862,9 +1056,19 @@
+ 
+     def _renew_guard(self, guard: LockGuard, *, ttl_seconds: float | None = None) -> bool:
+         state = guard.pg_state
+-        state.require_live()
+         deadline = time.monotonic() + min(self.wait_seconds, guard.ttl_seconds)
+         ttl = guard.ttl_seconds if ttl_seconds is None else ttl_seconds
++        try:
++            return state.run(lambda: self._renew_connected(guard, ttl, deadline), deadline)
++        except StorageLeaseLost:
++            return False
++        except (DatabaseDeadline, _PostgresDeadline) as exc:
++            raise PostgresLockFailure("heartbeat", "deadline") from exc
++        except DBAPIError as exc:
++            raise PostgresLockFailure("heartbeat", _pg_reason(exc)) from exc
++
++    def _renew_connected(self, guard, ttl: float, deadline: float) -> bool:
++        state = guard.pg_state
+         now = utcnow()
+         try:
+             with state.connection.begin():
+@@ -887,15 +1091,10 @@
+             return True
+         except StorageLeaseLost:
+             return False
+-        except _PostgresDeadline as exc:
+-            raise PostgresLockFailure("heartbeat", "deadline") from exc
+-        except DBAPIError as exc:
+-            raise PostgresLockFailure("heartbeat", _pg_reason(exc)) from exc
+-
+-    def _verify_guard(self, guard: LockGuard, session: Session | None) -> bool:
++
++    def _verify_guard(self, guard: LockGuard, session: Session | None, deadline: float) -> bool:
+         state = guard.pg_state
+         state.require_live()
+-        deadline = time.monotonic() + min(self.wait_seconds, guard.ttl_seconds)
+         stmt = (
+             select(
+                 StorageLockORM.storage_key, StorageLockORM.owner,
+@@ -905,43 +1104,88 @@
+             .order_by(StorageLockORM.storage_key)
+         )
+         try:
+-            with state.connection.begin():
+-                reader = session if session is not None else state.connection
+-                if session is not None:
+-                    stmt = stmt.with_for_update()
+-                rows = {
+-                    key: (owner, token, _aware(expires))
+-                    for key, owner, token, expires in _pg_execute(reader, stmt, deadline)
+-                }
+-                held = {
+-                    (int(classid), int(objid))
+-                    for classid, objid in _pg_execute(
+-                        state.connection,
+-                        text(
+-                            "SELECT classid::text, objid::text FROM pg_locks "
+-                            "WHERE locktype='advisory' AND pid=pg_backend_pid() AND granted "
+-                            "AND objsubid=2 AND mode='ExclusiveLock'"
+-                        ),
++            rows = None
++            if session is not None:
++                _pg_remaining(deadline)
++                if isinstance(session, Session):
++                    with checkout_budget(deadline):
++                        business_connection = session.connection()
++                    with _pg_transport_budget(business_connection, deadline):
++                        rows = self._read_rows(session, stmt.with_for_update(), deadline)
++                else:
++                    rows = bounded_db_call(
++                        lambda: self._read_rows(session, stmt.with_for_update(), deadline),
+                         deadline,
+                     )
+-                }
+-                _pg_remaining(deadline)
+-                state.require_live()
+-                now = utcnow()
+-                return state.required.issubset(held) and all(
+-                    lease.storage_key in rows
+-                    and rows[lease.storage_key][:2] == (lease.owner, lease.lease_token)
+-                    and rows[lease.storage_key][2] > now
+-                    for lease in guard.leases
+-                )
+-        except _PostgresDeadline as exc:
++            return state.run(
++                lambda: self._verify_connected(guard, stmt, rows, deadline), deadline,
++            )
++        except (DatabaseDeadline, _PostgresDeadline, PoolTimeout) as exc:
+             raise PostgresLockFailure("verify", "deadline") from exc
+         except DBAPIError as exc:
+             raise PostgresLockFailure("verify", _pg_reason(exc)) from exc
+ 
+-    def _release_guard(self, guard: LockGuard) -> bool:
++    @staticmethod
++    def _read_rows(executor, stmt, deadline):
++        return {
++            key: (owner, token, _aware(expires))
++            for key, owner, token, expires in _pg_execute(executor, stmt, deadline)
++        }
++
++    def _verify_connected(self, guard, stmt, rows, deadline: float) -> bool:
+         state = guard.pg_state
+-        deadline = time.monotonic() + self.wait_seconds
++        with state.connection.begin():
++            if rows is None:
++                rows = self._read_rows(state.connection, stmt, deadline)
++            held = {
++                (int(classid), int(objid))
++                for classid, objid in _pg_execute(
++                    state.connection,
++                    text(
++                        "SELECT classid::text, objid::text FROM pg_locks "
++                        "WHERE locktype='advisory' AND pid=pg_backend_pid() AND granted "
++                        "AND objsubid=2 AND mode='ExclusiveLock'"
++                    ),
++                    deadline,
++                )
++            }
++            _pg_remaining(deadline)
++            state.require_live()
++        _pg_remaining(deadline)
++        now = utcnow()
++        return state.required.issubset(held) and all(
++            lease.storage_key in rows
++            and rows[lease.storage_key][:2] == (lease.owner, lease.lease_token)
++            and rows[lease.storage_key][2] > now
++            for lease in guard.leases
++        )
++
++    def _release_guard(self, guard: LockGuard, deadline: float) -> bool:
++        state = guard.pg_state
++        try:
++            try:
++                ok = state.run(lambda: self._clear_connected(guard, deadline), deadline)
++            except StorageLeaseLost:
++                self._bounded_finish(state.connection if not state.abandoned else None, (), deadline)
++                return False
++            except BaseException:
++                if not state.abandoned:
++                    self._bounded_finish(state.connection, state.identities, deadline)
++                raise
++            self._bounded_finish(state.connection, state.identities, deadline, strict=True)
++            return ok
++        except (DatabaseDeadline, _PostgresDeadline) as exc:
++            raise PostgresLockFailure("release", "deadline") from exc
++        except DBAPIError as exc:
++            raise PostgresLockFailure("release", _pg_reason(exc)) from exc
++        finally:
++            with self._single_lock:
++                for lease in guard.leases:
++                    self._batch_guards.pop((lease.owner, lease.storage_key, lease.lease_token), None)
++            self._registry.unregister(guard.leases[0].owner, guard.keys)
++
++    def _clear_connected(self, guard, deadline: float) -> bool:
++        state = guard.pg_state
+         try:
+             state.require_live()
+             with state.connection.begin():
+@@ -963,23 +1207,12 @@
+             return ok
+         except StorageLeaseLost:
+             return False
+-        except _PostgresDeadline as exc:
+-            raise PostgresLockFailure("release", "deadline") from exc
+-        except DBAPIError as exc:
+-            raise PostgresLockFailure("release", _pg_reason(exc)) from exc
+-        finally:
+-            try:
+-                self._finish_connection(state.connection, state.identities, deadline)
+-            finally:
+-                with self._single_lock:
+-                    for lease in guard.leases:
+-                        self._batch_guards.pop((lease.owner, lease.storage_key, lease.lease_token), None)
+-                self._registry.unregister(guard.leases[0].owner, guard.keys)
+ 
+ 
+ class _PostgresGuardState:
+     def __init__(self, *, connection, identities: tuple[tuple[int, int], ...]) -> None:
+         self.connection = connection
++        self.abandoned = False
+         self.driver_connection = connection.connection.driver_connection
+         self.identities = identities
+         self.required = {
+@@ -988,11 +1221,32 @@
+ 
+     def require_live(self) -> None:
+         if (
+-            self.connection.closed
++            self.abandoned
++            or self.connection.closed
+             or self.connection.invalidated
+             or self.connection.connection.driver_connection is not self.driver_connection
+         ):
+             raise StorageLeaseLost("PostgreSQL dedicated session lost")
++
++    def run(self, operation, deadline: float):
++        self.require_live()
++
++        def execute():
++            with _pg_transport_budget(self.connection, deadline):
++                return operation()
++
++        try:
++            return bounded_db_call(
++                execute, deadline,
++                on_abandon=lambda _: _cleanup_pg_after_call(self.connection),
++            )
++        except DatabaseDeadline as exc:
++            self.abandoned = exc.started
++            raise
++        except BaseException as exc:
++            if not isinstance(exc, Exception):
++                self.abandoned = True
++            raise
+ 
+ 
+ class _PostgresLockGuard(LockGuard):
+--- round2/backend/app/services/attachment_storage.py
++++ round3/backend/app/services/attachment_storage.py
+@@ -23,6 +23,9 @@
+ from dataclasses import dataclass
+ from pathlib import Path, PureWindowsPath
+ from typing import BinaryIO
++from urllib.parse import unquote
++
++from sqlalchemy.engine import make_url
+ 
+ from app.db.storage_lock import LockGuard, StorageLeaseLost
+ from app.services.file_write import write_all
+@@ -278,9 +281,22 @@
+ 
+ 
+ def _sqlite_db_path(database_url: str) -> Path | None:
+-    if not database_url.startswith("sqlite:///") or ":memory:" in database_url:
++    if not database_url.startswith("sqlite"):
+         return None
+-    return Path(database_url.removeprefix("sqlite:///")).resolve()
++    url = make_url(database_url)
++    name = url.database
++    if not name or name == ":memory:" or url.query.get("mode") == "memory":
++        return None
++    if url.query.get("uri") == "true" and name.startswith("file:"):
++        name = unquote(name.removeprefix("file:"))
++        if name.startswith("///"):
++            name = name[2:]
++        if _is_windows() and re.match(r"^/[A-Za-z]:", name):
++            name = name[1:]
++        if name == ":memory:":
++            return None
++    path = Path(name)
++    return path if path.is_absolute() else Path.cwd() / path
+ 
+ 
+ def _reserved_paths(settings) -> tuple[list[Path], list[Path]]:
+@@ -302,7 +318,7 @@
+ 
+ def _assert_not_reserved(path: Path, reserved_files: list[Path], reserved_dirs: list[Path]) -> None:
+     for reserved in reserved_files:
+-        if path == reserved or _is_relative_or_equal(path, reserved):
++        if _is_relative_or_equal(path, reserved) or _is_relative_or_equal(reserved, path):
+             raise StorageRootError("storage root overlaps a reserved data file")
+     for reserved in reserved_dirs:
+         if (
+@@ -351,6 +367,16 @@
+ 
+     roots = (data_dir, storage_root, staging_root, quarantine_dir, temp_dir)
+     try:
++        db_path = _sqlite_db_path(settings.database_url)
++        if db_path is not None:
++            _directory_chain(db_path.parent, allow_missing=True)
++            try:
++                db_info = db_path.lstat()
++            except FileNotFoundError:
++                pass
++            else:
++                if _is_link(db_info) or not stat.S_ISREG(db_info.st_mode):
++                    raise StorageRootError("SQLite database path is not a regular file")
+         existing = [_directory_chain(path, allow_missing=True) for path in roots]
+         canonical = tuple(
+             parent.resolve(strict=True) / path.relative_to(parent)
+@@ -586,7 +612,9 @@
+     lock_guard.verify_all()
+ 
+ 
+-def _mutate(layout, storage_key, lock_guard, operation, source, target=None, *, owned=None):
++def _mutate(
++    layout, storage_key, lock_guard, operation, source, target=None, *, owned=None, on_error=None,
++):
+     def attempt():
+         ensure_runtime(layout)
+         info = _file_info(source, on_volume=layout.storage_root)
+@@ -597,18 +625,20 @@
+             if not _same_volume((layout.storage_root, target.parent)):
+                 raise AttachmentStorageError(ATTACHMENT_STORAGE_CROSS_VOLUME)
+         _fence(lock_guard, storage_key)
+-        if target is None:
+-            return operation(source)
+-        return operation(source, target)
++        try:
++            if target is None:
++                return operation(source)
++            return operation(source, target)
++        except OSError as exc:
++            if on_error is None or _is_busy(exc):
++                raise
++            return on_error(exc)
+ 
+     return retry_windows_busy(attempt)
+ 
+ 
+ def _link_or_rename(layout, key, guard, source, target, owned) -> str:
+-    try:
+-        _mutate(layout, key, guard, os.link, source, target, owned=owned)
+-        return "linked"
+-    except OSError as exc:
++    def link_error(exc: OSError) -> str:
+         if _is_target_exists(exc):
+             return "exists"
+         if not _is_unsupported_link(exc) or _is_permission(exc):
+@@ -617,13 +647,19 @@
+             raise AttachmentStorageError(
+                 ATTACHMENT_STORAGE_UNAVAILABLE, "hard link unsupported"
+             ) from exc
+-        try:
+-            _mutate(layout, key, guard, os.rename, source, target, owned=owned)
+-            return "renamed"
+-        except OSError as rename_exc:
+-            if _is_target_exists(rename_exc):
+-                return "exists"
+-            raise _classify_io_error(rename_exc) from rename_exc
++        return "rename"
++
++    def rename_error(exc: OSError) -> str:
++        if _is_target_exists(exc):
++            return "exists"
++        raise _classify_io_error(exc) from exc
++
++    outcome = _mutate(layout, key, guard, os.link, source, target, owned=owned, on_error=link_error)
++    if outcome == "rename":
++        return _mutate(
++            layout, key, guard, os.rename, source, target, owned=owned, on_error=rename_error,
++        ) or "renamed"
++    return outcome or "linked"
+ 
+ 
+ def _verify_existing(
+--- round2/backend/tests/test_attachment_storage.py
++++ round3/backend/tests/test_attachment_storage.py
+@@ -82,6 +82,157 @@
+     key = key or storage.sha256_bytes(payload)
+     temp = storage.write_temp(layout, payload)
+     return _publish_temp(layout, temp, key)
++
++
++@pytest.mark.parametrize(
++    "failure, expected_link, expected_rename, source_remains",
++    [
++        ("preflight", 0, 0, True),
++        ("unsupported", 1, 1, False),
++        ("permission", 1, 0, True),
++        ("unknown", 1, 0, True),
++        ("rename-exists", 1, 1, True),
++    ],
++)
++def test_f12_only_link_syscall_may_authorize_fallback(
++    tmp_path, monkeypatch, failure, expected_link, expected_rename, source_remains,
++):
++    layout = _layout(tmp_path)
++    published = _publish(layout, b"original")
++    key = published.path.name
++    task_id = uuid.uuid4()
++    target = layout.quarantine_dir / f"{key}.{task_id}"
++    if failure == "rename-exists":
++        target.write_bytes(b"previous generation")
++    counts = {"link": 0, "rename": 0, "metadata": 0}
++    actual_info = storage._file_info
++    actual_rename = os.rename
++
++    def windows_error(code):
++        error = OSError(errno.EIO, "injected Windows operation")
++        error.winerror = code
++        return error
++
++    def file_info(path, *, on_volume):
++        counts["metadata"] += 1
++        if failure == "preflight" and counts["metadata"] == 2:
++            raise windows_error(50)
++        return actual_info(path, on_volume=on_volume)
++
++    def link(source, destination):
++        counts["link"] += 1
++        raise windows_error({"permission": 5, "unknown": 1234}.get(failure, 50))
++
++    def rename(source, destination):
++        counts["rename"] += 1
++        if failure == "rename-exists":
++            raise windows_error(183)
++        actual_rename(source, destination)
++
++    monkeypatch.setattr(storage, "_is_windows", lambda: True)
++    monkeypatch.setattr(storage, "_file_info", file_info)
++    monkeypatch.setattr(storage.os, "link", link)
++    monkeypatch.setattr(storage.os, "rename", rename)
++    with _guard(layout, key) as guard:
++        if source_remains:
++            with pytest.raises(AttachmentStorageError) as error:
++                storage.move_to_quarantine(layout, key, task_id=task_id, lock_guard=guard)
++            assert error.value.code == (
++                ATTACHMENT_KEY_COLLISION if failure == "rename-exists" else ATTACHMENT_WRITE_FAILED
++            )
++        else:
++            assert storage.move_to_quarantine(layout, key, task_id=task_id, lock_guard=guard) == target
++    assert (counts["link"], counts["rename"]) == (expected_link, expected_rename)
++    assert published.path.exists() is source_remains
++    if source_remains:
++        assert published.path.read_bytes() == b"original"
++    if failure == "rename-exists":
++        assert target.read_bytes() == b"previous generation"
++    elif not source_remains:
++        assert target.read_bytes() == b"original"
++
++
++@pytest.mark.parametrize("same_path", [False, True])
++@pytest.mark.parametrize("driver_suffix", ["", "+pysqlite"])
++def test_lifespan_rejects_missing_sqlite_db_path_as_storage_root(
++    tmp_path, same_path, driver_suffix,
++):
++    from fastapi.testclient import TestClient
++
++    from app.main import create_app
++
++    data_dir = tmp_path / "data"
++    db_path = data_dir / "db-not-created"
++    storage_root = db_path if same_path else db_path / "attachments"
++    settings = _settings(
++        tmp_path, data_dir=data_dir,
++        database_url=f"sqlite{driver_suffix}:///{db_path.as_posix()}?timeout=3",
++        attachment_storage_root=storage_root,
++    )
++    with pytest.raises(StorageRootError, match="reserved data file"), TestClient(create_app(settings)):
++        pytest.fail("startup must reject this reserved-file overlap")
++    assert not data_dir.exists()
++    assert not db_path.exists()
++
++
++def test_sqlite_db_reserved_path_allows_independent_storage_roots(tmp_path):
++    data_dir = tmp_path / "data"
++    db_path = data_dir / "db-not-created"
++    settings = _settings(
++        tmp_path, data_dir=data_dir, database_url=f"sqlite:///{db_path.as_posix()}",
++        attachment_storage_root=data_dir / "dedicated-attachments",
++    )
++    layout = validate_storage_roots(settings)
++    assert layout.storage_root.is_dir()
++    assert not db_path.exists()
++
++
++def test_sqlite_db_parent_symlink_or_junction_is_rejected_before_mkdir(tmp_path):
++    data_dir = tmp_path / "data"
++    data_dir.mkdir()
++    target = tmp_path / "target"
++    target.mkdir()
++    alias = data_dir / "redirected-db-parent"
++    try:
++        alias.symlink_to(target, target_is_directory=True)
++    except OSError:
++        if os.name != "nt":
++            raise
++        result = subprocess.run(
++            ["cmd.exe", "/d", "/c", "mklink", "/J", str(alias), str(target)],
++            check=False, capture_output=True,
++        )
++        if result.returncode != 0:
++            pytest.skip("cannot create a Windows junction or symlink")
++    settings = _settings(
++        tmp_path, data_dir=data_dir, database_url=f"sqlite:///{(alias / 'app.db').as_posix()}",
++    )
++    with pytest.raises(StorageRootError, match="not a real directory"):
++        validate_storage_roots(settings)
++    assert not (data_dir / "attachments").exists()
++    assert not (target / "app.db").exists()
++
++
++def test_sqlite_db_parent_reparse_flag_rejected_before_side_effects(tmp_path, monkeypatch):
++    data_dir = tmp_path / "data"
++    db_parent = data_dir / "redirected-db-parent"
++    db_parent.mkdir(parents=True)
++    original = Path.lstat
++
++    def lstat(path):
++        info = original(path)
++        if path == db_parent:
++            return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400)
++        return info
++
++    monkeypatch.setattr(Path, "lstat", lstat)
++    settings = _settings(
++        tmp_path, data_dir=data_dir, database_url=f"sqlite:///{(db_parent / 'app.db').as_posix()}",
++    )
++    with pytest.raises(StorageRootError, match="not a real directory"):
++        validate_storage_roots(settings)
++    assert not (data_dir / "attachments").exists()
++    assert not (db_parent / "app.db").exists()
+ 
+ 
+ # --- T01：配置与根校验 -------------------------------------------------------
+--- round2/backend/tests/test_storage_lock_pg_faults.py
++++ round3/backend/tests/test_storage_lock_pg_faults.py
+@@ -283,3 +283,165 @@
+     assert not thread.is_alive() and errors == []
+     assert results == ([None] if action == "verify" else [True])
+     assert sum("UPDATE storage_lock SET lease_expires_at" in q for q, _ in conn.calls) == 1
++
++
++@pytest.mark.parametrize("stage", ["budget SQL", "commit", "rollback", "close"])
++def test_pg_client_deadline_bounds_driver_call_and_late_cleanup(pg_manager, monkeypatch, stage):
++    manager, conn = pg_manager
++    release_stage = stage in {"rollback", "close"}
++    guard = manager.acquire_many([KEY_A], "worker") if release_stage else None
++    manager.wait_seconds = 0.10
++    entered, proceed = threading.Event(), threading.Event()
++    calls = 0
++
++    def stall(original, *args, **kwargs):
++        nonlocal calls
++        calls += 1
++        if calls == 1:
++            entered.set()
++            assert proceed.wait(3)
++        return original(*args, **kwargs)
++
++    if stage == "budget SQL":
++        original = conn.execute
++
++        def delayed_sql(statement, params=None):
++            if "set_config" in str(statement):
++                return stall(original, statement, params)
++            return original(statement, params)
++
++        monkeypatch.setattr(conn, "execute", delayed_sql)
++    else:
++        original = getattr(conn, stage)
++        monkeypatch.setattr(conn, stage, lambda: stall(original))
++    if stage == "rollback":
++        monkeypatch.setattr(conn, "in_transaction", lambda: True)
++    try:
++        started = time.monotonic()
++        with pytest.raises(locks.PostgresLockFailure, match="deadline"):
++            if release_stage:
++                assert guard is not None
++                guard.release()
++            else:
++                manager.acquire_many([KEY_A], "worker")
++        assert time.monotonic() - started < 0.40
++        assert entered.is_set()
++        assert not conn.closed
++    finally:
++        proceed.set()
++    assert conn.closed_event.wait(1)
++    assert not manager._registry._active
++
++
++@pytest.fixture
++def release_log(monkeypatch, caplog):
++    # The in-process Alembic suite may disable application loggers and
++    # replace the root handlers. Capture warnings directly on this logger.
++    monkeypatch.setattr(locks.logger, "disabled", False)
++    monkeypatch.setattr(locks.logger, "propagate", False)
++    caplog.set_level("WARNING", logger=locks.logger.name)
++    locks.logger.addHandler(caplog.handler)
++    try:
++        yield caplog
++    finally:
++        locks.logger.removeHandler(caplog.handler)
++
++
++@pytest.mark.parametrize("stage", ["success", "exception", "committed"])
++def test_pg_context_release_failure_preserves_business_result(
++    pg_manager, monkeypatch, release_log, stage,
++):
++    import sqlite3
++
++    manager, conn = pg_manager
++    guard = manager.acquire_many([KEY_A], "worker")
++    assert guard is not None
++    original = conn.execute
++    original_error = ValueError("business failure")
++
++    def fail_release(statement, params=None):
++        if "SET owner=''" in str(statement):
++            raise OperationalError(str(statement), {}, DriverFailure("42P01"))
++        return original(statement, params)
++
++    def business(db):
++        with guard:
++            if stage == "exception":
++                raise original_error
++            if stage == "committed":
++                db.execute("INSERT INTO business VALUES (1)")
++                db.commit()
++            return "completed"
++
++    monkeypatch.setattr(conn, "execute", fail_release)
++    db = sqlite3.connect(":memory:")
++    try:
++        db.execute("CREATE TABLE business (id INTEGER)")
++        if stage == "exception":
++            with pytest.raises(ValueError) as error:
++                business(db)
++            assert error.value is original_error
++            assert error.traceback[-1].name == "business"
++        else:
++            assert business(db) == "completed"
++        assert db.execute("SELECT id FROM business").fetchall() == (
++            [(1,)] if stage == "committed" else []
++        )
++    finally:
++        db.close()
++    assert conn.closed and guard.released
++    assert any(record.message == "STORAGE_LOCK_RELEASE_FAILED" for record in release_log.records)
++
++
++def test_pg_close_failure_invalidates_session_and_preserves_result(
++    pg_manager, monkeypatch, release_log,
++):
++    manager, conn = pg_manager
++    guard = manager.acquire_many([KEY_A], "worker")
++    assert guard is not None
++
++    def fail_close():
++        raise OperationalError("close", {}, DriverFailure("08006"))
++
++    monkeypatch.setattr(conn, "close", fail_close)
++    with guard:
++        result = "completed"
++    assert result == "completed"
++    assert conn.invalidated and guard.released
++    assert any(record.message == "STORAGE_LOCK_RELEASE_FAILED" for record in release_log.records)
++
++
++@pytest.mark.parametrize("action", ["verify", "release"])
++def test_pg_drain_deadline_does_not_reuse_connection_with_stalled_heartbeat(
++    pg_manager, monkeypatch, action,
++):
++    manager, conn = pg_manager
++    entered, proceed = threading.Event(), threading.Event()
++    execute = conn.execute
++
++    def stall_renewal(statement, params=None):
++        if "UPDATE storage_lock SET lease_expires_at" in str(statement):
++            entered.set()
++            assert proceed.wait(3)
++        return execute(statement, params)
++
++    monkeypatch.setattr(conn, "execute", stall_renewal)
++    guard = manager.acquire_many([KEY_A], "worker", heartbeat_seconds=0.01)
++    assert guard is not None
++    try:
++        assert entered.wait(1)
++        manager.wait_seconds = 0.10  # this operation has a shorter budget than the active renewal
++        started = time.monotonic()
++        with pytest.raises(locks.PostgresLockFailure, match="deadline"):
++            if action == "verify":
++                guard.verify_all(SimpleNamespace())
++            else:
++                guard.release()
++        assert time.monotonic() - started < 0.40
++        assert guard.aborted and not conn.closed
++        assert not any("SET owner=''" in sql for sql, _ in conn.calls)
++    finally:
++        proceed.set()
++        if action == "verify":
++            guard.release()
++    assert conn.closed_event.wait(2)
+--- round2/backend/tests/test_storage_lock_sqlite.py
++++ round3/backend/tests/test_storage_lock_sqlite.py
+@@ -52,6 +52,69 @@
+ def _row(factory: sessionmaker[Session], key: str) -> StorageLockORM | None:
+     with factory() as session:
+         return session.get(StorageLockORM, key)
++
++
++def test_batch_discards_first_lease_when_second_outlives_it(lock_env):
++    factory, manager = lock_env
++    blocker = manager.acquire_many([KEY_B], "second-key", heartbeat_seconds=0)
++    assert blocker is not None
++    try:
++        started = time.monotonic()
++        batch = manager.acquire_many(
++            [KEY_A, KEY_B], "batch", ttl_seconds=0.15, wait_seconds=1,
++            heartbeat_seconds=0,
++        )
++        assert batch is None
++        assert 0.09 <= time.monotonic() - started < 0.50
++        old = _row(factory, KEY_A)
++        assert old is not None and old.lease_token == 1
++        assert _row(factory, KEY_B).owner == "second-key"
++    finally:
++        assert blocker.release()
++    retry = manager.acquire_many([KEY_A, KEY_B], "retry", wait_seconds=0.6, heartbeat_seconds=0)
++    assert retry is not None and retry.leases[0].lease_token == old.lease_token + 1
++    assert retry.release()
++
++
++def test_independent_fencing_is_bounded_under_sqlite_exclusive_writer(lock_env):
++    factory, _manager = lock_env
++    manager = SQLiteStorageKeyLock(factory, wait_seconds=0.15, heartbeat_seconds=0)
++    guard = manager.acquire_many([KEY_A], "worker")
++    assert guard is not None
++    with factory.kw["bind"].connect() as writer:
++        writer.exec_driver_sql("BEGIN EXCLUSIVE")
++        try:
++            started = time.monotonic()
++            with pytest.raises(StorageLeaseLost, match="busy|deadline"):
++                guard.verify_all()
++            assert time.monotonic() - started < 0.35
++            assert guard.aborted
++        finally:
++            writer.rollback()
++    assert guard.release()
++
++
++def test_sqlite_pool_checkout_obeys_budget_for_write_and_business_fence(lock_env):
++    from contextlib import ExitStack
++
++    factory, _manager = lock_env
++    engine = factory.kw["bind"]
++    manager = SQLiteStorageKeyLock(factory, wait_seconds=0.15, heartbeat_seconds=0)
++    guard = manager.acquire_many([KEY_A], "owner")
++    assert guard is not None
++    with ExitStack() as occupied:
++        for _ in range(engine.pool.size() + 10):
++            occupied.enter_context(engine.connect())
++        started = time.monotonic()
++        assert manager.acquire_many([KEY_B], "contender") is None
++        assert time.monotonic() - started < 0.35
++        with factory() as business:
++            started = time.monotonic()
++            with pytest.raises(StorageLeaseLost, match="deadline"):
++                guard.verify_all(business)
++            assert time.monotonic() - started < 0.35
++            business.rollback()
++    assert guard.release()
+ 
+ 
+ # --- LCK-01：新 key acquire -------------------------------------------------

@@ -1,0 +1,9 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/source-preparation.py.txt
+started_at 2026-11-23T11:15:10.077872+00:00
+command: git archive --format=zip 970c0d8ec05f0b8c68286839a56b14c74ea230c6 -- backend knowledge-core frontend scripts pyproject.toml uv.lock .python-version .gitignore .editorconfig README.md AGENTS.md MILESTONES.md
+Traceback (most recent call last):
+  File "D:\ExplainLab\docs\acceptance\V2-A1-04-Batch-B-B1-final-verification\evidence\source-preparation.py.txt", line 41, in <module>
+    assert payload["uv.lock"] == git("show", f"{base}:uv.lock")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+exit_code=1

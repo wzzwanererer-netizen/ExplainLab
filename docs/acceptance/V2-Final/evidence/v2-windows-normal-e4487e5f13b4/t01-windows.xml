@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="4" time="0.140" timestamp="2026-11-24T19:25:09.238479+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[database-ancestor]" time="0.033"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[attachment]" time="0.031"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[staging]" time="0.027"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_root_on_real_other_drive" time="0.011"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

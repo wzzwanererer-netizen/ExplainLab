@@ -1,0 +1,176 @@
+--- a/backend/tests/test_markdown_batch_a_identity.py
++++ b/backend/tests/test_markdown_batch_a_identity.py
+@@ -18,10 +18,11 @@
+ from app.db.session import get_engine, get_session_factory
+ from app.models import ImportOriginORM, KnowledgeItemORM
+ from app.services.markdown import MarkdownImportDocument
+ from app.services.source_identity import (
+     JOURNAL_CORRUPT,
++    SOURCE_DOCUMENT_UNMATERIALIZED,
+     SOURCE_IDENTITY_INCONSISTENT,
+     SOURCE_IDENTITY_ORPHAN,
+     JournalStore,
+     SourceIdentityError,
+     SourceIdentityService,
+@@ -186,10 +187,56 @@
+         finally:
+             session.close()
+     return record
+ 
+ 
++def _materialized_local(client: TestClient, title: str) -> tuple[str, str]:
++    item_id = _new_item(title=title)
++    response = client.get(f"/api/knowledge/{item_id}/markdown")
++    assert response.status_code == 200
++    instance = client.app.state.source_instance_store.read()
++    assert _item(item_id).source_instance_id == instance
++    assert _classify(client, item_id).state == "2b"
++    return item_id, instance
++
++
++def _assert_record_conflict_readonly(
++    client: TestClient, item_id: str, instance: str
++) -> dict:
++    """并存冲突：拒绝认领/物化/导出修复，且 DB/Journal 原始数据零变化。"""
++    identity = client.app.state.source_identity
++    journal = _journal(client)
++    before_digest = _digest()
++    before_snapshot = _snapshot(client, item_id)
++    before_archive = len(journal.read_archive())
++    before_source = _item(item_id).source_instance_id
++
++    classified = _classify(client, item_id)
++    assert classified.state == "3"
++    assert classified.source_instance_id is None
++    assert classified.source_document_id is None
++
++    export = client.get(f"/api/knowledge/{item_id}/markdown")
++    assert export.status_code == 200
++    assert "X-ExplainLab-Source-Instance-Id" not in export.headers
++    assert "source_instance_id" not in export.text
++
++    with pytest.raises(SourceIdentityError) as excinfo:
++        identity.ensure_local_export_identity(item_id)
++    assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++    with pytest.raises(SourceIdentityError) as excinfo:
++        identity.materialize(item_id)
++    assert excinfo.value.code == SOURCE_DOCUMENT_UNMATERIALIZED
++
++    assert _digest() == before_digest
++    assert _snapshot(client, item_id) == before_snapshot
++    assert _item(item_id).source_instance_id == before_source == instance
++    assert len(journal.read_archive()) == before_archive
++    assert journal.current.exists() is False
++    return before_snapshot
++
++
+ class TestIdentityStates:
+     def test_state_2a_first_export_materializes_once(self, client: TestClient):
+         created = client.post(
+             "/api/knowledge", json={"title": "本地", "content": "本地正文"}
+         ).json()
+@@ -294,10 +341,104 @@
+         # 状态 3 不得认领残缺来源：不写来源身份头/元数据，也不覆盖 DB 值。
+         assert response.status_code == 200
+         assert "X-ExplainLab-Source-Instance-Id" not in response.headers
+         assert "source_instance_id" not in response.text
+         assert _item(item_id).source_instance_id == X
++
++
++class TestMaterializeOriginConflict:
++    """§22.2：ImportOrigin 与 MATERIALIZE 记录并存一律冲突，不得认领。"""
++
++    def test_single_materialize_plus_single_complete_origin(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存单条")
++        _new_origin(item_id, instance=instance, document=D1)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "complete"
++        assert snapshot["import_origin_count"] == 1
++
++    def test_single_materialize_plus_multiple_complete_origins(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "并存多版本")
++        _new_origin(item_id, instance=instance, document=D1, payload=PAYLOAD)
++        _new_origin(item_id, instance=instance, document=D1, payload=PAYLOAD2)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "complete"
++        assert snapshot["import_origin_count"] == 2
++
++    def test_materialize_plus_incomplete_origin(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存残缺")
++        _new_origin(item_id, instance=None)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "incomplete"
++        assert snapshot["incomplete_origin_count"] == 1
++
++    def test_materialize_plus_duplicate_origin(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存重复")
++        _new_origin(item_id, instance=instance, document=D1)
++        _new_origin(item_id, instance=instance, document=D1)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "duplicate"
++        assert snapshot["duplicate_origin_count"] == 2
++
++    def test_materialize_plus_multiple_legal_identity_pairs(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存多身份")
++        _new_origin(item_id, instance=instance, document=D1)
++        _new_origin(item_id, instance=instance, document=D2)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "conflict"
++        assert snapshot["source_instance_id"] is None
++
++    def test_materialize_and_origin_same_instance_id(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存同实例")
++        _new_origin(item_id, instance=instance, document=item_id)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origins"][0]["source_instance_id"] == instance
++        assert snapshot["source_instance_id"] == instance
++
++    def test_materialize_and_origin_different_instance_id(self, client: TestClient):
++        item_id, instance = _materialized_local(client, "并存异实例")
++        _new_origin(item_id, instance=Y, document=D1)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origins"][0]["source_instance_id"] == Y
++        assert snapshot["import_origin_state"] == "conflict"
++
++    def test_multiple_materialize_records_plus_origin_still_conflict(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "并存多物化")
++        identity = client.app.state.source_identity
++        record = identity._new_record(
++            kind="MATERIALIZE",
++            phase="COMMITTED",
++            item_id=item_id,
++            source_instance_id=instance,
++            source_document_id=item_id,
++            items=[_entry(item_id, instance)],
++            audit_digest=_digest(),
++        )
++        identity.journal.archive_committed(record)
++        _new_origin(item_id, instance=instance, document=D1)
++        snapshot = _assert_record_conflict_readonly(client, item_id, instance)
++        assert snapshot["import_origin_state"] == "complete"
++        assert len(_journal(client).read_archive()) == 2
++
++    def test_control_normal_import_without_materialize_is_state_1(
++        self, client: TestClient
++    ):
++        item_id = _new_item(source_instance=X)
++        _new_origin(item_id)
++        assert _classify(client, item_id).state == "1"
++        assert _journal(client).read_archive() == []
++
++    def test_control_local_materialize_without_origin_is_state_2b(
++        self, client: TestClient
++    ):
++        item_id, instance = _materialized_local(client, "正常本地")
++        assert _classify(client, item_id).state == "2b"
++        assert _snapshot(client, item_id)["import_origin_count"] == 0
++        assert _item(item_id).source_instance_id == instance
+ 
+ 
+ class TestImportOriginAudit:
+     def test_single_complete_origin(self, client: TestClient):
+         item_id = _new_item(source_instance=X)

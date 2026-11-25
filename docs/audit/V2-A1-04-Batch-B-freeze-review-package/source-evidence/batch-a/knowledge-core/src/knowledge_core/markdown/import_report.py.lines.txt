@@ -1,0 +1,218 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: fc01e51dc2acd4a50355aacd28594274cea375a3
+Source: knowledge-core/src/knowledge_core/markdown/import_report.py
+
+  41: class ImportItemStatus(StrEnum):
+  42:     """单文档导入结果状态（稳定字符串，供 API/报告消费）。"""
+  43: 
+  44:     CREATED = "created"
+  45:     UPDATED = "updated"
+  46:     SKIPPED = "skipped"
+  47:     PENDING_REVIEW = "pending_review"
+  48:     REUSED_PENDING = "reused_pending"
+  49:     DUPLICATE = "duplicate"
+  50:     UNSUPPORTED = "unsupported"
+  51:     ERROR = "error"
+  52: 
+  53: 
+  54: class ImportItemResult(BaseModel):
+  55:     """单文档导入结果。"""
+  56: 
+  57:     model_config = ConfigDict(extra="forbid")
+  58: 
+  59:     filename: str | None = None
+  60:     item_id: UUID | None = None
+  61:     status: ImportItemStatus
+  62:     source_content_hash: str | None = None
+  63:     source_payload_hash: str | None = None
+  64:     canonicalization_version: int | None = None
+  65:     duplicates: list[UUID] = Field(default_factory=list)
+  66:     review_id: UUID | None = None
+  67:     errors: list[str] = Field(default_factory=list)
+  68:     warnings: list[str] = Field(default_factory=list)
+  69:     conflicts: list[str] = Field(default_factory=list)
+  70:     status_changes: list[str] = Field(default_factory=list)
+  71:     unsupported: list[str] = Field(default_factory=list)
+  72:     unresolved_links: list[str] = Field(default_factory=list)
+  73: 
+  74: 
+  75: class ImportReport(BaseModel):
+  76:     """批量导入汇总（非全有全无；逐文档结果如实保留）。"""
+  77: 
+  78:     model_config = ConfigDict(extra="forbid")
+  79: 
+  80:     total: int = 0
+  81:     created: int = 0
+  82:     updated: int = 0
+  83:     skipped: int = 0
+  84:     pending_review: int = 0
+  85:     reused_pending: int = 0
+  86:     duplicates: int = 0
+  87:     errors: int = 0
+  88:     unsupported: int = 0
+  89:     rejected_conflicts: int = 0
+  90:     legacy: int = 0
+  91:     items: list[ImportItemResult] = Field(default_factory=list)
+  92: 
+  93:     def add(self, item: ImportItemResult) -> None:
+  94:         self.items.append(item)
+  95:         self.total += 1
+  96:         if item.status == ImportItemStatus.CREATED:
+  97:             self.created += 1
+  98:         elif item.status == ImportItemStatus.UPDATED:
+  99:             self.updated += 1
+ 100:         elif item.status == ImportItemStatus.SKIPPED:
+ 101:             self.skipped += 1
+ 102:         elif item.status == ImportItemStatus.PENDING_REVIEW:
+ 103:             self.pending_review += 1
+ 104:         elif item.status == ImportItemStatus.REUSED_PENDING:
+ 105:             self.reused_pending += 1
+ 106:         elif item.status == ImportItemStatus.DUPLICATE:
+ 107:             self.duplicates += 1
+ 108:         elif item.status == ImportItemStatus.UNSUPPORTED:
+ 109:             self.unsupported += 1
+ 110:         elif item.status == ImportItemStatus.ERROR:
+ 111:             self.errors += 1
+ 112:         if item.conflicts:
+ 113:             self.rejected_conflicts += 1
+ 114: 
+ 115: 
+
+ 143: class ChangeSet(BaseModel):
+ 144:     """既有条目 vs 入站文档的变化分类（内容 / 低风险元数据 / 治理）。"""
+ 145: 
+ 146:     model_config = ConfigDict(extra="forbid")
+ 147: 
+ 148:     title: bool = False
+ 149:     content: bool = False
+ 150:     tags: bool = False
+ 151:     metadata: bool = False
+ 152:     links: bool = False
+ 153:     attachments: bool = False
+ 154:     governance: bool = False
+ 155:     sources: bool = False
+ 156: 
+ 157:     @property
+ 158:     def has_content_change(self) -> bool:
+ 159:         return self.title or self.content
+ 160: 
+ 161:     @property
+ 162:     def has_change(self) -> bool:
+ 163:         return any(
+ 164:             (
+ 165:                 self.title,
+ 166:                 self.content,
+ 167:                 self.tags,
+ 168:                 self.metadata,
+ 169:                 self.links,
+ 170:                 self.attachments,
+ 171:                 self.governance,
+ 172:                 self.sources,
+ 173:             )
+ 174:         )
+ 175: 
+ 176: 
+ 177: def _hash(value: Any) -> str:
+ 178:     return sha256_canonical(value)
+ 179: 
+ 180: 
+ 181: def classify_changes(
+ 182:     *,
+ 183:     current_title: str,
+ 184:     current_content: str,
+ 185:     current_status: str,
+ 186:     current_space_id: str | None,
+ 187:     current_tags: list[str],
+ 188:     current_extra_metadata: dict[str, Any],
+ 189:     current_links: list[dict[str, Any]],
+ 190:     current_attachments: list[dict[str, Any]],
+ 191:     incoming: Any,
+ 192: ) -> ChangeSet:
+ 193:     """比较既有条目与入站 ``MarkdownDocument``，产出变化分类。
+ 194: 
+ 195:     ``incoming`` 使用鸭子类型（避免与 markdown/__init__ 循环导入）：
+ 196:     需要 title/content/status/space_id/tags/extra_metadata/links/attachments。
+ 197:     """
+ 198:     incoming_tags = sort_tags(list(getattr(incoming, "tags", []) or []))
+ 199:     incoming_meta = dict(getattr(incoming, "extra_metadata", {}) or {})
+ 200:     incoming_links = sort_links(list(getattr(incoming, "links", []) or []))
+ 201:     incoming_attachments = sort_links(list(getattr(incoming, "attachments", []) or []))
+ 202:     incoming_status = getattr(incoming, "status", None)
+ 203:     incoming_space = getattr(incoming, "space_id", None)
+ 204:     incoming_title = getattr(incoming, "title", None)
+ 205:     return ChangeSet(
+ 206:         title=(incoming_title is not None and incoming_title != current_title),
+ 207:         content=getattr(incoming, "content", "") != current_content,
+ 208:         tags=incoming_tags != sort_tags(current_tags),
+ 209:         metadata=_hash(incoming_meta) != _hash(current_extra_metadata),
+ 210:         links=_hash(incoming_links) != _hash(sort_links(current_links)),
+ 211:         attachments=_hash(incoming_attachments)
+ 212:         != _hash(sort_links(current_attachments)),
+ 213:         governance=(
+ 214:             (incoming_status is not None and str(incoming_status) != current_status)
+ 215:             or (incoming_space != current_space_id)
+ 216:         ),
+ 217:         sources=_hash(sort_sources(list(getattr(incoming, "sources", []) or [])))
+ 218:         != _hash(sort_sources([])),
+ 219:     )
+ 220: 
+ 221: 
+ 222: class ImportEnvelope(BaseModel):
+ 223:     """Active 导入审核 envelope（``payload.__a1_import``）。
+ 224: 
+ 225:     只承载 backend 在 approve 时需要的可重建上下文；Core ``_apply_update``
+ 226:     忽略本键，仅应用四字段。``context_digest`` 仅做一致性校验，不是签名边界。
+ 227:     """
+ 228: 
+ 229:     model_config = ConfigDict(extra="forbid")
+ 230: 
+ 231:     schema_version: int = IMPORT_ENVELOPE_SCHEMA_VERSION
+ 232:     target_item_id: str | None = None
+ 233:     filename: str | None = None
+ 234:     source_instance_id: str | None = None
+ 235:     source_document_id: str | None = None
+ 236:     source_payload_hash: str = Field(min_length=1, max_length=64)
+ 237:     source_content_hash: str = Field(min_length=1, max_length=64)
+ 238:     canonicalization_version: int
+ 239:     space_id: str | None = None
+ 240:     status: str
+ 241:     tags: list[str] = Field(default_factory=list)
+ 242:     extra_metadata: dict[str, Any] = Field(default_factory=dict)
+ 243:     links: list[dict[str, Any]] = Field(default_factory=list)
+ 244:     attachments: list[dict[str, Any]] = Field(default_factory=list)
+ 245:     context_digest: str = ""
+ 246: 
+ 247:     def compute_context_digest(self) -> str:
+ 248:         body = self.model_dump(mode="json", exclude={"context_digest"})
+ 249:         # envelope 自身已携带 canonicalization_version 字段；把它作为包络版本
+ 250:         # 传给 canonical 原语，避免与保留键重复（否则 canonicalize 会拒绝）。
+ 251:         version = int(body.pop("canonicalization_version"))
+ 252:         return sha256_canonical(body, canonicalization_version=version)
+ 253: 
+ 254:     def with_digest(self) -> ImportEnvelope:
+ 255:         return self.model_copy(update={"context_digest": self.compute_context_digest()})
+ 256: 
+ 257:     @classmethod
+ 258:     def from_review_payload(cls, payload: dict[str, Any]) -> ImportEnvelope | None:
+ 259:         """从审核单 payload 提取 envelope；无本键返回 None。
+ 260: 
+ 261:         结构/摘要不合法抛 ``CanonicalizationError``（调用方 fail-closed）。
+ 262:         """
+ 263:         raw = payload.get(IMPORT_ENVELOPE_KEY)
+ 264:         if raw is None:
+ 265:             return None
+ 266:         try:
+ 267:             envelope = cls.model_validate(raw)
+ 268:         except Exception as exc:  # pydantic.ValidationError → 稳定失败
+ 269:             raise CanonicalizationError("导入审核 envelope 结构不合法") from exc
+ 270:         if envelope.schema_version != IMPORT_ENVELOPE_SCHEMA_VERSION:
+ 271:             raise CanonicalizationError("导入审核 envelope 版本不受支持")
+ 272:         expected = envelope.compute_context_digest()
+ 273:         if envelope.context_digest != expected:
+ 274:             raise CanonicalizationError("导入审核 envelope 摘要不一致")
+ 275:         return envelope
+ 276: 
+ 277:     def review_payload(self, core_changes: dict[str, Any]) -> dict[str, Any]:
+ 278:         """构造提交给 Core ReviewService 的 payload（四字段 + envelope）。"""
+ 279:         body = self.with_digest().model_dump(mode="json")
+ 280:         return {**core_changes, IMPORT_ENVELOPE_KEY: body}

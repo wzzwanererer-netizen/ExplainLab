@@ -1,0 +1,225 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 247ec8ddcd3b8a71a9ce2fb1bab5d3f89037ea30
+Source: backend/app/api/routes/governance.py
+
+ 306: def _pending_review(session: Session, review_id: UUID) -> ReviewRequest:
+ 307:     review = SQLAlchemyReviewRepository(session).get_review(review_id)
+ 308:     if review is None:
+ 309:         raise HTTPException(status_code=404, detail=f"审核单不存在: {review_id}")
+ 310:     if review.status != ReviewStatus.PENDING:
+ 311:         raise HTTPException(status_code=409, detail=f"审核单已处理: {review.status}")
+ 312:     return review
+ 313: 
+ 314: 
+ 315: async def _sync_applied_action(
+ 316:     session: Session,
+ 317:     embedder: Embedder | None,
+ 318:     item_id: UUID,
+ 319:     action: ReviewAction,
+ 320:     payload: dict,
+ 321: ) -> None:
+ 322:     """变更已应用（草稿直改或审核批准）后同步检索索引。
+ 323: 
+ 324:     删除→移除索引；合并→重算目标索引（源转 archived，查询期过滤，与 backfill 一致）；
+ 325:     编辑 / 回滚→重算该条目索引。
+ 326:     """
+ 327:     if action == ReviewAction.DELETE_ITEM:
+ 328:         await sync_index(session, embedder, remove_ids=[item_id])
+ 329:     elif action == ReviewAction.MERGE_DUPLICATE:
+ 330:         target_id = UUID(str(payload["target_id"]))
+ 331:         await sync_index(session, embedder, index_ids=[target_id])
+ 332:     else:  # UPDATE_ITEM / RESTORE_VERSION
+ 333:         await sync_index(session, embedder, index_ids=[item_id])
+ 334: 
+ 335: 
+ 336: def _demote_backlinks_before_delete(
+ 337:     session: Session, item_id: UUID, action: ReviewAction
+ 338: ) -> None:
+ 339:     """K1：DELETE 应用前同事务降级入链（D12 写侧）。
+ 340: 
+ 341:     必须在条目删除 flush **之前**调用（先按 target_id 捕获入链，再置 missing+NULL）；
+ 342:     只改治理列、键/版本不变 → 不触发全局版本守卫，版本窗口内 DELETE 不被 409 阻断。
+ 343:     MERGE 归档而非删除（入链是对存在条目的合法绑定），**不在此降级**。
+ 344:     """
+ 345:     if action == ReviewAction.DELETE_ITEM:
+ 346:         demote_backlinks_on_delete(session, item_id)
+ 347: 
+ 348: 
+ 349: def _sync_links_after_content_change(
+ 350:     session: Session, item_id: UUID, action: ReviewAction
+ 351: ) -> None:
+ 352:     """K1：UPDATE / RESTORE 应用后、commit 前同步出链（绑定优先）。
+ 353: 
+ 354:     content 变更 → wikilink 集合变化，须同步出链；DELETE 出链随 CASCADE 清理、
+ 355:     MERGE 双方 content 未改，均不在此同步。版本异写时 ``sync_links_or_conflict``
+ 356:     映射 409 稳定码；调用方尚未 commit → 整事务零写入（含审核决议回滚）。
+ 357:     """
+ 358:     if action in (ReviewAction.UPDATE_ITEM, ReviewAction.RESTORE_VERSION):
+ 359:         item = SQLAlchemyKnowledgeRepository(session).get(item_id)
+ 360:         if item is not None:
+ 361:             sync_links_or_conflict(session, item)
+ 362: 
+ 363: 
+ 364: def _import_http_error(exc: Exception) -> HTTPException:
+ 365:     code = getattr(exc, "code", IMPORT_ENVELOPE_INVALID)
+ 366:     status = getattr(exc, "status_code", 409)
+ 367:     return HTTPException(status_code=status, detail=code)
+ 368: 
+ 369: 
+ 370: def _review_lock_key(envelope, item_id: UUID) -> str:
+ 371:     if envelope is not None and envelope.source_instance_id and envelope.source_document_id:
+ 372:         return "identity:" + sha256_canonical(
+ 373:             {
+ 374:                 "source_instance_id": envelope.source_instance_id,
+ 375:                 "source_document_id": envelope.source_document_id,
+ 376:             }
+ 377:         )
+ 378:     return f"target-item:{item_id}"
+ 379: 
+ 380: 
+ 381: def _payload_digest(payload: dict) -> str:
+ 382:     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+ 383: 
+ 384: 
+ 385: def _preflight_review(review_id: UUID) -> tuple[dict, bytes | None, str | None]:
+ 386:     """S0 只读预检：读取 pending 与 envelope 摘要，立即关闭会话。"""
+ 387:     session = create_session()
+ 388:     try:
+ 389:         review = _pending_review(session, review_id)
+ 390:         if not review_is_import(review):
+ 391:             return review.payload, None, None
+ 392:         envelope = envelope_from_review(review)
+ 393:         if envelope is None:
+ 394:             raise MarkdownServiceError(
+ 395:                 IMPORT_ENVELOPE_INVALID, "导入 envelope 缺失", status_code=409
+ 396:             )
+ 397:         if review.action != ReviewAction.UPDATE_ITEM:
+ 398:             raise MarkdownServiceError(
+ 399:                 IMPORT_ENVELOPE_INVALID, "导入 envelope 仅允许 UPDATE_ITEM", status_code=409
+ 400:             )
+ 401:         return review.payload, _payload_digest(review.payload).encode("utf-8"), _review_lock_key(
+ 402:             envelope, review.item_id
+ 403:         )
+ 404:     finally:
+ 405:         session.close()
+ 406: 
+ 407: 
+ 408: @router.post("/reviews/{review_id}/approve", response_model=ReviewOut)
+ 409: def approve_review(
+ 410:     review_id: UUID,
+ 411:     request: Request,
+ 412:     embedder: Annotated[Embedder | None, Depends(get_embedder)],
+ 413:     payload: ReviewResolve | None = None,
+ 414: ) -> ReviewOut:
+ 415:     """审核批准（同步写入口，D20）。
+ 416: 
+ 417:     导入分支：与 submit 共用同一身份键锁；S0 预检 → 获锁 → S1 fresh session
+ 418:     重读并校验 envelope 未变 → Core approve → 导入钩子补齐 → 单次 commit。
+ 419:     非导入分支保持既有 K1 行为，不额外解析正文。
+ 420:     """
+ 421:     try:
+ 422:         _s0_payload, s0_digest, lock_key = _preflight_review(review_id)
+ 423:     except (MarkdownServiceError, SourceIdentityError) as exc:
+ 424:         raise _import_http_error(exc) from exc
+ 425: 
+ 426:     coordinator: ImportCoordinator = request.app.state.import_coordinator
+ 427:     identity = getattr(request.app.state, "source_identity", None)
+ 428:     if identity is None:
+ 429:         raise HTTPException(status_code=503, detail="identity_service_unavailable")
+ 430:     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+ 431:     # P1-02：审核批准的身份写入与 MATERIALIZE/ROTATE 串行；钩子在写前校验
+ 432:     # 目标条目未被物化，冲突时整事务回滚、审核单保持 PENDING。
+ 433:     with context, identity.identity_guard():
+ 434:         session = create_session()
+ 435:         try:
+ 436:             pending = _pending_review(session, review_id)
+ 437:             is_import = review_is_import(pending)
+ 438:             envelope = None
+ 439:             if is_import:
+ 440:                 envelope = envelope_from_review(pending)
+ 441:                 if envelope is None or pending.action != ReviewAction.UPDATE_ITEM:
+ 442:                     raise MarkdownServiceError(
+ 443:                         IMPORT_ENVELOPE_INVALID,
+ 444:                         "导入 envelope 非法",
+ 445:                         status_code=409,
+ 446:                     )
+ 447:             if s0_digest is not None and (
+ 448:                 not is_import
+ 449:                 or s0_digest != _payload_digest(pending.payload).encode("utf-8")
+ 450:             ):
+ 451:                 raise MarkdownServiceError(
+ 452:                     IMPORT_ENVELOPE_INVALID,
+ 453:                     "审核 envelope 在获锁前被改动",
+ 454:                     status_code=409,
+ 455:                 )
+ 456:             service = build_review_service(session)
+ 457:             _demote_backlinks_before_delete(session, pending.item_id, pending.action)
+ 458:             try:
+ 459:                 review = asyncio.run(
+ 460:                     service.approve(review_id, payload.note if payload else None)
+ 461:                 )
+ 462:             except ValueError as exc:
+ 463:                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+ 464:             if is_import:
+ 465:                 assert envelope is not None
+ 466:                 # 导入分支不再额外普通正文 sync（避免双重解析覆盖绑定恢复）。
+ 467:                 ImportReviewHook(session, identity).apply_approved(review, envelope)
+ 468:             else:
+ 469:                 _sync_links_after_content_change(session, review.item_id, review.action)
+ 470:             session.commit()
+ 471:             asyncio.run(
+ 472:                 _sync_applied_action(
+ 473:                     session, embedder, review.item_id, review.action, review.payload
+ 474:                 )
+ 475:             )
+ 476:             session.commit()
+ 477:             return ReviewOut.model_validate(review)
+ 478:         except (MarkdownServiceError, SourceIdentityError) as exc:
+ 479:             session.rollback()
+ 480:             raise _import_http_error(exc) from exc
+ 481:         except Exception:
+ 482:             session.rollback()
+ 483:             raise
+ 484:         finally:
+ 485:             session.close()
+ 486: 
+ 487: 
+ 488: @router.post("/reviews/{review_id}/reject", response_model=ReviewOut)
+ 489: def reject_review(
+ 490:     review_id: UUID,
+ 491:     request: Request,
+ 492:     payload: ReviewResolve | None = None,
+ 493: ) -> ReviewOut:
+ 494:     """审核拒绝（同步写入口）；导入分支不写任何 item/tags/links/origin。"""
+ 495:     try:
+ 496:         _s0_payload, _digest, lock_key = _preflight_review(review_id)
+ 497:     except (MarkdownServiceError, SourceIdentityError) as exc:
+ 498:         raise _import_http_error(exc) from exc
+ 499:     coordinator: ImportCoordinator = request.app.state.import_coordinator
+ 500:     identity = getattr(request.app.state, "source_identity", None)
+ 501:     if identity is None:
+ 502:         raise HTTPException(status_code=503, detail="identity_service_unavailable")
+ 503:     context = coordinator.keyed(lock_key) if lock_key else _null_context()
+ 504:     with context:
+ 505:         session = create_session()
+ 506:         try:
+ 507:             _pending_review(session, review_id)
+ 508:             service = build_review_service(session)
+ 509:             try:
+ 510:                 review = asyncio.run(
+ 511:                     service.reject(review_id, payload.note if payload else None)
+ 512:                 )
+ 513:             except ValueError as exc:
+ 514:                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+ 515:             if review_is_import(review):
+ 516:                 ImportReviewHook(session, identity).apply_rejected(review)
+ 517:             session.commit()
+ 518:             return ReviewOut.model_validate(review)
+ 519:         except (MarkdownServiceError, SourceIdentityError) as exc:
+ 520:             session.rollback()
+ 521:             raise _import_http_error(exc) from exc
+ 522:         except Exception:
+ 523:             session.rollback()
+ 524:             raise
+ 525:         finally:
+ 526:             session.close()

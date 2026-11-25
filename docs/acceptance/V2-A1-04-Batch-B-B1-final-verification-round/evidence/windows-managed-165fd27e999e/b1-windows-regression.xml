@@ -1,0 +1,1112 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="5" tests="180" time="46.359" timestamp="2026-11-23T21:52:44.955886+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_storage" name="test_f12_only_link_syscall_may_authorize_fallback[preflight-0-0-True]" time="0.289"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_only_link_syscall_may_authorize_fallback[unsupported-1-1-False]" time="0.261"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_only_link_syscall_may_authorize_fallback[permission-1-0-True]" time="0.237"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_only_link_syscall_may_authorize_fallback[unknown-1-0-True]" time="0.235"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_only_link_syscall_may_authorize_fallback[rename-exists-1-1-True]" time="0.240"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_rejects_missing_sqlite_db_path_as_storage_root[-False]" time="0.027"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_rejects_missing_sqlite_db_path_as_storage_root[-True]" time="0.053"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_rejects_missing_sqlite_db_path_as_storage_root[+pysqlite-False]" time="0.053"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_rejects_missing_sqlite_db_path_as_storage_root[+pysqlite-True]" time="0.051"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_sqlite_db_reserved_path_allows_independent_storage_roots" time="0.078"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_sqlite_db_parent_symlink_or_junction_is_rejected_before_mkdir" time="0.031"><skipped type="pytest.skip" message="cannot create a Windows junction or symlink">D:\ExplainLab\backend\tests\test_attachment_storage.py:243: cannot create a Windows junction or symlink</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_sqlite_db_parent_reparse_flag_rejected_before_side_effects" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_frozen_defaults_are_derived_from_data_dir" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_validate_creates_real_directories_and_reports_same_volume" time="0.098"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_relative_root_resolves_against_data_dir" time="0.006"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_parent_escape_rejected[overrides0]" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_parent_escape_rejected[overrides1]" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_parent_escape_rejected[overrides2]" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_parent_escape_rejected[overrides3]" time="0.003"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_root_outside_data_dir_rejected" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_storage_and_staging_overlap_rejected" time="0.005"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_quarantine_must_be_direct_child_of_storage" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_quarantine_name_collides_with_shard_namespace_rejected" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_directory_creation_failure_fails_closed" time="0.009"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_cross_volume_detected" time="0.066"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_reserved_data_file_overlap_rejected" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_link_or_junction_root_rejected" time="0.120"><skipped type="pytest.skip" message="cannot create symlink/junction in this environment">D:\ExplainLab\backend\tests\test_attachment_storage.py:439: cannot create symlink/junction in this environment</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_sha256_known_vector" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_key_validation_and_shards" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_write_temp_hashes_actual_bytes_and_no_residue_on_success" time="0.127"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_new_blob_and_reuse_same_hash" time="0.250"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_collision_never_overwrites" time="0.163"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_requires_lock_guard" time="0.127"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_concurrent_same_key" time="0.578"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_cross_volume" time="0.168"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_permission_denied_fails_without_rename" time="0.172"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_busy_retries_then_succeeds" time="0.204"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_busy_exhausted" time="0.172"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_busy_budget_prevents_a_new_syscall_after_sleep" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unsupported_link_posix_fails_without_rename" time="0.174"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unsupported_link_windows_uses_no_clobber_rename" time="0.195"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unknown_io_error_not_downgraded" time="0.177"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_hash_mismatch_removes_temp" time="0.153"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_post_verify_corruption_quarantines" time="0.223"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_open_verified_same_handle_and_close" time="0.194"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_verified_handle_survives_path_replacement" time="0.000"><skipped type="pytest.skip" message="Windows 打开文件默认拒绝 rename，句柄路径替换另行取证">D:\ExplainLab\backend\tests\test_attachment_storage.py:762: Windows 打开文件默认拒绝 rename，句柄路径替换另行取证</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_open_verified_missing_and_corrupt" time="0.223"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_quarantine_move_restore_and_delete" time="0.409"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_quarantine_move_never_overwrites_existing_slot" time="0.243"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_validates_roots_and_exposes_layout" time="1.002"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_refuses_invalid_storage_root" time="0.055"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_refuses_cross_volume" time="0.140"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[missing-publish]" time="0.146"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[missing-restore]" time="0.140"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[missing-isolate]" time="0.228"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[missing-delete]" time="0.232"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[missing-purge]" time="0.133"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[dummy-publish]" time="0.130"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[dummy-restore]" time="0.134"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[dummy-isolate]" time="0.236"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[dummy-delete]" time="0.232"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[dummy-purge]" time="0.133"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[released-publish]" time="0.135"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[released-restore]" time="0.136"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[released-isolate]" time="0.230"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[released-delete]" time="0.484"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[released-purge]" time="0.131"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[expired-publish]" time="0.138"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[expired-restore]" time="0.142"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[expired-isolate]" time="0.232"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[expired-delete]" time="0.229"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[expired-purge]" time="0.244"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[wrong-key-publish]" time="0.139"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[wrong-key-restore]" time="0.132"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[wrong-key-isolate]" time="0.234"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[wrong-key-delete]" time="0.229"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[wrong-key-purge]" time="0.135"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[token-publish]" time="0.139"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[token-restore]" time="0.140"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[token-isolate]" time="0.231"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[token-delete]" time="0.232"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_final_mutations_reject_invalid_guards[token-purge]" time="0.146"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_windows_retry_rechecks_fence_after_sharing_violation" time="0.187"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_settings_to_lifespan_rejects_link_without_writing_target" time="0.030"><skipped type="pytest.skip" message="directory link creation unavailable">D:\ExplainLab\backend\tests\test_attachment_storage.py:982: directory link creation unavailable</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_startup_checks_volume_before_mutating_other_roots" time="0.024"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_read_rejects_path_identity_changed_during_open" time="0.208"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_runtime_rejects_replaced_root_and_nonregular_blob" time="0.150"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_quarantine_path_traversal_is_rejected" time="0.134"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_exclusive_temp_collision_never_unlinks_existing" time="0.121"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_exclusive_temp_cleans_only_its_own_file[write_all]" time="0.122"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_exclusive_temp_cleans_only_its_own_file[_fsync_file]" time="0.117"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_concurrent_temp_creation_cannot_delete_the_winner" time="0.132"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unknown_native_code_never_uses_errno_fallback[18]" time="0.187"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unknown_native_code_never_uses_errno_fallback[55]" time="0.187"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_f12_unknown_native_code_never_uses_errno_fallback[234]" time="0.179"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_directory_sync_error_is_reported_and_blob_is_left_for_orp[open]" time="0.193"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_directory_sync_error_is_reported_and_blob_is_left_for_orp[fsync]" time="0.193"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_lifespan_assembles_gc_settings_and_transaction" time="0.460"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_publish_does_not_unlink_replacement_at_temp_path" time="0.159"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_settings_to_lifespan_rejects_injected_reparse_component_before_side_effects" time="0.057"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_link_target_appearing_after_precheck_is_revalidated[True]" time="0.186"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_link_target_appearing_after_precheck_is_revalidated[False]" time="0.177"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_storage" name="test_startup_rejects_same_directory_identity_with_distinct_lexical_roots" time="0.026"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_real_sharing_violation_exhausts_retry" time="0.061"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_real_sharing_violation_retries_then_succeeds" time="0.025"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_rename_never_overwrites_existing_target" time="0.004"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_real_junction_root_rejected" time="0.109"><skipped type="pytest.skip" message="mklink /J unavailable">D:\ExplainLab\backend\tests\test_attachment_windows.py:102: mklink /J unavailable</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_final_path_uses_lowercase_key_namespace" time="0.084"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_windows_busy_error_classification_keeps_errno_semantics" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_save_get_roundtrip" time="0.686"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_list_order_and_isolation" time="0.295"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_shared_storage_key_count_and_keys" time="0.303"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_delete_only_row" time="0.284"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_save_foreign_key_failure_rolls_back" time="0.298"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_attachment_item_cascade_removes_rows" time="0.298"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_save_get_defaults_and_list_filters" time="0.302"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_pending_and_second_claim_blocked" time="0.507"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_expired_running_increments_token_and_attempts" time="0.323"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_respects_quarantine_wait" time="0.324"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_rejects_terminal_and_exhausted" time="0.299"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_update_fencing_and_no_attempt_mutation" time="0.578"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_update_terminal_not_overwritable" time="0.314"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_concurrent_sqlite_only_one_wins" time="0.679"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_flush_only_visible_after_commit" time="0.352"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_claim_flush_failure_rolls_back" time="0.308"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_worker_rejects_stale_owner_and_token" time="0.550"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_expired_lease_cannot_update_or_renew" time="0.314"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_scheduler_cannot_requeue_early_and_due_retry_is_reclaimable" time="0.304"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_operator_recovers_permanent_failure_only_through_manual" time="0.603"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_retry_and_running_wait_conditions" time="0.302"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_concurrent_worker_terminal_updates_have_one_winner" time="0.332"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_gc" name="test_gc_lease_expired_while_waiting_for_sqlite_writer" time="0.482"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_batch_discards_first_lease_when_second_outlives_it" time="0.699"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_independent_fencing_is_bounded_under_sqlite_exclusive_writer" time="0.558"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_sqlite_pool_checkout_obeys_budget_for_write_and_business_fence" time="0.629"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck01_new_key_acquire" time="0.309"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck02_two_owners_same_key_only_one_wins" time="2.394"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck02_two_managers_share_db" time="2.347"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck03_expired_lease_takeover" time="0.670"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:198 storage guard aborted: STORAGE_LEASE_LOST
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck03_unexpired_lease_blocks_takeover" time="2.323"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck04_renew_extends_expiry" time="0.322"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck04_renew_after_own_expiry_fails" time="0.657"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:198 storage guard aborted: STORAGE_LEASE_LOST
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck05_old_lease_verify_false_after_takeover" time="1.064"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck06_release_matching_and_mismatch" time="0.378"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lck06_guard_release_idempotent" time="0.414"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_acquire_many_dedupes_and_sorts" time="0.332"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_acquire_many_partial_failure_releases_acquired" time="0.467"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_acquire_many_same_owner_non_reentrant" time="0.336"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_acquire_many_invalid_inputs" time="0.295"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_acquire_many_over_100_keys_rejected" time="0.312"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_heartbeat_keeps_lease_alive" time="1.386"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_verify_all_with_session_sees_takeover" time="0.351"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_aborted_guard_rejects_further_use" time="0.328"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:198 storage guard aborted: boom
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_build_storage_lock_sqlite" time="0.511"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_lifespan_exposes_storage_key_lock" time="0.462"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_short_acquire_budget_with_real_sqlite_writer" time="0.673"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_zero_budget_does_not_create_any_lock_row" time="0.276"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_final_fencing_reloads_cached_orm_and_rolls_back_business_write" time="0.321"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_sqlite_busy_retries_in_a_new_transaction_after_rollback" time="0.312"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_sqlite" name="test_sqlite_transaction_owner_raises_at_busy_deadline" time="0.636"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_batch_orders_deduplicated_identities_and_tokens" time="0.003"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_acquisition_fault_is_distinct_and_closes_connection[token UPSERT-57014-False-SQL deadline]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_acquisition_fault_is_distinct_and_closes_connection[token UPSERT-42P01-False-SQL error]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_acquisition_fault_is_distinct_and_closes_connection[advisory acquisition-08006-True-session disconnected]" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_busy_advisory_is_none_and_timeout_is_shared" time="0.049"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_connect_deadline_returns_and_closes_late_physical_connection" time="0.053"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_expired_or_disconnected_guard_does_not_reconnect" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_release_sql_error_is_reported_and_closes_connection" time="0.001"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_heartbeat_is_drained_before_verify_or_release[verify]" time="0.090"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_heartbeat_is_drained_before_verify_or_release[release]" time="0.081"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_client_deadline_bounds_driver_call_and_late_cleanup[budget SQL]" time="0.111"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_client_deadline_bounds_driver_call_and_late_cleanup[commit]" time="0.114"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_client_deadline_bounds_driver_call_and_late_cleanup[rollback]" time="0.114"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_client_deadline_bounds_driver_call_and_late_cleanup[close]" time="0.110"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_context_release_failure_preserves_business_result[success]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_context_release_failure_preserves_business_result[exception]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_context_release_failure_preserves_business_result[committed]" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_close_failure_invalidates_session_and_preserves_result" time="0.002"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  app.db.storage_lock:storage_lock.py:810 STORAGE_LOCK_RELEASE_FAILED
+WARNING  app.db.storage_lock:storage_lock.py:329 STORAGE_LOCK_RELEASE_FAILED
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_drain_deadline_does_not_reuse_connection_with_stalled_heartbeat[verify]" time="0.129"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_storage_lock_pg_faults" name="test_pg_drain_deadline_does_not_reuse_connection_with_stalled_heartbeat[release]" time="0.131"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

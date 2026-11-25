@@ -1,0 +1,139 @@
+# 整改前版本重建日志
+
+说明：Batch A 文件未提交，没有 Git 历史快照。以下“整改前”通过把本轮编辑记录
+按时间倒序反向应用得到。所有替换均要求 `new_string` 在文本中恰好出现 1 次；
+文本先统一为 LF 以便审阅。日志中的 SHA-256 均为 LF 归一化文本的 SHA-256。
+
+================================================================================================
+文件：backend/app/services/source_identity.py
+当前（LF 归一化）SHA-256：028718cb4d3c109706c4ace0ac3f640089cfbe36ebc371214d21d1e97a739e6c
+
+## 反向应用（当前 -> 整改前）
+
+- 编辑 13062：classify 改为 helper 早退
+  - new_string: 401 bytes / 7 lines
+  - old_string: 364 bytes / 7 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：9c79e11630d26b2449df1bc7758415d01b540d01eba1eaee2c388b806c94a513
+- 编辑 13058：新增 _origin_materialize_conflict helper
+  - new_string: 629 bytes / 16 lines
+  - old_string: 270 bytes / 5 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：05a4849529856a7d17c62fd73dd45a2c0477a2e764e35b0db7181d39d64d5b37
+- 编辑 13001：archive 改用 write_all
+  - new_string: 242 bytes / 8 lines
+  - old_string: 241 bytes / 8 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：7b957977778f76c83a49df82fe6ef11222fc8ae3d13a690e0700c257d57d9c22
+- 编辑 12997：current _atomic_write 改用 write_all
+  - new_string: 363 bytes / 12 lines
+  - old_string: 362 bytes / 12 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：80bc5f768e1eb8e973c6b4472e6e54fd511f0df65b25407bfa837c47c05819bb
+- 编辑 12979：source_identity 增加 write_all 导入
+  - new_string: 147 bytes / 3 lines
+  - old_string: 101 bytes / 2 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：7f03b1cf7df0463d1cd75ba8b79d01eecafb9495e5442f89b54f163bccf77dd0
+- 编辑 12947：P1 初次插入嵌套 if records
+  - new_string: 697 bytes / 15 lines
+  - old_string: 470 bytes / 11 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：c6bcaf1f0532727ca61a8f741826818f73dd193a7a3e49ef3d5f53c52fafb370
+
+整改前 SHA-256：c6bcaf1f0532727ca61a8f741826818f73dd193a7a3e49ef3d5f53c52fafb370
+
+## 正向校验（整改前 -> 当前）
+
+- 编辑 12979：old_string 出现次数 1
+- 编辑 12997：old_string 出现次数 1
+- 编辑 13001：old_string 出现次数 1
+- 编辑 12947：old_string 出现次数 1
+- 编辑 13058：old_string 出现次数 1
+- 编辑 13062：old_string 出现次数 1
+- 正向重建结果与当前 LF 归一化文本一致：True
+
+================================================================================================
+文件：backend/app/services/source_instance_id.py
+当前（LF 归一化）SHA-256：524fec40f44d8b680d450d55cc9af9b298015875c130100c689e138fd3c9abf7
+
+## 反向应用（当前 -> 整改前）
+
+- 编辑 13036：fallback 失败清理半成品
+  - new_string: 637 bytes / 16 lines
+  - old_string: 353 bytes / 9 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：8fb122c12b2070bad8e88bfa0c986e4ca78b1018871a738b97553c454c567cef
+- 编辑 13015：replace 改用 write_all
+  - new_string: 283 bytes / 8 lines
+  - old_string: 282 bytes / 8 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：142f65d5dbb8be76abaff1446fb7336c0b6a0aac77bcfc6fea4d734daac6e80f
+- 编辑 13011：ensure 临时与 fallback 改用 write_all
+  - new_string: 823 bytes / 22 lines
+  - old_string: 821 bytes / 22 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：9beebd7fdac6af2a358a8df1ef3d1b13d1c7996ed55d903f79871703f8a55901
+- 编辑 13007：source_instance_id 增加 write_all 导入
+  - new_string: 103 bytes / 4 lines
+  - old_string: 56 bytes / 2 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：5d7c32cdaec40032288d917a7df5738bc76ba374157f8719f542348c0658a586
+
+整改前 SHA-256：5d7c32cdaec40032288d917a7df5738bc76ba374157f8719f542348c0658a586
+
+## 正向校验（整改前 -> 当前）
+
+- 编辑 13007：old_string 出现次数 1
+- 编辑 13011：old_string 出现次数 1
+- 编辑 13015：old_string 出现次数 1
+- 编辑 13036：old_string 出现次数 1
+- 正向重建结果与当前 LF 归一化文本一致：True
+
+================================================================================================
+文件：backend/tests/test_markdown_batch_a_identity.py
+当前（LF 归一化）SHA-256：055b05a5de5ec743d713ef17a267c6e221b8225a6df52920f1b2be20ebaaf942
+
+## 反向应用（当前 -> 整改前）
+
+- 编辑 13165：测试新增多 MATERIALIZE 组合
+  - new_string: 1253 bytes / 26 lines
+  - old_string: 411 bytes / 6 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：f3daff950aadb0fbea402402f0e359f286a083dad4d2d1efc10b79b7fa0f4b07
+- 编辑 12963：测试新增 TestMaterializeOriginConflict
+  - new_string: 3853 bytes / 75 lines
+  - old_string: 28 bytes / 1 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：9a131c6cabfe8cd297a59f43d10e145ccd21c97c695fc9fbadb1312b82207ed5
+- 编辑 12958：测试新增物化/冲突辅助
+  - new_string: 2836 bytes / 77 lines
+  - old_string: 976 bytes / 31 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：ff01bb28bc2c88215d09c33ccad724db6b0326e69d4075350716454b3aa55d90
+- 编辑 12953：测试导入 SOURCE_DOCUMENT_UNMATERIALIZED
+  - new_string: 344 bytes / 13 lines
+  - old_string: 308 bytes / 12 lines
+  - 出现次数校验：1（必须为 1）
+  - 反向应用后 SHA-256：7b8cffcfaaf143411a8b767b0b4efe0f0e381f79733d32d8d2370d9d716168c0
+
+整改前 SHA-256：7b8cffcfaaf143411a8b767b0b4efe0f0e381f79733d32d8d2370d9d716168c0
+
+## 正向校验（整改前 -> 当前）
+
+- 编辑 12953：old_string 出现次数 1
+- 编辑 12958：old_string 出现次数 1
+- 编辑 12963：old_string 出现次数 1
+- 编辑 13165：old_string 出现次数 1
+- 正向重建结果与当前 LF 归一化文本一致：True
+
+================================================================================================
+新增文件（无“整改前”版本）
+
+- backend/app/services/file_write.py：编辑 12974 新建，当前 31 逻辑行 / 984 bytes
+- backend/tests/test_batch_a_file_write.py：编辑 13026 新建，13048 追加 fallback 测试，当前 288 逻辑行 / 10360 bytes
+
+校验补充：
+- 三个重建文件均通过 Python `compile(..., "exec")` 语法检查。
+- `before/` 三个文件写入后按 LF 保存；SHA-256 已记录在 03-diff/README.md。
+- 反向重建仅用于审阅差异，不宣称是 Git 历史快照。

@@ -155,6 +155,31 @@ M5 回归项（全部完成并真实验证）：
 
 七大核心能力全部落地：① 对话自动提取知识 ② 个人总知识库 + 项目空间 ③ 自动去重 / 关系推断 ④ 重要变更审核 ⑤ 跨会话混合检索 ⑥ 动态知识地图 ⑦ 交互式知识实验。Knowledge Core 独立可复用于 Nesti。
 
+## V2 · A1-04 Batch B
+
+### B1 · 存储、锁与仓储基础 ✅ 正式 PASS
+
+2026-11-24，ChatGPT 独立复审正式批准。B1-T01、T02、T03、T04 和 LCK-07 均为 `PASS`，B1 总体 `PASS`。Batch A 基线为 `970c0d8ec05f0b8c68286839a56b14c74ea230c6`。
+
+- 批准依据为 [ExplainLab-B1-Final-Verification-Round.zip](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/ExplainLab-B1-Final-Verification-Round.zip)，SHA-256 为 `80386f36621b766b42903120cf1e89a90290050e717601b34078d58b0b42b672`。
+- [历史 BLOCKED 记录](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/README.md)与[定点验收 CONDITIONAL 建议](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/README.md)按原阶段保留。本条为后续正式裁决。
+- SQLite GC 历史回归项 `test_gc_save_get_defaults_and_list_filters` 假设列表按插入顺序。当 `created_at` 相同时，仓储以 `id` 作为第二排序键；真实 SQLite 探针已证实结果可逆转插入顺序。原失败未采集时间戳，默认临时目录下的复跑通过。后续若复现，应先核对时间戳和排序键，避免把测试的顺序假设当作业务回归。[历史诊断](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/evidence/gc-order-diagnostic.log)
+
+### B2 · 附件 API ✅ 正式 PASS
+
+2026-11-24，ChatGPT 完成 B2 Audit Remediation 独立复审并正式批准：**B2-AUDIT-01 PASS、B2-AUDIT-02 PASS、ATT-12 PASS、PostgreSQL HTTP PASS、B2 Overall PASS**。
+
+- **批准材料**：原始 [ExplainLab-B2-Audit-Package.zip](docs/audit/V2-A1-04-Batch-B-B2/ExplainLab-B2-Audit-Package.zip)，SHA-256 `aa4eecb47e38d930ff304bfbb5f58aa70903a900ade4ccda8ec282f14a3d76e7`；整改 [ExplainLab-B2-Audit-Remediation.zip](docs/audit/V2-A1-04-Batch-B-B2-audit-remediation/ExplainLab-B2-Audit-Remediation.zip)，SHA-256 `12a0fc361bfae65185d492cb1036a73cb8370a9562af4f079b9dc2661424972f`。两份材料及原始证据均保留，不覆盖历史记录。
+- **验收映射**：当前最新映射为整改包的 [acceptance-mapping.md](docs/audit/V2-A1-04-Batch-B-B2-audit-remediation/acceptance-mapping.md)；原始审核包的 [历史映射](docs/audit/V2-A1-04-Batch-B-B2/acceptance-mapping.md) 按原阶段保留。
+- **实现范围**：B2-T01 的 66 项纯函数校验专项通过（历史记录见 [B2-T01 验收记录](docs/acceptance/V2-A1-04-Batch-B-B2-T01.md)）；B2-T02 已实现四路由（上传/列表/下载/删除）、服务编排、schema、依赖装配与 router 注册。复用 B1 存储/锁/仓储；附件服务与 Repository 只 flush，路由外层唯一提交或回滚，存储锁在 commit 或 rollback 后释放。未修改冻结契约、Knowledge Core、Alembic 迁移或依赖清单。
+- **ATT-12 故障注入**：真实应用 lifespan、HTTP 路由、SQLite 文件库、存储根和生产 `publish_no_clobber` 参与。Windows `[link]` 注入 `os.link` `EIO`，返回 503 `ATTACHMENT_WRITE_FAILED`，零附件记录、零临时残留、正式根无文件；`[rename]` 先令 `os.link` 返回 Windows 50 进入同卷降级，再令 `os.rename` 返回 `EIO`，得到相同稳定响应与零残留。Windows ATT-12 **2 passed / 0 skipped**；WSL ext4 补跑 **1 passed / 1 skipped**（Windows rename 分支按平台跳过）。见 [ATT-12 证据](docs/audit/V2-A1-04-Batch-B-B2-audit-remediation/ATT-12-evidence.md)。
+- **PostgreSQL 18.6 HTTP 真实环境**：普通 PowerShell 在 WSL2 原生 ext4 启动 PostgreSQL **18.6** 与独立测试库，B2 HTTP 专项 **5 passed / 0 skipped / exit 0**。覆盖真实上传/下载/跨 item 共享引用、`SELECT FOR UPDATE` 归档阻塞（`pg_blocking_pids` 记录上传 PID 594 等待归档 PID 591）、不同 PostgreSQL backend 的 advisory 并发（PID 612/624）、提交或回滚先于锁释放。结束后独立查询 `attachments=3`、`advisory_locks=0`。见 [PostgreSQL HTTP 验收](docs/audit/V2-A1-04-Batch-B-B2-audit-remediation/PostgreSQL-HTTP.md)。
+- **PostgreSQL 锁及仓储回归**：**18 passed / 0 skipped / exit 0**（StorageKeyLock 14 项、仓储 4 项）。
+- **Windows 回归**：B2 API **24 passed / 5 skipped**（5 项为真实 PG 环境门控）；B1 附件/锁/GC 定点 **175 passed / 37 skipped**；Backend + Knowledge Core 根级全量 **1389 passed / 220 skipped / 0 failed / exit 0**。220 项跳过为 **210 项真实 PostgreSQL 环境门控 + 10 项 Windows 平台/权限门控**，**不得写成通过**。见整改包 `evidence/skip-reasons.txt`。
+- **静态检查**：`ruff check backend knowledge-core` 通过；全仓 Ruff 的 8 项历史归档错误仍为 exit 1，不记为通过。
+- **保留边界**：ATT-11 的 24h ORP 收敛仍属 B5，未实现；共享引用并发删除的 ORP 兜底仍属 B5；SQLite 逻辑租约、PG 租约行 TTL 不授权接管、下载同句柄不消除外部原地改写 TOCTOU、SQLite GC 历史排序问题等风险继续按 B1/B2 历史记录保留。
+- **状态推进**：B1 PASS、B2 PASS、**B3 READY FOR DEVELOPMENT**。B3 前置冻结契约与验收决策继续有效；本轮未进入 B3，不实施 B3/B4/B5。
+
 ## 长期架构约束（所有里程碑必须遵守）
 
 1. Knowledge Core 独立于 ExplainLab 前端，未来复用于 Nesti。

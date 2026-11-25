@@ -294,7 +294,7 @@ async def sync_index(
         try:
             await indexer.index_item(item)
         except ModelAdapterError as exc:
-            logger.warning("向量索引失败，降级为仅全文 item=%s: %s", item_id, exc)
+            logger.warning("INDEX_EMBEDDING_SYNC_FAILED: %s", type(exc).__name__)
     for item_id in remove_ids:
         await indexer.remove_item(item_id)
 

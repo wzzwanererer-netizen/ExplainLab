@@ -1,0 +1,7 @@
+date: 2026-11-24T17:51:56+08:00
+os: MINGW64_NT-10.0-26300 DESKTOP-HISORNQ 3.6.10-710e5275.x86_64 2026-07-28 09:32 UTC x86_64 Msys
+python: Python 3.11.9
+uv: uv 0.13.6 (329bf9448 2026-10-26 x86_64-pc-windows-msvc)
+node: v22.23.2
+git HEAD: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+branch: fix/m0-admission-and-m5-regressions

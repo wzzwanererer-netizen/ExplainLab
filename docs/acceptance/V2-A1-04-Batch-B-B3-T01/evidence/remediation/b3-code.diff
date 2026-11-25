@@ -1,0 +1,3650 @@
+diff --git a/backend/app/services/markdown.py b/backend/app/services/markdown.py
+index 3e5aa8f..8ae3d38 100644
+--- a/backend/app/services/markdown.py
++++ b/backend/app/services/markdown.py
+@@ -11,18 +11,31 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import contextlib
+ import io
+ import json
+ import re
+ import zipfile
+ from dataclasses import dataclass, field
+ from datetime import UTC, datetime
++from pathlib import Path
+ from typing import Any
+ from uuid import UUID
+ 
+ from sqlalchemy.orm import Session, sessionmaker
+ 
+-from app.models import KnowledgeSpace
++from app.models import KnowledgeSpace, ReviewRequestORM
++from app.services.attachment_staging import (
++    ATTACHMENT_MANIFEST_CORRUPTED,
++    ATTACHMENT_STAGING_INVALID,
++    AttachmentManifestItem,
++    AttachmentStagingError,
++    AttachmentStagingService,
++    ParsedImportZip,
++    StagedAttachmentSet,
++    coerce_manifest_items,
++    logical_manifest_set,
++)
+ from app.services.governance import SQLAlchemyReviewRepository, build_review_service
+ from app.services.import_coordinator import (
+     IMPORT_LOCK_TIMEOUT,
+@@ -36,6 +49,7 @@ from app.services.markdown_item_repository import (
+     MarkdownItemRepository,
+ )
+ from app.services.repositories_v2 import (
++    SQLAlchemyAttachmentRepository,
+     SQLAlchemyImportOriginRepository,
+     SQLAlchemyTagChangeLogRepository,
+     SQLAlchemyTagRepository,
+@@ -87,6 +101,7 @@ from knowledge_core.markdown.service import (
+ __all__ = [
+     "ATTACHMENT_EXPORT_UNSUPPORTED",
+     "ATTACHMENT_IMPORT_UNSUPPORTED",
++    "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED",
+     "ATTACHMENT_REVIEW_UNSUPPORTED",
+     "IMPORT_ENVELOPE_INVALID",
+     "IMPORT_FAILED",
+@@ -100,6 +115,7 @@ __all__ = [
+ ]
+ 
+ ATTACHMENT_IMPORT_UNSUPPORTED = "ATTACHMENT_IMPORT_UNSUPPORTED"
++ATTACHMENT_ONLY_IMPORT_UNSUPPORTED = "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED"
+ ATTACHMENT_EXPORT_UNSUPPORTED = "ATTACHMENT_EXPORT_UNSUPPORTED"
+ ATTACHMENT_REVIEW_UNSUPPORTED = "ATTACHMENT_REVIEW_UNSUPPORTED"
+ SOURCE_CHANGED_DURING_WAIT = "SOURCE_CHANGED_DURING_WAIT"
+@@ -129,6 +145,10 @@ class MarkdownImportDocument:
+     target_item_id: UUID | None = None
+     frontmatter_resolution: str | None = None
+     attachments_requested: bool = False
++    # Server-side ZIP attachment source (never a client path/filename).  The
++    # route parses/validates the archive; this object is passed through preflight
++    # and only materialised into staging after every Active/pending check passes.
++    attachment_source: ParsedImportZip | None = None
+ 
+ 
+ @dataclass
+@@ -164,6 +184,28 @@ class PreparedDocument:
+     conflict: bool = False
+     warnings: list[str] = field(default_factory=list)
+     unsupported: list[str] = field(default_factory=list)
++    attachment_source: ParsedImportZip | None = None
++    attachment_manifest: tuple[AttachmentManifestItem, ...] = ()
++    staging_id: UUID | None = None
++    staging_directory: Path | None = None
++
++
++@dataclass(frozen=True)
++class _PendingInfo:
++    review_id: UUID
++    item_id: UUID
++    payload_hash: str
++    attachments: tuple[AttachmentManifestItem, ...]
++
++    @property
++    def logical_set(self) -> tuple[tuple[str, str, str, int], ...]:
++        return logical_manifest_set(self.attachments)
++
++    @property
++    def staging_id(self) -> str | None:
++        if not self.attachments:
++            return None
++        return self.attachments[0].staging_id
+ 
+ 
+ @dataclass
+@@ -172,8 +214,8 @@ class _State:
+     item_ids: tuple[str, ...]
+     anonymous_ids: tuple[str, ...]
+     applied_hashes: frozenset[str]
+-    pending_same: tuple[UUID, UUID] | None
+-    pending_other: str | None
++    pending_same: _PendingInfo | None
++    pending_other: _PendingInfo | None
+ 
+ 
+ def _is_uuid_text(value: str | None) -> bool:
+@@ -233,6 +275,19 @@ class MarkdownService:
+     def session_factory(self) -> sessionmaker[Session]:
+         return self._factory
+ 
++    def attachment_only_error_code(self, target_item_id: UUID | None) -> str:
++        """Classify a zero-document attachment ZIP without creating staging."""
++        if target_item_id is None:
++            return ATTACHMENT_IMPORT_UNSUPPORTED
++        session = self._factory()
++        try:
++            record = MarkdownItemRepository(session).get(target_item_id)
++        finally:
++            session.close()
++        if record is not None and record.status == KnowledgeStatus.ACTIVE:
++            return ATTACHMENT_ONLY_IMPORT_UNSUPPORTED
++        return ATTACHMENT_IMPORT_UNSUPPORTED
++
+     # ------------------------------------------------------------------ 导入
+     def import_documents(
+         self,
+@@ -242,11 +297,20 @@ class MarkdownService:
+         manifest: dict[str, Any] | None = None,
+         batch_id: str | None = None,
+         reject_attachments: bool = False,
++        attachment_staging: AttachmentStagingService | None = None,
+     ) -> ImportOutcome:
+         if not documents:
+             raise MarkdownServiceError("IMPORT_EMPTY", "no documents")
+         # D23 恢复门：恢复完成前禁止分类/身份写入/新操作（含导入）。
+         self._identity.recover_if_needed()
++        if (
++            any(doc.attachment_source is not None for doc in documents)
++            and attachment_staging is None
++        ):
++            raise MarkdownServiceError(
++                ATTACHMENT_IMPORT_UNSUPPORTED,
++                "attachment staging service unavailable",
++            )
+         prepared = self._preflight(documents, manifest)
+         if reject_attachments:
+             for item in prepared:
+@@ -292,8 +356,16 @@ class MarkdownService:
+                     item,
+                     default_space_id=space_id,
+                     batch_id=batch_id,
++                    attachment_staging=attachment_staging,
+                 )
++            except AttachmentStagingError:
++                raise
+             except MarkdownServiceError as exc:
++                if item.attachment_source is not None:
++                    # Attachment ZIPs are a single-owner request; conflicts and
++                    # stable rejections must reach the HTTP boundary, not become
++                    # a per-item 200 report entry.
++                    raise
+                 result = ImportItemResult(
+                     filename=item.filename,
+                     status=ImportItemStatus.ERROR,
+@@ -302,12 +374,16 @@ class MarkdownService:
+                     source_payload_hash=item.payload_hash,
+                 )
+             except SourceIdentityError as exc:
++                if item.attachment_source is not None:
++                    raise
+                 result = ImportItemResult(
+                     filename=item.filename,
+                     status=ImportItemStatus.ERROR,
+                     errors=[exc.code],
+                 )
+             except ImportLockTimeout:
++                if item.attachment_source is not None:
++                    raise
+                 result = ImportItemResult(
+                     filename=item.filename,
+                     status=ImportItemStatus.ERROR,
+@@ -316,6 +392,8 @@ class MarkdownService:
+                     source_payload_hash=item.payload_hash,
+                 )
+             except Exception:  # noqa: BLE001 - 单篇隔离，不外泄异常文本
++                if item.attachment_source is not None:
++                    raise
+                 result = ImportItemResult(
+                     filename=item.filename,
+                     status=ImportItemStatus.ERROR,
+@@ -481,7 +559,13 @@ class MarkdownService:
+         _drop_empty_metadata(hash_document)
+         hashes = compute_document_hashes(hash_document)
+         unsupported: list[str] = []
+-        if document.attachments or incoming.attachments_requested:
++        attachment_source = incoming.attachment_source
++        # Frontmatter attachment references remain Batch A-unsupported.  A
++        # validated server-side ZIP attachment source is the only path that
++        # removes ATTACHMENT_IMPORT_UNSUPPORTED.
++        if document.attachments or (
++            incoming.attachments_requested and attachment_source is None
++        ) or attachment_source is not None and not attachment_source.attachments:
+             unsupported.append(ATTACHMENT_IMPORT_UNSUPPORTED)
+             warnings.append(ATTACHMENT_IMPORT_UNSUPPORTED)
+         for warning in parsed.warnings:
+@@ -500,6 +584,7 @@ class MarkdownService:
+             conflict=conflict,
+             warnings=warnings,
+             unsupported=unsupported,
++            attachment_source=attachment_source,
+         )
+ 
+     # -- 单篇导入 -----------------------------------------------------------
+@@ -545,21 +630,39 @@ class MarkdownService:
+             # 幂等判定；不同 payload 仍走 duplicates，绝不静默覆盖。
+             for record in repo.find_by_source_content_hash(item.content_hash):
+                 anonymous_records[str(record.id)] = record
+-        pending_same: tuple[UUID, UUID] | None = None
++        pending_same: _PendingInfo | None = None
+         pending_other: str | None = None
+-        pending_signature: list[tuple[str, str]] = []
++        pending_signature: list[tuple[str, str, tuple[Any, ...]]] = []
+         for review in SQLAlchemyReviewRepository(session).list_reviews(_pending()):
+             envelope = self._envelope_or_error(review.payload)
+             if envelope is None:
+                 continue
+             if not self._envelope_matches(envelope, item, review.item_id, target):
+                 continue
+-            pending_signature.append((str(review.id), envelope.source_payload_hash))
++            attachments = self._envelope_manifest(envelope)
++            pending_signature.append(
++                (
++                    str(review.id),
++                    envelope.source_payload_hash,
++                    tuple(item.model_dump(mode="json") for item in attachments),
++                )
++            )
+             if envelope.source_payload_hash == item.payload_hash:
+                 if pending_same is None:
+-                    pending_same = (review.id, review.item_id)
++                    pending_same = _PendingInfo(
++                        review_id=review.id,
++                        item_id=review.item_id,
++                        payload_hash=envelope.source_payload_hash,
++                        attachments=attachments,
++                    )
+             else:
+-                pending_other = envelope.source_payload_hash
++                if pending_other is None:
++                    pending_other = _PendingInfo(
++                        review_id=review.id,
++                        item_id=review.item_id,
++                        payload_hash=envelope.source_payload_hash,
++                        attachments=attachments,
++                    )
+         signature = (
+             tuple(
+                 sorted(
+@@ -607,6 +710,24 @@ class MarkdownService:
+                 status_code=409,
+             ) from exc
+ 
++    @staticmethod
++    def _envelope_manifest(envelope: ImportEnvelope) -> tuple[AttachmentManifestItem, ...]:
++        if not envelope.attachments:
++            return ()
++        try:
++            return coerce_manifest_items(envelope.attachments)
++        except AttachmentStagingError as exc:
++            code = (
++                ATTACHMENT_MANIFEST_CORRUPTED
++                if exc.code == "ATTACHMENT_MANIFEST_DUPLICATE"
++                else exc.code
++            )
++            raise MarkdownServiceError(
++                code,
++                "审核 envelope 附件 manifest 非法",
++                status_code=409 if code == ATTACHMENT_MANIFEST_CORRUPTED else exc.status_code,
++            ) from exc
++
+     @staticmethod
+     def _envelope_matches(
+         envelope: ImportEnvelope,
+@@ -633,6 +754,7 @@ class MarkdownService:
+         *,
+         default_space_id: str | None,
+         batch_id: str | None,
++        attachment_staging: AttachmentStagingService | None,
+     ) -> tuple[ImportItemResult, bool]:
+         target = item.target_item_id
+         target = item.document.id if target is None and item.document.id else target
+@@ -655,31 +777,28 @@ class MarkdownService:
+                         "同一来源身份对应多个条目",
+                         status_code=409,
+                     )
++                attachment_context = None
++                if item.attachment_source is not None:
++                    attachment_context = self._attachment_context(
++                        session, item, target, s1, attachment_staging
++                    )
+                 decision_same = item.payload_hash in s1.applied_hashes
+                 if s0.signature != s1.signature:
+                     if decision_same:
+-                        matched = s1.item_ids or s1.anonymous_ids
+                         return (
+-                            ImportItemResult(
+-                                filename=item.filename,
+-                                item_id=UUID(matched[0]) if matched else None,
+-                                status=ImportItemStatus.SKIPPED,
+-                                source_payload_hash=item.payload_hash,
+-                                source_content_hash=item.content_hash,
+-                                warnings=item.warnings,
++                            self._skipped_result(
++                                session,
++                                item,
++                                s1,
++                                attachment_context,
++                                attachment_staging,
+                             ),
+                             False,
+                         )
+                     if s1.pending_same:
+                         return (
+-                            ImportItemResult(
+-                                filename=item.filename,
+-                                status=ImportItemStatus.REUSED_PENDING,
+-                                review_id=s1.pending_same[0],
+-                                item_id=s1.pending_same[1],
+-                                source_payload_hash=item.payload_hash,
+-                                source_content_hash=item.content_hash,
+-                                warnings=item.warnings,
++                            self._reuse_pending(
++                                item, s1.pending_same, attachment_staging
+                             ),
+                             False,
+                         )
+@@ -689,56 +808,326 @@ class MarkdownService:
+                         status_code=409,
+                     )
+                 if decision_same:
+-                    matched = s1.item_ids or s1.anonymous_ids
+-                    item_id = UUID(matched[0]) if matched else None
+                     return (
+-                        ImportItemResult(
+-                            filename=item.filename,
+-                            item_id=item_id,
+-                            status=ImportItemStatus.SKIPPED,
+-                            source_payload_hash=item.payload_hash,
+-                            source_content_hash=item.content_hash,
+-                            warnings=item.warnings,
+-                            unsupported=item.unsupported,
++                        self._skipped_result(
++                            session,
++                            item,
++                            s1,
++                            attachment_context,
++                            attachment_staging,
+                         ),
+                         False,
+                     )
+                 if s1.pending_same:
+                     return (
+-                        ImportItemResult(
+-                            filename=item.filename,
+-                            status=ImportItemStatus.REUSED_PENDING,
+-                            review_id=s1.pending_same[0],
+-                            item_id=s1.pending_same[1],
+-                            source_payload_hash=item.payload_hash,
+-                            source_content_hash=item.content_hash,
+-                            warnings=item.warnings,
+-                            unsupported=item.unsupported,
+-                        ),
++                        self._reuse_pending(item, s1.pending_same, attachment_staging),
+                         False,
+                     )
+                 if s1.pending_other:
++                    if item.attachment_source is not None or s1.pending_other.attachments:
++                        raise AttachmentStagingError("SOURCE_HAS_PENDING_IMPORT")
+                     raise MarkdownServiceError(
+                         SOURCE_HAS_PENDING_IMPORT,
+                         "同身份已有不同版本的待审导入",
+                         status_code=409,
+                     )
+-                result, needs_index = self._apply_import(
+-                    session,
+-                    item,
+-                    target=target,
+-                    existing_ids=s1.item_ids,
+-                    default_space_id=default_space_id,
+-                    batch_id=batch_id,
+-                )
+-                session.commit()
+-                return result, needs_index
+-            except Exception:
+-                session.rollback()
+-                raise
++                if item.attachment_source is not None and (
++                    attachment_context is None
++                    or not attachment_context[1].has_content_change
++                ):
++                    raise MarkdownServiceError(
++                        ATTACHMENT_ONLY_IMPORT_UNSUPPORTED,
++                        "Active 无标题/正文变化时不允许仅附件导入",
++                        status_code=400,
++                    )
++                if item.attachment_source is not None:
++                    if attachment_staging is None:
++                        raise MarkdownServiceError(
++                            ATTACHMENT_IMPORT_UNSUPPORTED,
++                            "attachment staging unavailable",
++                        )
++                    stage_context = attachment_staging.stage_from_zip(
++                        item.attachment_source
++                    )
++                else:
++                    stage_context = contextlib.nullcontext(None)
++                # P1-01: the staging guard must span staging creation, the
++                # ReviewRequest flush and the business commit.  The lease
++                # removes its directory on a known-uncommitted failure and
++                # keeps it for ORP when the commit outcome is ambiguous.
++                with stage_context as lease:
++                    staged = lease.staged if lease is not None else None
++                    commit_attempted = False
++                    try:
++                        result, needs_index = self._apply_import(
++                            session,
++                            item,
++                            target=target,
++                            existing_ids=s1.item_ids,
++                            default_space_id=default_space_id,
++                            batch_id=batch_id,
++                            attachment_staging=attachment_staging,
++                            staged=staged,
++                        )
++                        commit_attempted = True
++                        session.commit()
++                        if lease is not None:
++                            lease.committed = True
++                        return result, needs_index
++                    except Exception:
++                        session.rollback()
++                        if lease is not None and commit_attempted:
++                            # The commit result is unknown; a committed review
++                            # may reference this staging.  Preserve it for ORP.
++                            lease.keep_for_orp = True
++                        raise
+             finally:
+                 session.close()
+ 
++    def _resolve_attachment_record(
++        self,
++        session: Session,
++        item: PreparedDocument,
++        target: UUID | None,
++        state: _State,
++    ) -> MarkdownItemRecord | None:
++        repo = MarkdownItemRepository(session)
++        if state.item_ids:
++            return repo.get(state.item_ids[0])
++        if target is not None:
++            record = repo.get(target)
++            if record is not None:
++                return record
++        if len(state.anonymous_ids) == 1:
++            return repo.get(state.anonymous_ids[0])
++        return None
++
++    def _attachment_context(
++        self,
++        session: Session,
++        item: PreparedDocument,
++        target: UUID | None,
++        state: _State,
++        staging: AttachmentStagingService | None,
++    ) -> tuple[MarkdownItemRecord, ChangeSet]:
++        if staging is None:
++            raise MarkdownServiceError(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "attachment staging unavailable"
++            )
++        record = self._resolve_attachment_record(session, item, target, state)
++        if record is None:
++            raise MarkdownServiceError(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "附件 ZIP 无法唯一定位目标条目"
++            )
++        if record.status == KnowledgeStatus.ARCHIVED:
++            raise MarkdownServiceError(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "归档条目不允许附件导入"
++            )
++        if record.status != KnowledgeStatus.ACTIVE:
++            # B3-T01 stops at pending creation. Draft promotion/publish is B3-T02.
++            raise MarkdownServiceError(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "Draft 附件导入尚未启用"
++            )
++        changes, _ = self._record_changes(session, record, item)
++        return record, changes
++
++    def _record_changes(
++        self,
++        session: Session,
++        record: MarkdownItemRecord,
++        item: PreparedDocument,
++    ) -> tuple[ChangeSet, list[str]]:
++        old_tags = SQLAlchemyTagRepository(session).list_item_tags(record.id)
++        current_links = [
++            {
++                "target_title": link.target_title,
++                "alias": link.alias,
++                "target_id": str(link.target_id) if link.target_id else None,
++                "resolution": link.resolution.value,
++            }
++            for link in SQLAlchemyLinkRepository(session).list_links(record.id)
++        ]
++        changes = classify_changes(
++            current_title=record.title,
++            current_content=record.content,
++            current_status=record.status,
++            current_space_id=record.space_id,
++            current_tags=old_tags,
++            current_extra_metadata=record.extra_metadata,
++            current_links=current_links,
++            current_attachments=[],
++            incoming=item.document,
++        )
++        return changes, old_tags
++
++    def _attachments_satisfied(
++        self,
++        session: Session,
++        item_id: UUID,
++        item: PreparedDocument,
++        staging: AttachmentStagingService,
++    ) -> bool:
++        assert item.attachment_source is not None
++        refs = {
++            attachment.storage_key
++            for attachment in SQLAlchemyAttachmentRepository(session).list_attachments(
++                item_id
++            )
++        }
++        for entry in item.attachment_source.attachments:
++            if entry.storage_key not in refs:
++                return False
++        for entry in item.attachment_source.attachments:
++            staging.verify_published(entry.storage_key, len(entry.data))
++        return True
++
++    def _skipped_result(
++        self,
++        session: Session,
++        item: PreparedDocument,
++        state: _State,
++        attachment_context: tuple[MarkdownItemRecord, ChangeSet] | None,
++        staging: AttachmentStagingService | None,
++    ) -> ImportItemResult:
++        matched = state.item_ids or state.anonymous_ids
++        if matched:
++            item_id = UUID(matched[0])
++        elif attachment_context is not None:
++            item_id = attachment_context[0].id
++        else:
++            item_id = None
++        warnings = list(item.warnings)
++        if item.attachment_source is not None:
++            if (
++                attachment_context is None
++                or staging is None
++                or not self._attachments_satisfied(
++                    session, attachment_context[0].id, item, staging
++                )
++            ):
++                raise MarkdownServiceError(
++                    ATTACHMENT_ONLY_IMPORT_UNSUPPORTED,
++                    "已应用版本缺少请求的附件引用",
++                    status_code=400,
++                )
++            warnings.append("attachments_already_satisfied")
++        return ImportItemResult(
++            filename=item.filename,
++            item_id=item_id,
++            status=ImportItemStatus.SKIPPED,
++            source_payload_hash=item.payload_hash,
++            source_content_hash=item.content_hash,
++            warnings=warnings,
++            unsupported=item.unsupported,
++        )
++
++    def _reuse_pending(
++        self,
++        item: PreparedDocument,
++        pending: _PendingInfo,
++        staging: AttachmentStagingService | None,
++    ) -> ImportItemResult:
++        incoming = (
++            item.attachment_source.logical_set
++            if item.attachment_source is not None
++            else ()
++        )
++        if incoming != pending.logical_set:
++            # This is an attachment-set conflict even when the retry itself has
++            # no JSON attachment field; it must reach HTTP as 409, not a 200
++            # per-item error report.
++            raise AttachmentStagingError(SOURCE_HAS_PENDING_IMPORT)
++        if pending.attachments:
++            if staging is None:
++                raise MarkdownServiceError(
++                    ATTACHMENT_STAGING_INVALID,
++                    "pending 附件 staging 服务不可用",
++                    status_code=409,
++                )
++            staging_id = pending.staging_id
++            if staging_id is None:
++                raise MarkdownServiceError(
++                    ATTACHMENT_MANIFEST_CORRUPTED, "pending staging id missing", status_code=409
++                )
++            # Hold the staging guard while re-reading the pending row, then
++            # validate the physical staging beneath the same guard.  This
++            # closes the S1→guard window in which the review could be resolved
++            # or the envelope edited.
++            with staging.staging_guard(staging_id):
++                self._verify_pending_unchanged(pending)
++                staging.validate_manifest_locked(
++                    staging_id, pending.attachments, require_complete=True
++                )
++        else:
++            self._verify_pending_unchanged(pending)
++        warnings = list(item.warnings)
++        if item.attachment_source is not None:
++            warnings.append("attachments_pending_reused")
++        return ImportItemResult(
++            filename=item.filename,
++            status=ImportItemStatus.REUSED_PENDING,
++            review_id=pending.review_id,
++            item_id=pending.item_id,
++            source_payload_hash=item.payload_hash,
++            source_content_hash=item.content_hash,
++            warnings=warnings,
++            unsupported=item.unsupported,
++        )
++
++    def _verify_pending_unchanged(self, pending: _PendingInfo) -> None:
++        """Re-read a pending review and fail closed if it drifted."""
++        session = self._factory()
++        try:
++            row = session.get(ReviewRequestORM, str(pending.review_id))
++            if row is None or row.status != "pending":
++                raise MarkdownServiceError(
++                    SOURCE_CHANGED_DURING_WAIT,
++                    "原待审导入已变化，请重新发起",
++                    status_code=409,
++                )
++            if str(row.item_id) != str(pending.item_id):
++                raise MarkdownServiceError(
++                    SOURCE_HAS_PENDING_IMPORT,
++                    "待审导入目标已变化",
++                    status_code=409,
++                )
++            try:
++                payload = json.loads(row.payload or "{}")
++            except (TypeError, json.JSONDecodeError) as exc:
++                raise MarkdownServiceError(
++                    IMPORT_ENVELOPE_INVALID,
++                    "导入审核 envelope 非法",
++                    status_code=409,
++                ) from exc
++            if not isinstance(payload, dict):
++                raise MarkdownServiceError(
++                    IMPORT_ENVELOPE_INVALID,
++                    "导入审核 envelope 非法",
++                    status_code=409,
++                )
++            envelope = self._envelope_or_error(payload)
++            if envelope is None:
++                raise MarkdownServiceError(
++                    SOURCE_HAS_PENDING_IMPORT,
++                    "待审导入缺少 envelope",
++                    status_code=409,
++                )
++            if envelope.source_payload_hash != pending.payload_hash:
++                raise MarkdownServiceError(
++                    SOURCE_HAS_PENDING_IMPORT,
++                    "待审导入内容已变化",
++                    status_code=409,
++                )
++            fresh = self._envelope_manifest(envelope)
++            if fresh != pending.attachments:
++                raise MarkdownServiceError(
++                    SOURCE_HAS_PENDING_IMPORT,
++                    "待审导入附件集合已变化",
++                    status_code=409,
++                )
++        finally:
++            session.close()
++
+     # -- 落库 ---------------------------------------------------------------
+     def _resolve_space(self, session: Session, desired: str | None) -> str | None:
+         if desired is None:
+@@ -754,6 +1143,8 @@ class MarkdownService:
+         existing_ids: tuple[str, ...],
+         default_space_id: str | None,
+         batch_id: str | None,
++        attachment_staging: AttachmentStagingService | None = None,
++        staged: StagedAttachmentSet | None = None,
+     ) -> tuple[ImportItemResult, bool]:
+         items = MarkdownItemRepository(session)
+         tags = SQLAlchemyTagRepository(session)
+@@ -856,29 +1247,21 @@ class MarkdownService:
+             )
+ 
+         # 既有条目：变化分类
+-        old_tags = tags.list_item_tags(existing.id)
+-        current_links = [
+-            {
+-                "target_title": link.target_title,
+-                "alias": link.alias,
+-                "target_id": str(link.target_id) if link.target_id else None,
+-                "resolution": link.resolution.value,
+-            }
+-            for link in SQLAlchemyLinkRepository(session).list_links(existing.id)
+-        ]
+-        changes: ChangeSet = classify_changes(
+-            current_title=existing.title,
+-            current_content=existing.content,
+-            current_status=existing.status,
+-            current_space_id=existing.space_id,
+-            current_tags=old_tags,
+-            current_extra_metadata=existing.extra_metadata,
+-            current_links=current_links,
+-            current_attachments=[],
+-            incoming=doc,
+-        )
++        changes, old_tags = self._record_changes(session, existing, item)
+         is_active = existing.status == KnowledgeStatus.ACTIVE
+         if is_active and changes.has_content_change:
++            if item.attachment_source is not None:
++                if staged is None or attachment_staging is None:
++                    # The caller must create staging inside the staging guard;
++                    # creating it here would release the guard before commit.
++                    raise MarkdownServiceError(
++                        ATTACHMENT_IMPORT_UNSUPPORTED,
++                        "attachment staging lease unavailable",
++                    )
++                item.attachment_manifest = staged.manifest
++                item.staging_id = staged.staging_id
++                item.staging_directory = staged.directory
++                warnings.append("attachments_staged")
+             envelope = self._envelope(
+                 item,
+                 target=existing.id,
+@@ -1003,7 +1386,10 @@ class MarkdownService:
+             tags=list(doc.tags),
+             extra_metadata=dict(doc.extra_metadata),
+             links=list(doc.links),
+-            attachments=[],
++            attachments=[
++                manifest.model_dump(mode="json")
++                for manifest in item.attachment_manifest
++            ],
+         ).with_digest()
+ 
+     @staticmethod
+diff --git a/backend/app/services/attachment_staging.py b/backend/app/services/attachment_staging.py
+new file mode 100644
+index 0000000..02afd35
+--- /dev/null
++++ b/backend/app/services/attachment_staging.py
+@@ -0,0 +1,1590 @@
++"""Attachment import staging and manifest (V2 A1-04 Batch B, B3-T01).
++
++This module owns the physical part of ZIP attachment import:
++
++* strict manifest element schema (``AttachmentManifestItem``);
++* ZIP path/ownership validation with bounded reads;
++* content-addressed staging under ``<staging_root>/<staging_id>/``;
++* ``.creating`` / ``.activity`` / ``.complete`` lifecycle markers;
++* manifest/file validation against a staging directory;
++* safe discard and a conservative sweep candidate decision.
++
++It deliberately does **not** publish formal blobs, write ``attachment`` rows,
++touch review state, or run the B5 GC/ORP worker.  Physical staging operations
++are outside any database transaction; the caller owns DB commit/rollback.
++
++Frozen contracts:
++``docs/plans/V2-A1-04-Batch-B/attachment-lifecycle.md`` §3,
++``active-review-integration.md`` §3, and
++``storage-and-lock-contract.md`` §1.
++"""
++
++from __future__ import annotations
++
++import contextlib
++import hashlib
++import io
++import json
++import logging
++import os
++import re
++import stat
++import threading
++import unicodedata
++import uuid
++import zipfile
++import zlib
++from collections.abc import Callable, Collection, Iterator, Sequence
++from contextlib import contextmanager
++from dataclasses import dataclass
++from datetime import UTC, datetime, timedelta
++from pathlib import Path, PurePosixPath
++from typing import Any
++
++from pydantic import (
++    BaseModel,
++    ConfigDict,
++    Field,
++    StrictInt,
++    StrictStr,
++    ValidationError,
++    field_validator,
++    model_validator,
++)
++from sqlalchemy import select
++
++from app.core.config import DEFAULT_ATTACHMENT_MIME_ALLOWLIST
++from app.models import ReviewRequestORM
++from app.services.attachment_storage import (
++    ATTACHMENT_STORAGE_CROSS_VOLUME,
++    ATTACHMENT_STORAGE_UNAVAILABLE,
++    ATTACHMENT_WRITE_FAILED,
++    AttachmentStorageError,
++    StorageLayout,
++    StorageRootError,
++    ensure_runtime,
++    is_valid_storage_key,
++    sha256_bytes,
++    verify_blob,
++)
++from app.services.attachment_validation import ATTACHMENT_EMPTY
++from app.services.file_write import write_all
++from knowledge_core.markdown.import_report import IMPORT_ENVELOPE_KEY, ImportEnvelope
++
++__all__ = [
++    "ATTACHMENT_COUNT_EXCEEDED",
++    "ATTACHMENT_EMPTY",
++    "ATTACHMENT_MANIFEST_CORRUPTED",
++    "ATTACHMENT_MANIFEST_DUPLICATE",
++    "ATTACHMENT_MANIFEST_INVALID",
++    "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED",
++    "ATTACHMENT_STAGING_INVALID",
++    "ATTACHMENT_STAGING_MISSING",
++    "ATTACHMENT_TOTAL_TOO_LARGE",
++    "AttachmentManifestItem",
++    "AttachmentStagingError",
++    "AttachmentStagingService",
++    "ParsedImportZip",
++    "StagedAttachmentSet",
++    "StagingLease",
++    "SweepDecision",
++    "ZipAttachmentEntry",
++    "ZipDocumentEntry",
++    "coerce_manifest_items",
++    "logical_manifest_set",
++    "manifest_digest",
++    "parse_import_zip",
++]
++
++logger = logging.getLogger(__name__)
++
++ATTACHMENT_MANIFEST_INVALID = "ATTACHMENT_MANIFEST_INVALID"
++ATTACHMENT_MANIFEST_CORRUPTED = "ATTACHMENT_MANIFEST_CORRUPTED"
++ATTACHMENT_MANIFEST_DUPLICATE = "ATTACHMENT_MANIFEST_DUPLICATE"
++ATTACHMENT_STAGING_INVALID = "ATTACHMENT_STAGING_INVALID"
++ATTACHMENT_STAGING_MISSING = "ATTACHMENT_STAGING_MISSING"
++ATTACHMENT_COUNT_EXCEEDED = "ATTACHMENT_COUNT_EXCEEDED"
++ATTACHMENT_TOTAL_TOO_LARGE = "ATTACHMENT_TOTAL_TOO_LARGE"
++ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
++ATTACHMENT_MIME_UNSUPPORTED = "ATTACHMENT_MIME_UNSUPPORTED"
++ATTACHMENT_CONTENT_MISMATCH = "ATTACHMENT_CONTENT_MISMATCH"
++ATTACHMENT_IMPORT_UNSUPPORTED = "ATTACHMENT_IMPORT_UNSUPPORTED"
++ATTACHMENT_ONLY_IMPORT_UNSUPPORTED = "ATTACHMENT_ONLY_IMPORT_UNSUPPORTED"
++IMPORT_ARCHIVE_INVALID = "IMPORT_ARCHIVE_INVALID"
++
++MAX_FILE_BYTES = 10 * 1024 * 1024
++MAX_ATTACHMENT_COUNT = 100
++MAX_TOTAL_BYTES = 100 * 1024 * 1024
++STAGING_GRACE_SECONDS = 86400
++MAX_ZIP_ENTRIES = 1000
++
++_BLOB_RE = re.compile(r"^blobs/[0-9]{6}\.bin$")
++_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
++_UUID4_RE = re.compile(
++    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
++)
++_CREATING = ".creating"
++_ACTIVITY = ".activity"
++_COMPLETE = ".complete"
++_BLOBS = "blobs"
++_CHUNK_SIZE = 1024 * 1024
++
++_TEXT_MIMES = frozenset({"text/plain", "text/markdown", "text/csv"})
++_BINARY_SIGNATURES = (
++    ("image/png", (b"\x89PNG\r\n\x1a\n",)),
++    ("image/jpeg", (b"\xff\xd8\xff",)),
++    ("image/gif", (b"GIF87a", b"GIF89a")),
++    ("application/pdf", (b"%PDF-",)),
++)
++_EXTENSION_MIME = {
++    ".png": "image/png",
++    ".jpg": "image/jpeg",
++    ".jpeg": "image/jpeg",
++    ".gif": "image/gif",
++    ".webp": "image/webp",
++    ".pdf": "application/pdf",
++    ".txt": "text/plain",
++    ".md": "text/markdown",
++    ".markdown": "text/markdown",
++    ".csv": "text/csv",
++    ".svg": "image/svg+xml",
++}
++_ERROR_STATUS = {
++    ATTACHMENT_EMPTY: 400,
++    ATTACHMENT_MANIFEST_INVALID: 422,
++    ATTACHMENT_MANIFEST_CORRUPTED: 409,
++    ATTACHMENT_MANIFEST_DUPLICATE: 422,
++    ATTACHMENT_STAGING_INVALID: 409,
++    ATTACHMENT_STAGING_MISSING: 409,
++    ATTACHMENT_COUNT_EXCEEDED: 413,
++    ATTACHMENT_TOTAL_TOO_LARGE: 413,
++    ATTACHMENT_TOO_LARGE: 413,
++    ATTACHMENT_MIME_UNSUPPORTED: 415,
++    ATTACHMENT_CONTENT_MISMATCH: 415,
++    ATTACHMENT_IMPORT_UNSUPPORTED: 400,
++    ATTACHMENT_ONLY_IMPORT_UNSUPPORTED: 400,
++    IMPORT_ARCHIVE_INVALID: 400,
++    "SOURCE_HAS_PENDING_IMPORT": 409,
++    ATTACHMENT_STORAGE_UNAVAILABLE: 503,
++    ATTACHMENT_STORAGE_CROSS_VOLUME: 503,
++    ATTACHMENT_WRITE_FAILED: 503,
++}
++
++
++class AttachmentStagingError(RuntimeError):
++    """Staging/manifest rejection carrying only a frozen stable code."""
++
++    def __init__(self, code: str, message: str = "") -> None:
++        self.code = code
++        self.status_code = _ERROR_STATUS.get(code, 400)
++        super().__init__(f"{code}: {message}" if message else code)
++
++
++def _staging_error(code: str, message: str = "") -> AttachmentStagingError:
++    return AttachmentStagingError(code, message)
++
++
++def _default_directory_sync(path: Path) -> None:
++    """Persist directory entries where the platform supports it.
++
++    POSIX requires an explicit fsync of the parent directory after creating,
++    renaming or unlinking entries.  Windows has no directory-fsync equivalent;
++    this helper is intentionally a no-op there and the residual power-loss
++    boundary is recorded in the B3-T01 acceptance docs rather than claimed as
++    durable.
++    """
++    if os.name == "nt":
++        return
++    try:
++        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
++        try:
++            os.fsync(fd)
++        finally:
++            os.close(fd)
++    except OSError as exc:
++        raise _staging_error(
++            ATTACHMENT_WRITE_FAILED, f"directory sync failed ({exc.errno})"
++        ) from exc
++
++
++def _utc(value: datetime) -> datetime:
++    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
++
++
++def _iso(value: datetime) -> str:
++    return _utc(value).isoformat().replace("+00:00", "Z")
++
++
++def _parse_iso(value: str) -> datetime:
++    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
++    if parsed.tzinfo is None:
++        raise ValueError("timezone required")
++    return parsed.astimezone(UTC)
++
++
++def _is_link_info(info: os.stat_result) -> bool:
++    return stat.S_ISLNK(info.st_mode) or bool(
++        getattr(info, "st_file_attributes", 0) & 0x400
++    )
++
++
++def validate_staging_id(value: str | uuid.UUID) -> uuid.UUID:
++    text = str(value)
++    if not _UUID4_RE.fullmatch(text):
++        raise _staging_error(ATTACHMENT_STAGING_INVALID, "invalid staging id")
++    parsed = uuid.UUID(text)
++    if parsed.version != 4 or str(parsed) != text:
++        raise _staging_error(ATTACHMENT_STAGING_INVALID, "invalid staging id")
++    return parsed
++
++
++class AttachmentManifestItem(BaseModel):
++    """Frozen manifest element stored in ``__a1_import.attachments``."""
++
++    model_config = ConfigDict(extra="forbid", frozen=True)
++
++    schema_version: StrictInt
++    staging_id: StrictStr
++    ordinal: StrictInt = Field(ge=1, le=MAX_ATTACHMENT_COUNT)
++    blob: StrictStr
++    filename: StrictStr
++    mime: StrictStr
++    size: StrictInt = Field(ge=1, le=MAX_FILE_BYTES)
++    storage_key: StrictStr
++
++    @field_validator("schema_version")
++    @classmethod
++    def _version(cls, value: int) -> int:
++        if value != 1:
++            raise ValueError("unsupported manifest schema version")
++        return value
++
++    @field_validator("staging_id")
++    @classmethod
++    def _staging_id(cls, value: str) -> str:
++        if not _UUID4_RE.fullmatch(value):
++            raise ValueError("invalid staging id")
++        parsed = uuid.UUID(value)
++        if parsed.version != 4 or str(parsed) != value:
++            raise ValueError("invalid staging id")
++        return value
++
++    @field_validator("blob")
++    @classmethod
++    def _blob(cls, value: str) -> str:
++        if not _BLOB_RE.fullmatch(value):
++            raise ValueError("invalid blob path")
++        return value
++
++    @field_validator("filename")
++    @classmethod
++    def _filename(cls, value: str) -> str:
++        if not 1 <= len(value) <= 500:
++            raise ValueError("invalid filename length")
++        if ".." in value or any(char in value for char in "/\\:"):
++            raise ValueError("unsafe filename")
++        for char in value:
++            if char == "\x7f" or ord(char) < 32:
++                raise ValueError("control character in filename")
++            if unicodedata.category(char) in {"Cc", "Cs"}:
++                raise ValueError("control character in filename")
++        return value
++
++    @field_validator("mime")
++    @classmethod
++    def _mime(cls, value: str) -> str:
++        if value != value.strip().lower() or ";" in value:
++            raise ValueError("mime must be a lowercase bare type")
++        if value == "image/svg+xml" or value not in DEFAULT_ATTACHMENT_MIME_ALLOWLIST:
++            raise ValueError("unsupported mime")
++        return value
++
++    @field_validator("storage_key")
++    @classmethod
++    def _storage_key(cls, value: str) -> str:
++        if not _KEY_RE.fullmatch(value):
++            raise ValueError("invalid storage key")
++        return value
++
++    @model_validator(mode="after")
++    def _blob_matches_ordinal(self) -> AttachmentManifestItem:
++        expected = f"{_BLOBS}/{self.ordinal:06d}.bin"
++        if self.blob != expected:
++            raise ValueError("blob must be derived from ordinal")
++        return self
++
++
++class _CompleteMarker(BaseModel):
++    model_config = ConfigDict(extra="forbid", frozen=True)
++
++    schema_version: StrictInt
++    staging_id: StrictStr
++    completed_at: StrictStr
++    file_count: StrictInt = Field(ge=1)
++    total_bytes: StrictInt = Field(ge=1)
++
++    @field_validator("schema_version")
++    @classmethod
++    def _version(cls, value: int) -> int:
++        if value != 1:
++            raise ValueError("unsupported complete marker")
++        return value
++
++    @field_validator("staging_id")
++    @classmethod
++    def _staging_id(cls, value: str) -> str:
++        if not _UUID4_RE.fullmatch(value):
++            raise ValueError("invalid staging id")
++        parsed = uuid.UUID(value)
++        if parsed.version != 4 or str(parsed) != value:
++            raise ValueError("invalid staging id")
++        return value
++
++    @field_validator("completed_at")
++    @classmethod
++    def _completed_at(cls, value: str) -> str:
++        _parse_iso(value)
++        return value
++
++
++def coerce_manifest_items(
++    manifest: Sequence[AttachmentManifestItem | dict[str, Any]],
++    *,
++    create: bool = False,
++    mime_allowlist: Collection[str] = DEFAULT_ATTACHMENT_MIME_ALLOWLIST,
++) -> tuple[AttachmentManifestItem, ...]:
++    """Validate manifest structure, uniqueness and aggregate limits.
++
++    ``create=True`` maps schema failures to the frozen 422 code used while
++    creating staging; otherwise approve-time validation maps them to the
++    frozen 409 manifest-corrupted code.
++    """
++    structure_code = (
++        ATTACHMENT_MANIFEST_INVALID if create else ATTACHMENT_MANIFEST_CORRUPTED
++    )
++    if not isinstance(manifest, Sequence) or isinstance(manifest, (str, bytes)):
++        raise _staging_error(structure_code, "manifest must be a sequence")
++    if not manifest:
++        raise _staging_error(structure_code, "empty manifest")
++
++    items: list[AttachmentManifestItem] = []
++    for entry in manifest:
++        if isinstance(entry, AttachmentManifestItem):
++            items.append(entry)
++            continue
++        if not isinstance(entry, dict):
++            raise _staging_error(structure_code, "manifest element must be an object")
++        try:
++            items.append(AttachmentManifestItem.model_validate(entry))
++        except ValidationError as exc:
++            raise _staging_error(structure_code, "invalid manifest element") from exc
++
++    staging_ids = {item.staging_id for item in items}
++    if len(staging_ids) != 1:
++        raise _staging_error(structure_code, "mixed staging ids")
++    ordinals = [item.ordinal for item in items]
++    if len(ordinals) != len(set(ordinals)):
++        raise _staging_error(structure_code, "duplicate ordinal")
++    keys = [item.storage_key for item in items]
++    if len(keys) != len(set(keys)):
++        raise _staging_error(ATTACHMENT_MANIFEST_DUPLICATE)
++    if any(item.mime not in mime_allowlist for item in items):
++        raise _staging_error(ATTACHMENT_MIME_UNSUPPORTED)
++    if len(items) > MAX_ATTACHMENT_COUNT:
++        raise _staging_error(ATTACHMENT_COUNT_EXCEEDED)
++    if sum(item.size for item in items) > MAX_TOTAL_BYTES:
++        raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++    return tuple(sorted(items, key=lambda item: item.ordinal))
++
++
++def logical_manifest_set(
++    items: Sequence[AttachmentManifestItem | dict[str, Any]],
++) -> tuple[tuple[str, str, str, int], ...]:
++    """Order-insensitive logical attachment set used for pending comparison."""
++    normalized: list[tuple[str, str, str, int]] = []
++    for item in items:
++        if isinstance(item, AttachmentManifestItem):
++            normalized.append(
++                (item.storage_key, item.filename, item.mime, int(item.size))
++            )
++        elif isinstance(item, dict):
++            try:
++                normalized.append(
++                    (
++                        str(item["storage_key"]),
++                        str(item["filename"]),
++                        str(item["mime"]),
++                        int(item["size"]),
++                    )
++                )
++            except (KeyError, TypeError, ValueError) as exc:
++                raise _staging_error(
++                    ATTACHMENT_MANIFEST_CORRUPTED, "invalid manifest element"
++                ) from exc
++        else:
++            raise _staging_error(
++                ATTACHMENT_MANIFEST_CORRUPTED, "invalid manifest element"
++            )
++    return tuple(sorted(normalized))
++
++
++def manifest_digest(
++    items: Sequence[AttachmentManifestItem | dict[str, Any]],
++) -> str:
++    body = [
++        item.model_dump(mode="json")
++        if isinstance(item, AttachmentManifestItem)
++        else dict(item)
++        for item in items
++    ]
++    payload = json.dumps(
++        body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
++    ).encode("utf-8")
++    return hashlib.sha256(payload).hexdigest()
++
++
++@dataclass(frozen=True)
++class ZipDocumentEntry:
++    path: str
++    filename: str
++    data: bytes
++
++
++@dataclass(frozen=True)
++class ZipAttachmentEntry:
++    path: str
++    filename: str
++    mime: str
++    data: bytes
++    storage_key: str
++
++
++@dataclass(frozen=True)
++class ParsedImportZip:
++    documents: tuple[ZipDocumentEntry, ...]
++    attachments: tuple[ZipAttachmentEntry, ...]
++    manifest: dict[str, Any] | None
++
++    @property
++    def has_attachments(self) -> bool:
++        return bool(self.attachments)
++
++    @property
++    def attachment_owner(self) -> str | None:
++        if len(self.documents) == 1:
++            return self.documents[0].path
++        return None
++
++    @property
++    def logical_set(self) -> tuple[tuple[str, str, str, int], ...]:
++        return tuple(
++            sorted(
++                (entry.storage_key, entry.filename, entry.mime, len(entry.data))
++                for entry in self.attachments
++            )
++        )
++
++
++@dataclass(frozen=True)
++class StagedAttachmentSet:
++    staging_id: uuid.UUID
++    directory: Path
++    manifest: tuple[AttachmentManifestItem, ...]
++    completed_at: datetime
++    activity_at: datetime
++
++    @property
++    def staging_id_text(self) -> str:
++        return str(self.staging_id)
++
++    @property
++    def manifest_dicts(self) -> list[dict[str, Any]]:
++        return [item.model_dump(mode="json") for item in self.manifest]
++
++    @property
++    def logical_set(self) -> tuple[tuple[str, str, str, int], ...]:
++        return logical_manifest_set(self.manifest)
++
++
++@dataclass
++class StagingLease:
++    """Lifetime handle for a staging directory created under ``stage_from_zip``.
++
++    ``stage_from_zip`` keeps the per-``staging_id`` guard for the whole
++    ``with`` block.  The owning caller must:
++
++    * set ``committed`` after the database commit that references the staging
++      succeeds (the directory is then retained for pending review);
++    * set ``keep_for_orp`` when a commit result is ambiguous so the directory
++      is preserved for the orphan-recovery path;
++    * set ``retain`` when the caller intentionally owns the directory beyond
++      the block (``create_from_zip`` compatibility helper).
++
++    If none of the flags is set when the block exits, the staging created in
++    this block is removed while the guard is still held.
++    """
++
++    staging_id: uuid.UUID
++    directory: Path
++    staged: StagedAttachmentSet | None = None
++    committed: bool = False
++    keep_for_orp: bool = False
++    retain: bool = False
++    discarded: bool = False
++
++
++@dataclass(frozen=True)
++class SweepDecision:
++    candidate: bool
++    reason: str
++    activity_at: datetime | None = None
++
++    def __bool__(self) -> bool:
++        return self.candidate
++
++
++def _validate_content(data: bytes, mime: str) -> None:
++    header = data[:16]
++    detected: str | None = None
++    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
++        detected = "image/webp"
++    else:
++        for candidate, signatures in _BINARY_SIGNATURES:
++            if header.startswith(signatures):
++                detected = candidate
++                break
++    if mime in _TEXT_MIMES:
++        if detected is not None or b"\x00" in data:
++            raise _staging_error(ATTACHMENT_CONTENT_MISMATCH)
++        try:
++            data.decode("utf-8", errors="strict")
++        except UnicodeDecodeError:
++            raise _staging_error(ATTACHMENT_CONTENT_MISMATCH) from None
++        return
++    if detected != mime:
++        raise _staging_error(ATTACHMENT_CONTENT_MISMATCH)
++
++
++def _infer_mime(filename: str) -> str:
++    suffix = PurePosixPath(filename).suffix.lower()
++    mime = _EXTENSION_MIME.get(suffix)
++    if mime is None:
++        raise _staging_error(ATTACHMENT_MIME_UNSUPPORTED)
++    if mime not in DEFAULT_ATTACHMENT_MIME_ALLOWLIST:
++        raise _staging_error(ATTACHMENT_MIME_UNSUPPORTED)
++    return mime
++
++
++def _validate_zip_path(name: str) -> str:
++    if not isinstance(name, str) or not name:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "empty zip path")
++    if len(name) > 4096:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "zip path too long")
++    if "\x00" in name or "\\" in name:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "non-canonical zip path")
++    if name.startswith("/") or re.match(r"^[A-Za-z]:", name):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "absolute zip path")
++    stripped = name[:-1] if name.endswith("/") else name
++    if not stripped:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "empty zip path")
++    parts = stripped.split("/")
++    if any(part in {"", ".", ".."} for part in parts):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "unsafe zip path")
++    for part in parts:
++        if ":" in part:
++            raise _staging_error(IMPORT_ARCHIVE_INVALID, "ADS in zip path")
++        for char in part:
++            if char == "\x7f" or ord(char) < 32:
++                raise _staging_error(IMPORT_ARCHIVE_INVALID, "control in zip path")
++            if unicodedata.category(char) in {"Cc", "Cs"}:
++                raise _staging_error(IMPORT_ARCHIVE_INVALID, "control in zip path")
++    return stripped
++
++
++def _validate_zip_original_name(info: zipfile.ZipInfo) -> None:
++    """Reject NUL bytes that ``zipfile`` would hide by truncating ``filename``."""
++    original = getattr(info, "orig_filename", None)
++    if isinstance(original, str) and "\x00" in original:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "NUL in zip path")
++
++
++def _check_zip_entry_metadata(
++    info: zipfile.ZipInfo, *, max_total_bytes: int = MAX_TOTAL_BYTES
++) -> None:
++    mode = (info.external_attr >> 16) & 0xFFFF
++    if stat.S_ISLNK(mode):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "symlink in zip")
++    if info.flag_bits & 0x1:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "encrypted zip entry")
++    if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "unsupported compression")
++    if info.file_size < 0 or info.compress_size < 0:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "invalid zip size")
++    if info.file_size > max_total_bytes or info.compress_size > max_total_bytes:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "zip entry exceeds total limit")
++    if (
++        info.file_size > 1024 * 1024
++        and info.compress_size > 0
++        and info.file_size / info.compress_size > 1000
++    ):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "suspicious compression ratio")
++
++
++def _read_bounded(
++    archive: zipfile.ZipFile,
++    info: zipfile.ZipInfo,
++    *,
++    limit: int,
++) -> bytes:
++    if info.file_size > limit:
++        raise _staging_error(ATTACHMENT_TOO_LARGE)
++    output = bytearray()
++    try:
++        with archive.open(info) as handle:
++            while True:
++                remaining = limit - len(output)
++                if remaining <= 0:
++                    extra = handle.read(1)
++                    if extra:
++                        raise _staging_error(ATTACHMENT_TOO_LARGE)
++                    break
++                chunk = handle.read(min(_CHUNK_SIZE, remaining))
++                if not chunk:
++                    break
++                output.extend(chunk)
++    except AttachmentStagingError:
++        raise
++    except (
++        zipfile.BadZipFile,
++        RuntimeError,
++        OSError,
++        EOFError,
++        zlib.error,
++        ValueError,
++    ) as exc:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "zip read failed") from exc
++    if len(output) != info.file_size:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "zip size mismatch")
++    return bytes(output)
++
++
++def parse_import_zip(
++    payload: bytes | bytearray | memoryview,
++    *,
++    max_file_bytes: int = MAX_FILE_BYTES,
++    max_attachment_count: int = MAX_ATTACHMENT_COUNT,
++    max_total_bytes: int = MAX_TOTAL_BYTES,
++) -> ParsedImportZip:
++    """Parse a ZIP after validating every path; read only bounded selections."""
++    if not isinstance(payload, (bytes, bytearray, memoryview)):
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "zip payload must be bytes")
++    raw = bytes(payload)
++    try:
++        archive = zipfile.ZipFile(io.BytesIO(raw))
++    except (zipfile.BadZipFile, OSError, ValueError) as exc:
++        raise _staging_error(IMPORT_ARCHIVE_INVALID, "invalid zip") from exc
++
++    with archive:
++        infos = archive.infolist()
++        if len(infos) > MAX_ZIP_ENTRIES:
++            raise _staging_error(IMPORT_ARCHIVE_INVALID, "too many zip entries")
++        validated: list[tuple[zipfile.ZipInfo, str]] = []
++        seen_exact: set[str] = set()
++        seen_normalized: set[str] = set()
++        for info in infos:
++            _validate_zip_original_name(info)
++            path = _validate_zip_path(info.filename)
++            _check_zip_entry_metadata(info, max_total_bytes=max_total_bytes)
++            normalized = unicodedata.normalize("NFC", path).casefold()
++            if path in seen_exact or normalized in seen_normalized:
++                raise _staging_error(IMPORT_ARCHIVE_INVALID, "duplicate zip path")
++            seen_exact.add(path)
++            seen_normalized.add(normalized)
++            validated.append((info, path))
++        # Every entry, selected or not, counts against the compressed archive
++        # budget.  Unselected entries are never read, but they must not let a
++        # caller smuggle an oversized packed stream past the parser.
++        if sum(info.compress_size for info, _ in validated) > max_total_bytes:
++            raise _staging_error(IMPORT_ARCHIVE_INVALID, "compressed zip too large")
++
++        document_infos: list[tuple[zipfile.ZipInfo, str]] = []
++        attachment_infos: list[tuple[zipfile.ZipInfo, str]] = []
++        manifest_info: zipfile.ZipInfo | None = None
++        for info, path in validated:
++            if info.is_dir():
++                continue
++            if path == "manifest.json":
++                manifest_info = info
++                continue
++            if path.startswith("attachments/"):
++                if path.count("/") >= 1 and path.split("/", 1)[1]:
++                    attachment_infos.append((info, path))
++                continue
++            if path.lower().endswith((".md", ".markdown")):
++                document_infos.append((info, path))
++
++        if attachment_infos:
++            if len(document_infos) > 1:
++                raise _staging_error(
++                    ATTACHMENT_IMPORT_UNSUPPORTED, "ambiguous attachment ownership"
++                )
++            if len(attachment_infos) > max_attachment_count:
++                raise _staging_error(ATTACHMENT_COUNT_EXCEEDED)
++            for info, _ in attachment_infos:
++                if info.file_size == 0:
++                    # Metadata-stage rejection: no read, no staging, no DB row.
++                    raise _staging_error(ATTACHMENT_EMPTY)
++                if info.file_size > max_file_bytes:
++                    raise _staging_error(ATTACHMENT_TOO_LARGE)
++            if sum(info.file_size for info, _ in attachment_infos) > max_total_bytes:
++                raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++
++        selected = list(attachment_infos) + list(document_infos)
++        budgeted = list(selected)
++        if manifest_info is not None:
++            budgeted.append((manifest_info, "manifest.json"))
++        if sum(info.file_size for info, _ in budgeted) > max_total_bytes:
++            raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++        if sum(info.compress_size for info, _ in budgeted) > max_total_bytes:
++            raise _staging_error(IMPORT_ARCHIVE_INVALID, "compressed zip too large")
++
++        manifest: dict[str, Any] | None = None
++        if manifest_info is not None:
++            manifest_raw = _read_bounded(archive, manifest_info, limit=max_total_bytes)
++            try:
++                loaded = json.loads(manifest_raw.decode("utf-8"))
++            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
++                raise _staging_error(IMPORT_ARCHIVE_INVALID, "invalid manifest.json") from exc
++            if not isinstance(loaded, dict):
++                raise _staging_error(IMPORT_ARCHIVE_INVALID, "manifest.json not object")
++            manifest = loaded
++
++        documents: list[ZipDocumentEntry] = []
++        for info, path in document_infos:
++            data = _read_bounded(archive, info, limit=max_total_bytes)
++            documents.append(
++                ZipDocumentEntry(
++                    path=path,
++                    filename=PurePosixPath(path).name,
++                    data=data,
++                )
++            )
++
++        attachments: list[ZipAttachmentEntry] = []
++        if attachment_infos:
++            total = 0
++            for info, path in sorted(attachment_infos, key=lambda pair: pair[1]):
++                data = _read_bounded(archive, info, limit=max_file_bytes)
++                total += len(data)
++                if total > max_total_bytes:
++                    raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++                filename = PurePosixPath(path).name
++                if not 1 <= len(filename) <= 500 or ".." in filename:
++                    raise _staging_error(ATTACHMENT_MANIFEST_INVALID, "invalid filename")
++                mime = _infer_mime(filename)
++                _validate_content(data, mime)
++                attachments.append(
++                    ZipAttachmentEntry(
++                        path=path,
++                        filename=filename,
++                        mime=mime,
++                        data=data,
++                        storage_key=sha256_bytes(data),
++                    )
++                )
++            keys = [entry.storage_key for entry in attachments]
++            if len(keys) != len(set(keys)):
++                raise _staging_error(ATTACHMENT_MANIFEST_DUPLICATE)
++
++        return ParsedImportZip(
++            documents=tuple(documents),
++            attachments=tuple(attachments),
++            manifest=manifest,
++        )
++
++
++class AttachmentStagingService:
++    """Create/validate/discard import staging without touching formal refs."""
++
++    def __init__(
++        self,
++        layout: StorageLayout,
++        *,
++        max_file_bytes: int = MAX_FILE_BYTES,
++        max_attachment_count: int = MAX_ATTACHMENT_COUNT,
++        max_total_bytes: int = MAX_TOTAL_BYTES,
++        mime_allowlist: Collection[str] = DEFAULT_ATTACHMENT_MIME_ALLOWLIST,
++        staging_grace_seconds: int = STAGING_GRACE_SECONDS,
++        session_factory: Callable[[], Any] | None = None,
++        now: Callable[[], datetime] | None = None,
++        directory_sync: Callable[[Path], None] | None = None,
++    ) -> None:
++        self._layout = layout
++        self._max_file_bytes = min(int(max_file_bytes), MAX_FILE_BYTES)
++        self._max_count = min(int(max_attachment_count), MAX_ATTACHMENT_COUNT)
++        self._max_total = min(int(max_total_bytes), MAX_TOTAL_BYTES)
++        self._mime_allowlist = frozenset(mime_allowlist)
++        self._grace = timedelta(seconds=max(0, int(staging_grace_seconds)))
++        self._session_factory = session_factory
++        self._now = now or (lambda: datetime.now(UTC))
++        self._directory_sync = directory_sync or _default_directory_sync
++        self._guard = threading.Lock()
++        self._guards: dict[str, threading.Lock] = {}
++
++    @property
++    def layout(self) -> StorageLayout:
++        return self._layout
++
++    @property
++    def staging_root(self) -> Path:
++        return Path(self._layout.staging_root)
++
++    @contextmanager
++    def staging_guard(self, staging_id: str | uuid.UUID | Path) -> Iterator[None]:
++        sid = str(self._coerce_staging_id(staging_id))
++        with self._guard:
++            lock = self._guards.setdefault(sid, threading.Lock())
++        if not lock.acquire(timeout=10.0):
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "staging guard timeout")
++        try:
++            yield
++        finally:
++            lock.release()
++
++    # ------------------------------------------------------------------ zip
++    def inspect_zip(self, payload: bytes | bytearray | memoryview) -> ParsedImportZip:
++        return parse_import_zip(
++            payload,
++            max_file_bytes=self._max_file_bytes,
++            max_attachment_count=self._max_count,
++            max_total_bytes=self._max_total,
++        )
++
++    def create_from_zip(
++        self,
++        source: bytes | bytearray | memoryview | ParsedImportZip,
++        *,
++        staging_id: uuid.UUID | str | None = None,
++        document_path: str | None = None,
++    ) -> StagedAttachmentSet:
++        """Create a completed staging set and hand its lifetime to the caller.
++
++        This is a convenience wrapper.  The import path that commits a pending
++        review must use :meth:`stage_from_zip` so that the guard spans staging
++        creation, review creation and the database commit.
++        """
++        with self.stage_from_zip(
++            source, staging_id=staging_id, document_path=document_path
++        ) as lease:
++            lease.retain = True
++            if lease.staged is None:  # pragma: no cover - defensive
++                raise _staging_error(ATTACHMENT_WRITE_FAILED, "staging not created")
++            return lease.staged
++
++    @contextmanager
++    def stage_from_zip(
++        self,
++        source: bytes | bytearray | memoryview | ParsedImportZip,
++        *,
++        staging_id: uuid.UUID | str | None = None,
++        document_path: str | None = None,
++    ) -> Iterator[StagingLease]:
++        """Create staging and hold its guard for the caller's whole block.
++
++        The caller must commit the database write that references this staging
++        inside the block.  On a successful commit set ``lease.committed``; on
++        an ambiguous commit set ``lease.keep_for_orp``.  If neither is set the
++        directory is removed while the guard is still held, so a failed
++        pre-commit path never leaves a staging behind for a review that was
++        never created.
++        """
++        parsed = self._prepare_parsed(source, document_path)
++        self._ensure_runtime()
++        sid = validate_staging_id(staging_id) if staging_id is not None else uuid.uuid4()
++        staging_dir = self._staging_dir(sid)
++        with self.staging_guard(sid):
++            if staging_dir.exists() or staging_dir.is_symlink():
++                raise _staging_error(ATTACHMENT_WRITE_FAILED, "staging id already exists")
++            lease = StagingLease(staging_id=sid, directory=staging_dir)
++            try:
++                lease.staged = self._create_locked(staging_dir, sid, parsed)
++            except AttachmentStagingError:
++                lease.discarded = self._cleanup_incomplete(staging_dir)
++                raise
++            except (OSError, StorageRootError) as exc:
++                lease.discarded = self._cleanup_incomplete(staging_dir)
++                raise _staging_error(ATTACHMENT_WRITE_FAILED) from exc
++            except Exception:
++                lease.discarded = self._cleanup_incomplete(staging_dir)
++                raise
++            try:
++                yield lease
++            finally:
++                if not (lease.committed or lease.keep_for_orp or lease.retain):
++                    lease.discarded = self._cleanup_incomplete(staging_dir)
++
++    def _prepare_parsed(
++        self,
++        source: bytes | bytearray | memoryview | ParsedImportZip,
++        document_path: str | None,
++    ) -> ParsedImportZip:
++        parsed = source if isinstance(source, ParsedImportZip) else self.inspect_zip(source)
++        if not parsed.attachments:
++            raise _staging_error(ATTACHMENT_IMPORT_UNSUPPORTED, "no attachments")
++        if len(parsed.documents) != 1:
++            raise _staging_error(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "attachment owner is not unique"
++            )
++        if document_path is not None and parsed.documents[0].path != document_path:
++            raise _staging_error(
++                ATTACHMENT_IMPORT_UNSUPPORTED, "attachment owner mismatch"
++            )
++        keys = [entry.storage_key for entry in parsed.attachments]
++        if len(keys) != len(set(keys)):
++            raise _staging_error(ATTACHMENT_MANIFEST_DUPLICATE)
++        if len(parsed.attachments) > self._max_count:
++            raise _staging_error(ATTACHMENT_COUNT_EXCEEDED)
++        total = sum(len(entry.data) for entry in parsed.attachments)
++        if total > self._max_total:
++            raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++        if any(len(entry.data) > self._max_file_bytes for entry in parsed.attachments):
++            raise _staging_error(ATTACHMENT_TOO_LARGE)
++        return parsed
++
++    def _sync_directory(self, path: Path) -> None:
++        try:
++            self._directory_sync(Path(path))
++        except AttachmentStagingError:
++            raise
++        except OSError as exc:
++            raise _staging_error(
++                ATTACHMENT_WRITE_FAILED, f"directory sync failed ({exc.errno})"
++            ) from exc
++
++    def _create_locked(
++        self, staging_dir: Path, sid: uuid.UUID, parsed: ParsedImportZip
++    ) -> StagedAttachmentSet:
++        staging_root = self.staging_root
++        root_created = not staging_root.exists()
++        staging_root.mkdir(parents=True, exist_ok=True, mode=0o700)
++        self._assert_real_directory(staging_root, root=staging_root)
++        if root_created:
++            self._sync_directory(staging_root.parent)
++        staging_dir.mkdir(mode=0o700, exist_ok=False)
++        self._assert_real_directory(staging_dir, root=staging_root)
++        self._sync_directory(staging_root)
++
++        self._write_marker(staging_dir / _CREATING, exclusive=True)
++        self._sync_directory(staging_dir)
++        blobs = staging_dir / _BLOBS
++        blobs.mkdir(mode=0o700)
++        self._assert_real_directory(blobs, root=staging_root)
++        self._sync_directory(staging_dir)
++
++        entries = sorted(parsed.attachments, key=lambda entry: entry.path)
++        items: list[AttachmentManifestItem] = []
++        for ordinal, entry in enumerate(entries, start=1):
++            item = AttachmentManifestItem(
++                schema_version=1,
++                staging_id=str(sid),
++                ordinal=ordinal,
++                blob=f"{_BLOBS}/{ordinal:06d}.bin",
++                filename=entry.filename,
++                mime=entry.mime,
++                size=len(entry.data),
++                storage_key=entry.storage_key,
++            )
++            if item.mime not in self._mime_allowlist:
++                raise _staging_error(ATTACHMENT_MIME_UNSUPPORTED)
++            blob_path = staging_dir / item.blob
++            self._write_blob(blob_path, entry.data, staging_root=staging_root)
++            self._sync_directory(blobs)
++            items.append(item)
++            self._write_marker(staging_dir / _ACTIVITY, exclusive=False)
++            self._sync_directory(staging_dir)
++
++        manifest = tuple(items)
++        total = sum(item.size for item in manifest)
++        completed_at = _utc(self._now())
++        marker = _CompleteMarker(
++            schema_version=1,
++            staging_id=str(sid),
++            completed_at=_iso(completed_at),
++            file_count=len(manifest),
++            total_bytes=total,
++        )
++        self._write_complete(staging_dir / _COMPLETE, marker)
++        self._validate_staging(
++            sid,
++            manifest,
++            require_complete=True,
++            create=True,
++            check_activity=False,
++        )
++        activity_at = self.staging_activity_at(sid)
++        if activity_at is None:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID)
++        return StagedAttachmentSet(
++            staging_id=sid,
++            directory=staging_dir,
++            manifest=manifest,
++            completed_at=completed_at,
++            activity_at=activity_at,
++        )
++
++    # -------------------------------------------------------------- manifest
++    def validate_manifest(
++        self,
++        staging_id: str | uuid.UUID | Path,
++        manifest: Sequence[AttachmentManifestItem | dict[str, Any]],
++        *,
++        require_complete: bool = True,
++        create: bool = False,
++    ) -> tuple[AttachmentManifestItem, ...]:
++        sid = self._coerce_staging_id(staging_id)
++        with self.staging_guard(sid):
++            return self.validate_manifest_locked(
++                sid,
++                manifest,
++                require_complete=require_complete,
++                create=create,
++            )
++
++    def validate_manifest_locked(
++        self,
++        staging_id: str | uuid.UUID | Path,
++        manifest: Sequence[AttachmentManifestItem | dict[str, Any]],
++        *,
++        require_complete: bool = True,
++        create: bool = False,
++    ) -> tuple[AttachmentManifestItem, ...]:
++        """Validate while the caller already holds this staging guard."""
++        sid = self._coerce_staging_id(staging_id)
++        items = coerce_manifest_items(
++            manifest,
++            create=create,
++            mime_allowlist=self._mime_allowlist,
++        )
++        return self._validate_staging(
++            sid,
++            items,
++            require_complete=require_complete,
++            create=create,
++        )
++
++    def verify_published(self, storage_key: str, size: int) -> None:
++        """Verify a formal blob for the already-applied attachment check."""
++        if not is_valid_storage_key(storage_key):
++            raise _staging_error(ATTACHMENT_STAGING_INVALID)
++        try:
++            verify_blob(self._layout, storage_key, expected_size=size)
++        except AttachmentStorageError as exc:
++            raise _staging_error(exc.code) from exc
++
++    # ------------------------------------------------------------- activity
++    def staging_activity_at(self, staging_id: str | uuid.UUID | Path) -> datetime | None:
++        sid = self._coerce_staging_id(staging_id)
++        staging_dir = self._staging_dir(sid)
++        if not staging_dir.exists():
++            raise _staging_error(ATTACHMENT_STAGING_MISSING)
++        self._assert_real_directory(staging_dir, root=self.staging_root)
++        return self._activity_at(staging_dir)
++
++    # --------------------------------------------------------------- discard
++    def discard_committed(
++        self, staging_id: str | uuid.UUID | Path, *, review_id: uuid.UUID | str | None = None
++    ) -> bool:
++        _ = review_id
++        return self._discard(staging_id)
++
++    def discard_rejected(
++        self, staging_id: str | uuid.UUID | Path, *, review_id: uuid.UUID | str | None = None
++    ) -> bool:
++        _ = review_id
++        return self._discard(staging_id)
++
++    def sweep_candidate(
++        self,
++        staging_id: str | uuid.UUID | Path,
++        *,
++        now: datetime | None = None,
++        pending_staging_ids: Collection[str] | None = None,
++    ) -> SweepDecision:
++        sid = self._coerce_staging_id(staging_id)
++        staging_dir = self._staging_dir(sid)
++        if not staging_dir.exists():
++            return SweepDecision(False, "missing", None)
++        try:
++            self._assert_real_directory(staging_dir, root=self.staging_root)
++        except AttachmentStagingError:
++            return SweepDecision(False, "unsafe_path", None)
++        with self.staging_guard(sid):
++            refs = (
++                set(pending_staging_ids)
++                if pending_staging_ids is not None
++                else self.pending_staging_ids()
++            )
++            if refs is None:
++                return SweepDecision(False, "pending_manifest_malformed", None)
++            if str(sid) in refs:
++                return SweepDecision(False, "active_pending", None)
++            activity = self._activity_at(staging_dir)
++            if activity is None:
++                # Only a genuinely empty directory may use its own mtime; a
++                # non-empty staging always relies on markers/ordinary files.
++                try:
++                    if any(staging_dir.iterdir()):
++                        return SweepDecision(False, "untrusted_activity", None)
++                    info = staging_dir.lstat()
++                except OSError:
++                    return SweepDecision(False, "unreadable", None)
++                activity = datetime.fromtimestamp(info.st_mtime, UTC)
++                reason = "empty_directory"
++            else:
++                reason = "activity"
++            current = _utc(now or self._now())
++            if activity > current:
++                return SweepDecision(False, "future_activity", activity)
++            if current - activity < self._grace:
++                return SweepDecision(False, "grace", activity)
++            return SweepDecision(True, reason, activity)
++
++    def pending_staging_ids(self) -> set[str] | None:
++        """Return pending staging ids; ``None`` means fail-closed.
++
++        A service without a ``session_factory`` cannot prove that a directory
++        is unreferenced.  Returning ``None`` (rather than an empty set) keeps
++        both discard and sweep conservative instead of deleting live staging.
++        """
++        if self._session_factory is None:
++            return None
++        session = None
++        try:
++            session = self._session_factory()
++            rows = session.scalars(
++                select(ReviewRequestORM).where(ReviewRequestORM.status == "pending")
++            )
++            refs: set[str] = set()
++            for row in rows:
++                try:
++                    payload = json.loads(row.payload or "{}")
++                except (TypeError, json.JSONDecodeError):
++                    return None
++                if not isinstance(payload, dict):
++                    return None
++                if IMPORT_ENVELOPE_KEY not in payload:
++                    continue
++                try:
++                    envelope = ImportEnvelope.from_review_payload(payload)
++                except Exception:
++                    return None
++                if envelope is None:
++                    continue
++                if not envelope.attachments:
++                    continue
++                try:
++                    items = coerce_manifest_items(envelope.attachments)
++                except AttachmentStagingError:
++                    return None
++                staging_ids = {item.staging_id for item in items}
++                if len(staging_ids) != 1:
++                    return None
++                refs.update(staging_ids)
++            return refs
++        except Exception:
++            return None
++        finally:
++            if session is not None:
++                session.close()
++
++    # --------------------------------------------------------------- helpers
++    def _ensure_runtime(self) -> None:
++        try:
++            ensure_runtime(self._layout)
++        except (AttachmentStorageError, StorageRootError) as exc:
++            code = getattr(exc, "code", ATTACHMENT_STORAGE_UNAVAILABLE)
++            raise _staging_error(code) from exc
++        storage = Path(self._layout.storage_root)
++        staging = Path(self._layout.staging_root)
++        roots = (storage, staging, Path(self._layout.quarantine_dir))
++        try:
++            devices = {path.stat().st_dev for path in roots}
++        except OSError as exc:
++            raise _staging_error(ATTACHMENT_STORAGE_UNAVAILABLE) from exc
++        if len(devices) > 1:
++            raise _staging_error(ATTACHMENT_STORAGE_CROSS_VOLUME)
++        try:
++            storage.relative_to(staging)
++            overlap = True
++        except ValueError:
++            overlap = False
++        try:
++            staging.relative_to(storage)
++            overlap = True
++        except ValueError:
++            pass
++        if overlap or storage == staging:
++            raise _staging_error(
++                ATTACHMENT_STAGING_INVALID, "formal storage and staging overlap"
++            )
++
++    def _coerce_staging_id(
++        self, value: str | uuid.UUID | Path
++    ) -> uuid.UUID:
++        if isinstance(value, Path):
++            try:
++                relative = value.relative_to(self.staging_root)
++            except ValueError:
++                raise _staging_error(
++                    ATTACHMENT_STAGING_INVALID, "staging path outside root"
++                ) from None
++            if len(relative.parts) != 1:
++                raise _staging_error(
++                    ATTACHMENT_STAGING_INVALID, "invalid staging path depth"
++                )
++            return validate_staging_id(relative.name)
++        return validate_staging_id(value)
++
++    def _staging_dir(self, sid: uuid.UUID) -> Path:
++        return self.staging_root / str(sid)
++
++    def _assert_real_directory(self, path: Path, *, root: Path) -> None:
++        try:
++            root_info = root.lstat()
++        except FileNotFoundError:
++            raise _staging_error(ATTACHMENT_STAGING_MISSING) from None
++        if _is_link_info(root_info) or not stat.S_ISDIR(root_info.st_mode):
++            raise _staging_error(ATTACHMENT_STORAGE_UNAVAILABLE, "unsafe staging root")
++        path = Path(path)
++        try:
++            relative = path.relative_to(root)
++        except ValueError:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "outside staging root") from None
++        if ".." in relative.parts:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "traversal")
++        current = root
++        try:
++            for part in relative.parts:
++                current = current / part
++                info = current.lstat()
++                if _is_link_info(info):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "link/reparse in staging path"
++                    )
++                if not stat.S_ISDIR(info.st_mode):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "non-directory in staging path"
++                    )
++            if current.stat().st_dev != Path(self._layout.storage_root).stat().st_dev:
++                raise _staging_error(ATTACHMENT_STORAGE_CROSS_VOLUME)
++        except FileNotFoundError:
++            raise _staging_error(ATTACHMENT_STAGING_MISSING) from None
++        except OSError as exc:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++
++    def _write_marker(self, path: Path, *, exclusive: bool) -> None:
++        if not exclusive and path.exists():
++            try:
++                if _is_link_info(path.lstat()):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "link/reparse marker"
++                    )
++            except OSError as exc:
++                raise _staging_error(ATTACHMENT_WRITE_FAILED) from exc
++        flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
++        flags |= os.O_EXCL if exclusive else os.O_TRUNC
++        flags |= getattr(os, "O_NOFOLLOW", 0)
++        try:
++            fd = os.open(path, flags, 0o600)
++            try:
++                os.fsync(fd)
++            finally:
++                os.close(fd)
++        except OSError as exc:
++            raise _staging_error(ATTACHMENT_WRITE_FAILED) from exc
++
++    def _write_blob(self, path: Path, data: bytes, *, staging_root: Path) -> None:
++        flags = (
++            os.O_WRONLY
++            | os.O_CREAT
++            | os.O_EXCL
++            | getattr(os, "O_BINARY", 0)
++            | getattr(os, "O_NOFOLLOW", 0)
++        )
++        try:
++            fd = os.open(path, flags, 0o600)
++            try:
++                write_all(fd, memoryview(data))
++                os.fsync(fd)
++            finally:
++                os.close(fd)
++            info = path.lstat()
++            if _is_link_info(info) or not stat.S_ISREG(info.st_mode):
++                raise _staging_error(ATTACHMENT_WRITE_FAILED)
++            if info.st_size != len(data):
++                raise _staging_error(ATTACHMENT_WRITE_FAILED)
++            if info.st_dev != staging_root.stat().st_dev:
++                raise _staging_error(ATTACHMENT_STORAGE_CROSS_VOLUME)
++        except AttachmentStagingError:
++            raise
++        except OSError as exc:
++            raise _staging_error(ATTACHMENT_WRITE_FAILED) from exc
++
++    def _write_complete(self, path: Path, marker: _CompleteMarker) -> None:
++        payload = json.dumps(
++            marker.model_dump(mode="json"),
++            ensure_ascii=False,
++            sort_keys=True,
++            separators=(",", ":"),
++        ).encode("utf-8")
++        temp = path.parent / f".complete.{uuid.uuid4().hex}.tmp"
++        try:
++            fd = os.open(
++                temp,
++                os.O_WRONLY
++                | os.O_CREAT
++                | os.O_EXCL
++                | getattr(os, "O_BINARY", 0)
++                | getattr(os, "O_NOFOLLOW", 0),
++                0o600,
++            )
++            try:
++                write_all(fd, memoryview(payload))
++                os.fsync(fd)
++            finally:
++                os.close(fd)
++            os.replace(temp, path)
++            self._sync_directory(path.parent)
++        except OSError as exc:
++            with contextlib.suppress(OSError):
++                temp.unlink()
++            raise _staging_error(ATTACHMENT_WRITE_FAILED) from exc
++
++    def _validate_staging(
++        self,
++        sid: uuid.UUID,
++        items: Sequence[AttachmentManifestItem],
++        *,
++        require_complete: bool,
++        create: bool,
++        check_activity: bool = True,
++    ) -> tuple[AttachmentManifestItem, ...]:
++        if len(items) > self._max_count:
++            raise _staging_error(ATTACHMENT_COUNT_EXCEEDED)
++        if any(item.size > self._max_file_bytes for item in items):
++            raise _staging_error(ATTACHMENT_TOO_LARGE)
++        if sum(item.size for item in items) > self._max_total:
++            raise _staging_error(ATTACHMENT_TOTAL_TOO_LARGE)
++        staging_dir = self._staging_dir(sid)
++        if not staging_dir.exists():
++            raise _staging_error(ATTACHMENT_STAGING_MISSING)
++        self._assert_real_directory(staging_dir, root=self.staging_root)
++
++        complete_path = staging_dir / _COMPLETE
++        if require_complete and not complete_path.exists():
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "missing .complete")
++        marker: _CompleteMarker | None = None
++        if complete_path.exists():
++            try:
++                info = complete_path.lstat()
++                if _is_link_info(info) or not stat.S_ISREG(info.st_mode):
++                    raise ValueError("not a regular marker")
++                raw = complete_path.read_bytes()
++                marker = _CompleteMarker.model_validate_json(raw)
++            except (OSError, ValueError, ValidationError) as exc:
++                raise _staging_error(
++                    ATTACHMENT_STAGING_INVALID, "invalid .complete"
++                ) from exc
++            if marker.staging_id != str(sid):
++                raise _staging_error(ATTACHMENT_STAGING_INVALID, "staging id mismatch")
++            if marker.file_count != len(items):
++                raise _staging_error(ATTACHMENT_STAGING_INVALID, "file count mismatch")
++            if marker.total_bytes != sum(item.size for item in items):
++                raise _staging_error(ATTACHMENT_STAGING_INVALID, "total mismatch")
++
++        expected: set[str] = set()
++        for item in items:
++            if item.staging_id != str(sid):
++                raise _staging_error(ATTACHMENT_STAGING_INVALID, "manifest id mismatch")
++            expected.add(item.blob)
++            blob_path = staging_dir / item.blob
++            try:
++                if blob_path.parent != staging_dir / _BLOBS:
++                    raise ValueError("blob outside blobs/")
++                info = blob_path.lstat()
++                if _is_link_info(info) or not stat.S_ISREG(info.st_mode):
++                    raise ValueError("not a regular blob")
++                if info.st_size != item.size:
++                    raise ValueError("size mismatch")
++                if info.st_dev != Path(self._layout.storage_root).stat().st_dev:
++                    raise ValueError("cross volume")
++                data = blob_path.read_bytes()
++            except FileNotFoundError:
++                raise _staging_error(
++                    ATTACHMENT_STAGING_INVALID, "missing blob"
++                ) from None
++            except (OSError, ValueError) as exc:
++                raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++            if sha256_bytes(data) != item.storage_key:
++                raise _staging_error(ATTACHMENT_STAGING_INVALID, "hash mismatch")
++            if item.mime not in self._mime_allowlist:
++                raise _staging_error(ATTACHMENT_MIME_UNSUPPORTED)
++            _validate_content(data, item.mime)
++
++        actual = self._regular_relative_files(staging_dir)
++        allowed = expected | {_CREATING, _ACTIVITY, _COMPLETE}
++        if actual - allowed:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "unexpected staging file")
++        missing = expected - actual
++        if missing:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "missing staging blob")
++        directories = self._relative_directories(staging_dir)
++        if directories - {_BLOBS}:
++            raise _staging_error(
++                ATTACHMENT_STAGING_INVALID, "unexpected staging directory"
++            )
++        if check_activity and _ACTIVITY not in actual:
++            raise _staging_error(ATTACHMENT_STAGING_INVALID, "missing .activity")
++        return tuple(items)
++
++    def _regular_relative_files(self, staging_dir: Path) -> set[str]:
++        found: set[str] = set()
++        stack = [staging_dir]
++        while stack:
++            current = stack.pop()
++            try:
++                entries = list(os.scandir(current))
++            except OSError as exc:
++                raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++            for entry in entries:
++                try:
++                    info = entry.stat(follow_symlinks=False)
++                except OSError as exc:
++                    raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++                if _is_link_info(info):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "link/reparse in staging"
++                    )
++                if stat.S_ISDIR(info.st_mode):
++                    stack.append(Path(entry.path))
++                elif stat.S_ISREG(info.st_mode):
++                    found.add(Path(entry.path).relative_to(staging_dir).as_posix())
++                else:
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "unknown staging entry"
++                    )
++        return found
++
++    def _relative_directories(self, staging_dir: Path) -> set[str]:
++        found: set[str] = set()
++        stack = [staging_dir]
++        while stack:
++            current = stack.pop()
++            try:
++                entries = list(os.scandir(current))
++            except OSError as exc:
++                raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++            for entry in entries:
++                try:
++                    info = entry.stat(follow_symlinks=False)
++                except OSError as exc:
++                    raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++                if _is_link_info(info):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "link/reparse in staging"
++                    )
++                if stat.S_ISDIR(info.st_mode):
++                    path = Path(entry.path)
++                    found.add(path.relative_to(staging_dir).as_posix())
++                    stack.append(path)
++        return found
++
++    def _activity_at(self, staging_dir: Path) -> datetime | None:
++        found: list[datetime] = []
++        stack = [staging_dir]
++        while stack:
++            current = stack.pop()
++            try:
++                entries = list(os.scandir(current))
++            except OSError as exc:
++                raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++            for entry in entries:
++                try:
++                    info = entry.stat(follow_symlinks=False)
++                except OSError as exc:
++                    raise _staging_error(ATTACHMENT_STAGING_INVALID) from exc
++                if _is_link_info(info):
++                    raise _staging_error(
++                        ATTACHMENT_STAGING_INVALID, "link/reparse in staging"
++                    )
++                if stat.S_ISDIR(info.st_mode):
++                    stack.append(Path(entry.path))
++                elif stat.S_ISREG(info.st_mode):
++                    found.append(datetime.fromtimestamp(info.st_mtime, UTC))
++        if not found:
++            return None
++        return max(found)
++
++    def _cleanup_incomplete(self, staging_dir: Path) -> bool:
++        if not staging_dir.exists():
++            return True
++        complete = staging_dir / _COMPLETE
++        with contextlib.suppress(OSError):
++            if complete.exists() and not complete.is_symlink():
++                complete.unlink()
++        with contextlib.suppress(Exception):
++            return self._remove_tree(staging_dir)
++        return False
++
++    def _discard(self, staging_id: str | uuid.UUID | Path) -> bool:
++        sid = self._coerce_staging_id(staging_id)
++        staging_dir = self._staging_dir(sid)
++        if not staging_dir.exists():
++            return False
++        try:
++            self._assert_real_directory(staging_dir, root=self.staging_root)
++        except AttachmentStagingError:
++            return False
++        with self.staging_guard(sid):
++            refs = self.pending_staging_ids()
++            if refs is None:
++                return False
++            if str(sid) in refs:
++                return False
++            return self._remove_tree(staging_dir)
++
++    def _remove_tree(self, staging_dir: Path) -> bool:
++        try:
++            self._assert_real_directory(staging_dir, root=self.staging_root)
++        except AttachmentStagingError:
++            return False
++
++        def remove(current: Path) -> bool:
++            try:
++                entries = list(os.scandir(current))
++            except OSError:
++                return False
++            for entry in entries:
++                try:
++                    info = entry.stat(follow_symlinks=False)
++                except OSError:
++                    return False
++                if _is_link_info(info):
++                    return False
++                if stat.S_ISDIR(info.st_mode):
++                    if not remove(Path(entry.path)):
++                        return False
++                elif stat.S_ISREG(info.st_mode):
++                    try:
++                        os.unlink(entry.path)
++                    except OSError:
++                        return False
++                else:
++                    return False
++            try:
++                os.rmdir(current)
++            except OSError:
++                return False
++            return True
++
++        return remove(staging_dir)
+\ No newline at end of file
+diff --git a/backend/tests/test_attachment_staging.py b/backend/tests/test_attachment_staging.py
+new file mode 100644
+index 0000000..e64cb83
+--- /dev/null
++++ b/backend/tests/test_attachment_staging.py
+@@ -0,0 +1,1280 @@
++"""B3-T01 staging/manifest acceptance on real tmp filesystem + real SQLite.
++
++Covers the frozen B3-T01 areas without mocking the filesystem or database:
++manifest round-trip, schema bounds, duplicate/unsafe ZIP paths, ownership,
++missing/corrupt staging, activity time, Active attachment-only rejection,
++pending zero formal refs, reuse/conflict, archived target, and JSON entry
++compatibility.  B3-T02/B4/B5 behaviour is intentionally not exercised.
++"""
++
++from __future__ import annotations
++
++import base64
++import contextlib
++import json
++import os
++import struct
++import time
++import uuid
++import zipfile
++import zlib
++from dataclasses import replace
++from io import BytesIO
++from pathlib import Path
++from uuid import UUID
++
++import pytest
++from fastapi.testclient import TestClient
++from pydantic import ValidationError
++from sqlalchemy import event, func, select
++
++from app.db.session import get_session_factory
++from app.models import AttachmentORM, KnowledgeItemORM, ReviewRequestORM
++from app.services.attachment_staging import (
++    ATTACHMENT_CONTENT_MISMATCH,
++    ATTACHMENT_EMPTY,
++    ATTACHMENT_IMPORT_UNSUPPORTED,
++    ATTACHMENT_MANIFEST_CORRUPTED,
++    ATTACHMENT_MANIFEST_DUPLICATE,
++    ATTACHMENT_ONLY_IMPORT_UNSUPPORTED,
++    ATTACHMENT_STAGING_INVALID,
++    ATTACHMENT_STAGING_MISSING,
++    ATTACHMENT_STORAGE_UNAVAILABLE,
++    ATTACHMENT_WRITE_FAILED,
++    IMPORT_ARCHIVE_INVALID,
++    AttachmentManifestItem,
++    AttachmentStagingError,
++    AttachmentStagingService,
++    logical_manifest_set,
++    manifest_digest,
++)
++from app.services.markdown import MarkdownItemRepository
++from knowledge_core.domain.entities import KnowledgeStatus
++from knowledge_core.markdown.import_report import ImportEnvelope
++
++PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"staging-png"
++PNG2 = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"staging-png-2"
++PDF = b"%PDF-1.7\n" + b"staging-pdf"
++
++
++def _b64(data: bytes) -> str:
++    return base64.b64encode(data).decode("ascii")
++
++
++def _zip(files: list[tuple[str, bytes]]) -> bytes:
++    buffer = BytesIO()
++    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
++        for name, data in files:
++            archive.writestr(name, data)
++    return buffer.getvalue()
++
++
++def _raw_single_entry_zip(
++    name: bytes,
++    data: bytes,
++    *,
++    method: int = zipfile.ZIP_STORED,
++    compressed: bytes | None = None,
++    crc: int | None = None,
++) -> bytes:
++    """Build a one-entry ZIP without ``zipfile`` normalization.
++
++    This lets tests keep a raw NUL in the central-directory name and inject
++    corrupt CRC / deflate streams that ``zipfile`` would otherwise repair or
++    truncate on write.
++    """
++    payload = data if compressed is None else compressed
++    checksum = zlib.crc32(data) if crc is None else crc
++    local = struct.pack(
++        "<IHHHHHIIIHH",
++        0x04034B50,
++        20,
++        0,
++        method,
++        0,
++        0,
++        checksum,
++        len(payload),
++        len(data),
++        len(name),
++        0,
++    ) + name + payload
++    central = struct.pack(
++        "<IHHHHHHIIIHHHHHII",
++        0x02014B50,
++        20,
++        20,
++        0,
++        method,
++        0,
++        0,
++        checksum,
++        len(payload),
++        len(data),
++        len(name),
++        0,
++        0,
++        0,
++        0,
++        0,
++        0,
++    ) + name
++    eocd = struct.pack(
++        "<IHHHHIIH",
++        0x06054B50,
++        0,
++        0,
++        1,
++        1,
++        len(central),
++        len(local),
++        0,
++    )
++    return local + central + eocd
++
++
++def _markdown(title: str, body: str) -> bytes:
++    return f"---\ntitle: {title}\n---\n{body}".encode()
++
++
++def _attachment_zip(
++    body: str = "新正文",
++    *,
++    title: str = "附件文档",
++    attachment: tuple[str, bytes] = ("attachments/design.png", PNG),
++) -> bytes:
++    return _zip([("doc.md", _markdown(title, body)), attachment])
++
++
++def _staging(client: TestClient, settings) -> AttachmentStagingService:
++    return AttachmentStagingService(
++        client.app.state.attachment_storage,
++        max_file_bytes=settings.attachment_max_bytes,
++        max_attachment_count=settings.attachment_import_max_count,
++        max_total_bytes=settings.attachment_import_max_total_bytes,
++        mime_allowlist=settings.attachment_mime_allowlist,
++        staging_grace_seconds=settings.staging_grace_seconds,
++        session_factory=get_session_factory(),
++    )
++
++
++def _staging_dirs(client: TestClient) -> list[Path]:
++    root = Path(client.app.state.attachment_storage.staging_root)
++    if not root.exists():
++        return []
++    return [path for path in root.iterdir() if path.is_dir()]
++
++
++def _attachment_count() -> int:
++    session = get_session_factory()()
++    try:
++        return int(
++            session.scalar(select(func.count()).select_from(AttachmentORM)) or 0
++        )
++    finally:
++        session.close()
++
++
++def _reviews() -> list[ReviewRequestORM]:
++    session = get_session_factory()()
++    try:
++        return list(session.scalars(select(ReviewRequestORM).order_by(ReviewRequestORM.id)))
++    finally:
++        session.close()
++
++
++def _item(client: TestClient, *, title: str = "活跃条目", content: str = "旧正文",
++          status: str = KnowledgeStatus.ACTIVE.value) -> str:
++    response = client.post("/api/knowledge", json={"title": title, "content": content})
++    assert response.status_code == 201
++    item_id = response.json()["id"]
++    session = get_session_factory()()
++    try:
++        row = session.get(KnowledgeItemORM, item_id)
++        assert row is not None
++        row.status = status
++        session.commit()
++    finally:
++        session.close()
++    return item_id
++
++
++def _import_zip(
++    client: TestClient,
++    payload: bytes,
++    *,
++    target: str | None = None,
++    batch: bool = False,
++    extra: dict | None = None,
++):
++    body = {"archive_base64": _b64(payload)}
++    if target is not None:
++        body["target_item_id"] = target
++    if extra:
++        body.update(extra)
++    path = "/api/knowledge/import/batch" if batch else "/api/knowledge/import"
++    return client.post(path, json=body)
++
++
++def _manifest_item(**overrides) -> dict:
++    value = {
++        "schema_version": 1,
++        "staging_id": str(uuid.uuid4()),
++        "ordinal": 1,
++        "blob": "blobs/000001.bin",
++        "filename": "a.png",
++        "mime": "image/png",
++        "size": 1,
++        "storage_key": "a" * 64,
++    }
++    value.update(overrides)
++    return value
++
++
++class TestManifestSchema:
++    def test_manifest_round_trip_and_complete_marker(self, client, settings):
++        service = _staging(client, settings)
++        parsed = service.inspect_zip(_attachment_zip())
++        assert parsed.has_attachments
++        staged = service.create_from_zip(parsed, document_path="doc.md")
++
++        assert staged.directory == Path(service.staging_root) / str(staged.staging_id)
++        assert (staged.directory / ".creating").is_file()
++        assert (staged.directory / ".activity").is_file()
++        complete = json.loads((staged.directory / ".complete").read_text("utf-8"))
++        assert complete == {
++            "completed_at": complete["completed_at"],
++            "file_count": 1,
++            "schema_version": 1,
++            "staging_id": str(staged.staging_id),
++            "total_bytes": len(PNG),
++        }
++        assert staged.manifest[0].blob == "blobs/000001.bin"
++        assert staged.manifest[0].storage_key == staged.manifest[0].storage_key.lower()
++        assert staged.manifest[0].size == len(PNG)
++        assert (staged.directory / staged.manifest[0].blob).read_bytes() == PNG
++        validated = service.validate_manifest(
++            staged.staging_id, staged.manifest_dicts
++        )
++        assert validated == staged.manifest
++        assert manifest_digest(validated) == manifest_digest(staged.manifest_dicts)
++        assert logical_manifest_set(validated) == staged.logical_set
++        assert service.staging_activity_at(staged.staging_id) is not None
++        assert _attachment_count() == 0
++
++    def test_unknown_fields_and_strict_bounds(self):
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(unexpected="x")
++            )
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(_manifest_item(ordinal=True))
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(_manifest_item(size=0))
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(size=10 * 1024 * 1024 + 1)
++            )
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(staging_id=str(uuid.uuid4()).upper())
++            )
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(filename="../evil.png")
++            )
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(mime="image/svg+xml")
++            )
++        with pytest.raises(ValidationError):
++            AttachmentManifestItem.model_validate(
++                _manifest_item(blob="blobs/000002.bin")
++            )
++
++    def test_duplicate_storage_key_rejected_before_staging(self, client, settings):
++        service = _staging(client, settings)
++        payload = _zip(
++            [
++                ("doc.md", _markdown("重复", "正文")),
++                ("attachments/a.png", PNG),
++                ("attachments/b.png", PNG),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.create_from_zip(payload)
++        assert exc.value.code == ATTACHMENT_MANIFEST_DUPLICATE
++        assert _staging_dirs(client) == []
++
++    def test_validate_manifest_duplicate_ordinal_key_and_staging_id(
++        self, client, settings
++    ):
++        service = _staging(client, settings)
++        payload = _zip(
++            [
++                ("doc.md", _markdown("多附件", "正文")),
++                ("attachments/a.png", PNG),
++                ("attachments/b.pdf", PDF),
++            ]
++        )
++        staged = service.create_from_zip(payload)
++        first, second = staged.manifest
++        duplicate_ordinal = [
++            first.model_dump(mode="json"),
++            second.model_dump(mode="json"),
++        ]
++        duplicate_ordinal[1]["ordinal"] = 1
++        duplicate_ordinal[1]["blob"] = "blobs/000001.bin"
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, duplicate_ordinal)
++        assert exc.value.code == ATTACHMENT_MANIFEST_CORRUPTED
++
++        duplicate_key = [
++            first.model_dump(mode="json"),
++            second.model_dump(mode="json"),
++        ]
++        duplicate_key[1]["storage_key"] = first.storage_key
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, duplicate_key)
++        assert exc.value.code == ATTACHMENT_MANIFEST_DUPLICATE
++
++        wrong_id = str(uuid.uuid4())
++        wrong_staging = [
++            first.model_dump(mode="json"),
++            second.model_dump(mode="json"),
++        ]
++        for item in wrong_staging:
++            item["staging_id"] = wrong_id
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, wrong_staging)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++
++class TestZipSafety:
++    @pytest.mark.parametrize(
++        "unsafe",
++        [
++            "../evil.png",
++            "/evil.png",
++            "//server/share/evil.png",
++            "C:/evil.png",
++            "attachments/a:b.png",
++            "attachments/../evil.png",
++        ],
++    )
++    def test_zip_traversal_absolute_unc_ads_backslash_rejected(
++        self, client, settings, unsafe
++    ):
++        service = _staging(client, settings)
++        payload = _zip(
++            [
++                ("doc.md", _markdown("恶意路径", "正文")),
++                (unsafe, PNG),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(payload)
++        assert exc.value.code == "IMPORT_ARCHIVE_INVALID"
++        assert _staging_dirs(client) == []
++
++    def test_duplicate_exact_and_case_normalized_paths_rejected(self, client, settings):
++        service = _staging(client, settings)
++        duplicate = _zip(
++            [
++                ("doc.md", _markdown("重复路径", "正文")),
++                ("attachments/a.png", PNG),
++                ("attachments/a.png", PNG2),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(duplicate)
++        assert exc.value.code == "IMPORT_ARCHIVE_INVALID"
++
++        case_collision = _zip(
++            [
++                ("doc.md", _markdown("大小写", "正文")),
++                ("attachments/A.png", PNG),
++                ("attachments/a.png", PNG2),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(case_collision)
++        assert exc.value.code == "IMPORT_ARCHIVE_INVALID"
++
++    def test_ambiguous_ownership_is_rejected_whole(self, client, settings):
++        service = _staging(client, settings)
++        payload = _zip(
++            [
++                ("a.md", _markdown("A", "A正文")),
++                ("b.md", _markdown("B", "B正文")),
++                ("attachments/design.png", PNG),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(payload)
++        assert exc.value.code == ATTACHMENT_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++
++    def test_attachment_count_and_zip_bomb_limits(self, client, settings):
++        service = _staging(client, settings)
++        many = [
++            ("doc.md", _markdown("过多", "正文")),
++            *[
++                (f"attachments/{index:03d}.png", PNG + bytes([index]))
++                for index in range(101)
++            ],
++        ]
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(_zip(many))
++        assert exc.value.code == "ATTACHMENT_COUNT_EXCEEDED"
++
++        # Highly compressible 2 MiB text exceeds the frozen ratio guard and is
++        # rejected from metadata before extraction.
++        bomb = _zip(
++            [
++                ("doc.md", _markdown("炸弹", "正文")),
++                ("attachments/bomb.txt", b"a" * (2 * 1024 * 1024)),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(bomb)
++        assert exc.value.code == "IMPORT_ARCHIVE_INVALID"
++
++    def test_mime_mismatch_rejected_before_staging(self, client, settings):
++        service = _staging(client, settings)
++        payload = _zip(
++            [
++                ("doc.md", _markdown("伪装", "正文")),
++                ("attachments/fake.png", PDF),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.create_from_zip(payload)
++        assert exc.value.code == ATTACHMENT_CONTENT_MISMATCH
++        assert _staging_dirs(client) == []
++
++
++class TestStagingValidation:
++    def _staged(self, client, settings):
++        service = _staging(client, settings)
++        staged = service.create_from_zip(_attachment_zip())
++        return service, staged
++
++    def test_missing_blob_and_missing_complete_are_invalid(self, client, settings):
++        service, staged = self._staged(client, settings)
++        (staged.directory / staged.manifest[0].blob).unlink()
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++        service, staged = self._staged(client, settings)
++        (staged.directory / ".complete").unlink()
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++    def test_hash_mismatch_and_unexpected_file_are_invalid(self, client, settings):
++        service, staged = self._staged(client, settings)
++        blob = staged.directory / staged.manifest[0].blob
++        blob.write_bytes(b"x" * len(PNG))
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++        service, staged = self._staged(client, settings)
++        (staged.directory / "extra.bin").write_bytes(b"extra")
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++    def test_activity_uses_marker_and_file_mtime_not_root(self, client, settings):
++        service, staged = self._staged(client, settings)
++        now = time.time()
++        blob = staged.directory / staged.manifest[0].blob
++        old = now - 3600
++        os.utime(blob, (old, old))
++        os.utime(staged.directory / ".activity", (old, old))
++        os.utime(staged.directory / ".creating", (old, old))
++        os.utime(staged.directory / ".complete", (old, old))
++        root_old = now - 10 * 86400
++        os.utime(staged.directory, (root_old, root_old))
++        activity = service.staging_activity_at(staged.staging_id)
++        assert activity is not None
++        assert activity.timestamp() >= old - 2
++        assert activity.timestamp() > root_old
++
++    def test_symlink_or_junction_in_staging_rejected(self, client, settings):
++        service, staged = self._staged(client, settings)
++        target_dir = staged.directory / "evil-target"
++        target_dir.mkdir()
++        (target_dir / "payload.bin").write_bytes(b"outside")
++        link = staged.directory / "blobs" / "link"
++        created = "symlink"
++        try:
++            os.symlink(target_dir, link, target_is_directory=True)
++        except OSError:
++            import subprocess
++
++            result = subprocess.run(
++                ["cmd", "/c", "mklink", "/J", str(link), str(target_dir)],
++                capture_output=True,
++                text=True,
++                check=False,
++            )
++            if result.returncode != 0:
++                pytest.skip("platform denies symlink and junction creation")
++            created = "junction"
++        try:
++            with pytest.raises(AttachmentStagingError) as exc:
++                service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++            assert exc.value.code == ATTACHMENT_STAGING_INVALID
++        finally:
++            if link.exists() or link.is_symlink():
++                with contextlib.suppress(OSError):
++                    os.rmdir(link)
++        assert created in {"symlink", "junction"}
++
++    def test_empty_extra_directory_is_invalid(self, client, settings):
++        service, staged = self._staged(client, settings)
++        (staged.directory / "unexpected-empty-dir").mkdir()
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(staged.staging_id, staged.manifest_dicts)
++        assert exc.value.code == ATTACHMENT_STAGING_INVALID
++
++    def test_overlapping_roots_and_invalid_ids_rejected(self, client, settings):
++        layout = client.app.state.attachment_storage
++        overlapping = replace(layout, staging_root=layout.storage_root)
++        service = AttachmentStagingService(
++            overlapping, session_factory=get_session_factory()
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.create_from_zip(_attachment_zip())
++        assert exc.value.code in {
++            ATTACHMENT_STAGING_INVALID,
++            ATTACHMENT_STORAGE_UNAVAILABLE,
++        }
++        with pytest.raises(AttachmentStagingError):
++            service.staging_activity_at("../../outside")
++
++
++class TestActiveImport:
++    def test_active_attachment_only_rejected_with_zero_staging(self, client, settings):
++        item_id = _item(client, content="相同正文")
++        payload = _attachment_zip(body="相同正文", title="活跃条目")
++        response = _import_zip(client, payload, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_ONLY_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++        assert _attachment_count() == 0
++
++    def test_active_content_change_creates_pending_manifest_zero_formal_refs(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        response = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert response.status_code == 202, response.text
++        body = response.json()
++        assert body["pending_review"] == 1
++        assert body["items"][0]["status"] == "pending_review"
++
++        reviews = _reviews()
++        assert len(reviews) == 1
++        payload = json.loads(reviews[0].payload)
++        envelope = ImportEnvelope.from_review_payload(payload)
++        assert envelope is not None
++        assert len(envelope.attachments) == 1
++        manifest = AttachmentManifestItem.model_validate(envelope.attachments[0])
++        staging_dir = Path(client.app.state.attachment_storage.staging_root) / manifest.staging_id
++        assert staging_dir.is_dir()
++        assert (staging_dir / ".complete").is_file()
++        assert _attachment_count() == 0
++        service = _staging(client, settings)
++        assert service.validate_manifest(manifest.staging_id, envelope.attachments)
++
++        session = get_session_factory()()
++        try:
++            row = MarkdownItemRepository(session).get(UUID(item_id))
++        finally:
++            session.close()
++        assert row is not None
++        assert row.title == "活跃条目"
++        assert row.content == "旧正文"
++
++    def test_same_source_same_attachment_set_reuses_pending(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        payload = _attachment_zip(body="新正文")
++        first = _import_zip(client, payload, target=item_id)
++        assert first.status_code == 202, first.text
++        first_review = _reviews()[0]
++        first_payload = json.loads(first_review.payload)
++        first_staging_id = first_payload["__a1_import"]["attachments"][0]["staging_id"]
++
++        second = _import_zip(client, payload, target=item_id)
++        assert second.status_code == 200, second.text
++        report = second.json()
++        assert report["reused_pending"] == 1
++        assert report["items"][0]["status"] == "reused_pending"
++        assert "attachments_pending_reused" in report["items"][0]["warnings"]
++        assert len(_reviews()) == 1
++        assert len(_staging_dirs(client)) == 1
++        second_payload = json.loads(_reviews()[0].payload)
++        assert (
++            second_payload["__a1_import"]["attachments"][0]["staging_id"]
++            == first_staging_id
++        )
++
++    def test_reuse_pending_with_invalid_staging_fails_closed(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        payload = _attachment_zip(body="新正文")
++        first = _import_zip(client, payload, target=item_id)
++        assert first.status_code == 202, first.text
++        review = _reviews()[0]
++        envelope_payload = json.loads(review.payload)
++        staging_id = envelope_payload["__a1_import"]["attachments"][0]["staging_id"]
++        staging_dir = Path(client.app.state.attachment_storage.staging_root) / staging_id
++        (staging_dir / ".complete").unlink()
++
++        second = _import_zip(client, payload, target=item_id)
++        assert second.status_code == 409
++        assert second.json()["detail"] == ATTACHMENT_STAGING_INVALID
++        assert len(_reviews()) == 1
++        assert len(_staging_dirs(client)) == 1
++
++    def test_different_attachment_set_conflicts_without_new_staging(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        first = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert first.status_code == 202, first.text
++        second_payload = _attachment_zip(
++            body="新正文",
++            attachment=("attachments/design.pdf", PDF),
++        )
++        second = _import_zip(client, second_payload, target=item_id)
++        assert second.status_code == 409
++        assert second.json()["detail"] == "SOURCE_HAS_PENDING_IMPORT"
++        assert len(_reviews()) == 1
++        assert len(_staging_dirs(client)) == 1
++        assert _attachment_count() == 0
++
++    def test_zero_document_attachment_zip_is_attachment_only_or_unsupported(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        attachment_only = _zip([("attachments/design.png", PNG)])
++        response = _import_zip(client, attachment_only, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_ONLY_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++
++        response = _import_zip(client, attachment_only)
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++
++    def test_already_applied_same_hash_with_satisfied_attachment_is_skipped(
++        self, client, settings
++    ):
++        text = _markdown("已应用", "已应用正文").decode("utf-8")
++        first = client.post(
++            "/api/knowledge/import",
++            json={"content": text, "filename": "doc.md"},
++        )
++        assert first.status_code == 201, first.text
++        item_id = first.json()["items"][0]["item_id"]
++        session = get_session_factory()()
++        try:
++            row = session.get(KnowledgeItemORM, item_id)
++            assert row is not None
++            row.status = KnowledgeStatus.ACTIVE.value
++            session.commit()
++        finally:
++            session.close()
++        upload = client.post(
++            f"/api/knowledge/{item_id}/attachments",
++            json={
++                "filename": "design.png",
++                "mime": "image/png",
++                "content_base64": _b64(PNG),
++            },
++        )
++        assert upload.status_code in {200, 201}, upload.text
++        response = _import_zip(
++            client,
++            _zip([("doc.md", text.encode()), ("attachments/design.png", PNG)]),
++            target=item_id,
++        )
++        assert response.status_code == 200, response.text
++        body = response.json()
++        assert body["skipped"] == 1
++        assert "attachments_already_satisfied" in body["items"][0]["warnings"]
++        assert _staging_dirs(client) == []
++        assert len(_reviews()) == 0
++
++    def test_pending_with_attachments_rejects_same_hash_empty_set(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        first = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert first.status_code == 202, first.text
++        second = client.post(
++            "/api/knowledge/import",
++            json={
++                "content": _markdown("附件文档", "新正文").decode("utf-8"),
++                "filename": "doc.md",
++                "target_item_id": item_id,
++            },
++        )
++        assert second.status_code == 409
++        assert second.json()["detail"] == "SOURCE_HAS_PENDING_IMPORT"
++        assert len(_reviews()) == 1
++        assert len(_staging_dirs(client)) == 1
++
++    def test_archived_target_with_attachment_zip_rejected(self, client, settings):
++        item_id = _item(
++            client,
++            content="旧正文",
++            status=KnowledgeStatus.ARCHIVED.value,
++        )
++        response = _import_zip(
++            client, _attachment_zip(body="新正文"), target=item_id
++        )
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++
++
++class TestEntryCompatibility:
++    def test_single_and_batch_json_attachment_compatibility(self, client):
++        single = client.post(
++            "/api/knowledge/import",
++            json={
++                "content": "正文",
++                "filename": "a.md",
++                "attachments": [{"filename": "a.png"}],
++            },
++        )
++        assert single.status_code == 400
++        assert single.json()["detail"] == ATTACHMENT_IMPORT_UNSUPPORTED
++
++        batch = client.post(
++            "/api/knowledge/import/batch",
++            json={
++                "documents": [
++                    {
++                        "content": "---\ntitle: 附件\n---\n正文",
++                        "filename": "with-att.md",
++                        "attachments": [{"filename": "a.png"}],
++                    },
++                    {
++                        "content": "---\ntitle: 正常\n---\n正文",
++                        "filename": "ok.md",
++                    },
++                ]
++            },
++        )
++        assert batch.status_code == 200
++        body = batch.json()
++        assert body["unsupported"] == 1
++        assert body["created"] == 1
++        statuses = {item["filename"]: item["status"] for item in body["items"]}
++        assert statuses["with-att.md"] == "unsupported"
++        assert statuses["ok.md"] == "created"
++        assert _staging_dirs(client) == []
++
++        top_level = client.post(
++            "/api/knowledge/import/batch",
++            json={
++                "documents": [
++                    {"content": "---\ntitle: 顶层\n---\n正文", "filename": "top.md"}
++                ],
++                "attachments": [{"filename": "top.png"}],
++            },
++        )
++        assert top_level.status_code == 200
++        assert top_level.json()["unsupported"] == 1
++        assert _staging_dirs(client) == []
++
++    def test_attachment_zip_cannot_borrow_json_attachment_fields(self, client):
++        payload = _attachment_zip()
++        response = client.post(
++            "/api/knowledge/import",
++            json={
++                "archive_base64": _b64(payload),
++                "attachments": [{"filename": "extra.png"}],
++            },
++        )
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_IMPORT_UNSUPPORTED
++        assert _staging_dirs(client) == []
++
++    def test_zip_without_attachments_still_supports_multiple_docs(self, client):
++        payload = _zip(
++            [
++                ("a.md", _markdown("A", "A正文")),
++                ("b.md", _markdown("B", "B正文")),
++            ]
++        )
++        response = _import_zip(client, payload, batch=True)
++        assert response.status_code == 200, response.text
++        assert response.json()["created"] == 2
++
++
++class TestDiscardAndSweep:
++    def test_discard_respects_pending_and_sweep_activity(self, client, settings):
++        item_id = _item(client, content="旧正文")
++        response = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert response.status_code == 202, response.text
++        review = _reviews()[0]
++        payload = json.loads(review.payload)
++        staging_id = payload["__a1_import"]["attachments"][0]["staging_id"]
++        service = _staging(client, settings)
++
++        assert service.discard_rejected(staging_id) is False
++        decision = service.sweep_candidate(staging_id)
++        assert decision.candidate is False
++        assert decision.reason == "active_pending"
++
++        session = get_session_factory()()
++        try:
++            row = session.get(ReviewRequestORM, review.id)
++            assert row is not None
++            row.status = "approved"
++            session.commit()
++        finally:
++            session.close()
++
++        staging_dir = Path(client.app.state.attachment_storage.staging_root) / staging_id
++        old = time.time() - 2 * 86400
++        for path in staging_dir.rglob("*"):
++            if path.is_file():
++                os.utime(path, (old, old))
++        os.utime(staging_dir, (old, old))
++        decision = service.sweep_candidate(staging_id)
++        assert decision.candidate is True
++        assert decision.reason == "activity"
++        assert service.discard_committed(staging_id) is True
++        assert not staging_dir.exists()
++
++    def test_missing_staging_and_failed_complete_do_not_look_complete(
++        self, client, settings, monkeypatch
++    ):
++        service = _staging(client, settings)
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.validate_manifest(str(uuid.uuid4()), [
++                _manifest_item(staging_id=str(uuid.uuid4()))
++            ])
++        assert exc.value.code == ATTACHMENT_STAGING_MISSING
++
++        parsed = service.inspect_zip(_attachment_zip())
++        original = service._write_complete
++
++        def fail_complete(path, marker):
++            raise AttachmentStagingError("ATTACHMENT_WRITE_FAILED")
++
++        monkeypatch.setattr(service, "_write_complete", fail_complete)
++        with pytest.raises(AttachmentStagingError):
++            service.create_from_zip(parsed)
++        monkeypatch.setattr(service, "_write_complete", original)
++        assert _staging_dirs(client) == []
++
++
++class TestStagingGuardLifetime:
++    def test_guard_covers_creation_and_releases_after_commit(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++        service = _staging(client, settings)
++        observed: list[tuple[Path, bool, bool, int]] = []
++
++        def recording_sync(path):
++            path = Path(path)
++            observed.append(
++                (
++                    path,
++                    any(lock.locked() for lock in service._guards.values()),
++                    (path / ".complete").exists(),
++                    len(list(path.glob("*.bin"))),
++                )
++            )
++
++        service._directory_sync = recording_sync
++        client.app.state.attachment_staging_service = service
++
++        response = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert response.status_code == 202, response.text
++        assert observed
++        assert all(held for _, held, _, _ in observed)
++        review = _reviews()[0]
++        envelope = ImportEnvelope.from_review_payload(json.loads(review.payload))
++        assert envelope is not None
++        sid = envelope.attachments[0]["staging_id"]
++        staging_dir = Path(client.app.state.attachment_storage.staging_root) / sid
++        assert (staging_dir / ".complete").is_file()
++        last_for_staging = [entry for entry in observed if entry[0] == staging_dir][-1]
++        assert last_for_staging[2] is True
++        blob_syncs = [entry for entry in observed if entry[0].name == "blobs"]
++        assert blob_syncs and all(entry[3] >= 1 for entry in blob_syncs)
++        assert service._guards[sid].locked() is False
++
++    def test_guard_held_during_business_commit(
++        self, client, settings, monkeypatch
++    ):
++        item_id = _item(client, content="旧正文")
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++        seen: dict[str, object] = {}
++        # Resolve the session class through the factory the import service
++        # actually uses (a top-level ``sqlalchemy.orm.Session`` import can
++        # resolve to a duplicate class object under pytest's importlib mode).
++        factory = client.app.state.markdown_service._factory
++        base_session = factory.class_
++
++        class ObservedSession(base_session):
++            def commit(self):
++                sid = seen.get("sid")
++                if sid is not None and "held" not in seen:
++                    lock = service._guards[sid]
++                    seen["held"] = lock.locked()
++                    acquired = lock.acquire(blocking=False)
++                    seen["acquired_elsewhere"] = acquired
++                    if acquired:
++                        lock.release()
++                return super().commit()
++
++        monkeypatch.setattr(factory, "class_", ObservedSession)
++        from app.services.governance import SQLAlchemyReviewRepository
++
++        original_save = SQLAlchemyReviewRepository.save_review
++
++        def save_probe(repo, review):
++            seen["sid"] = review.payload["__a1_import"]["attachments"][0][
++                "staging_id"
++            ]
++            return original_save(repo, review)
++
++        monkeypatch.setattr(
++            SQLAlchemyReviewRepository, "save_review", save_probe
++        )
++        response = _import_zip(
++            client, _attachment_zip(body="新正文"), target=item_id
++        )
++
++        assert response.status_code == 202, response.text
++        assert seen["held"] is True
++        assert seen["acquired_elsewhere"] is False
++        assert service._guards[str(seen["sid"])].locked() is False
++
++    def test_known_precommit_failure_cleans_staging(
++        self, client, settings, monkeypatch
++    ):
++        item_id = _item(client, content="旧正文")
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++
++        def boom(session):
++            raise RuntimeError("submit failed before commit")
++
++        monkeypatch.setattr("app.services.markdown.build_review_service", boom)
++        with pytest.raises(RuntimeError, match="submit failed before commit"):
++            _import_zip(
++                client, _attachment_zip(body="新正文"), target=item_id
++            )
++
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++        assert _attachment_count() == 0
++        assert all(not lock.locked() for lock in service._guards.values())
++
++    def test_ambiguous_commit_keeps_staging_for_orp(
++        self, client, settings, monkeypatch
++    ):
++        item_id = _item(client, content="旧正文")
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++
++        def mark_pending(session, flush_context, instances):
++            if any(
++                type(obj).__name__ == "ReviewRequestORM"
++                and obj.status == "pending"
++                for obj in session.new
++            ):
++                session.info["b3_pending_commit"] = True
++
++        factory = client.app.state.markdown_service._factory
++        base_session = factory.class_
++
++        class ObservedSession(base_session):
++            def commit(self):
++                super().commit()
++                if self.info.pop("b3_pending_commit", False):
++                    raise RuntimeError("simulated ambiguous commit outcome")
++
++        event.listen(base_session, "before_flush", mark_pending)
++        monkeypatch.setattr(factory, "class_", ObservedSession)
++        try:
++            with pytest.raises(
++                RuntimeError, match="simulated ambiguous commit outcome"
++            ):
++                _import_zip(
++                    client, _attachment_zip(body="新正文"), target=item_id
++                )
++        finally:
++            event.remove(base_session, "before_flush", mark_pending)
++
++        reviews = _reviews()
++        assert len(reviews) == 1
++        assert reviews[0].status == "pending"
++        assert len(_staging_dirs(client)) == 1
++        assert all(not lock.locked() for lock in service._guards.values())
++        assert _attachment_count() == 0
++
++
++class TestDirectoryDurability:
++    def test_directory_sync_failure_rejects_without_pending(
++        self, client, settings
++    ):
++        item_id = _item(client, content="旧正文")
++
++        def failing_sync(path):
++            raise OSError(5, "simulated directory fsync failure")
++
++        service = AttachmentStagingService(
++            client.app.state.attachment_storage,
++            max_file_bytes=settings.attachment_max_bytes,
++            max_attachment_count=settings.attachment_import_max_count,
++            max_total_bytes=settings.attachment_import_max_total_bytes,
++            mime_allowlist=settings.attachment_mime_allowlist,
++            staging_grace_seconds=settings.staging_grace_seconds,
++            session_factory=get_session_factory(),
++            directory_sync=failing_sync,
++        )
++        client.app.state.attachment_staging_service = service
++
++        response = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert response.status_code == 503
++        assert response.json()["detail"] == ATTACHMENT_WRITE_FAILED
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++        assert _attachment_count() == 0
++        assert all(not lock.locked() for lock in service._guards.values())
++
++    def test_directory_sync_is_platform_explicit(self):
++        from app.services.attachment_staging import _default_directory_sync
++
++        missing = Path("Z:/explainlab-nonexistent-dir-sync")
++        if os.name == "nt":
++            _default_directory_sync(missing)
++        else:
++            with pytest.raises(AttachmentStagingError) as exc:
++                _default_directory_sync(missing)
++            assert exc.value.code == ATTACHMENT_WRITE_FAILED
++
++
++class TestEmptyAttachmentRejection:
++    @pytest.mark.parametrize(
++        "name",
++        [
++            "attachments/note.txt",
++            "attachments/note.md",
++            "attachments/data.csv",
++        ],
++    )
++    def test_zero_byte_attachment_rejected_before_staging(self, client, name):
++        item_id = _item(client, content="旧正文")
++        before_attachments = _attachment_count()
++        payload = _zip(
++            [
++                ("doc.md", _markdown("附件文档", "新正文")),
++                (name, b""),
++            ]
++        )
++        response = _import_zip(client, payload, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == ATTACHMENT_EMPTY
++        assert _staging_dirs(client) == []
++        assert _attachment_count() == before_attachments
++        assert _reviews() == []
++
++
++class TestCorruptZipMapping:
++    def test_crc_mismatch_maps_to_import_archive_invalid(self, client):
++        item_id = _item(client, content="旧正文")
++        payload = _raw_single_entry_zip(
++            b"attachments/design.png",
++            PNG,
++            crc=zlib.crc32(PNG) ^ 0xFFFFFFFF,
++        )
++        response = _import_zip(client, payload, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == IMPORT_ARCHIVE_INVALID
++        assert _staging_dirs(client) == []
++        assert _reviews() == []
++
++    def test_invalid_deflate_stream_maps_to_import_archive_invalid(self, client):
++        item_id = _item(client, content="旧正文")
++        payload = _raw_single_entry_zip(
++            b"attachments/design.png",
++            PNG,
++            method=zipfile.ZIP_DEFLATED,
++            compressed=b"\xff\xff\xff\xff",
++        )
++        response = _import_zip(client, payload, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == IMPORT_ARCHIVE_INVALID
++        assert _staging_dirs(client) == []
++
++    def test_truncated_deflate_maps_to_import_archive_invalid(self, client):
++        item_id = _item(client, content="旧正文")
++        compressed = zlib.compress(PNG * 8)
++        payload = _raw_single_entry_zip(
++            b"attachments/design.png",
++            PNG * 8,
++            method=zipfile.ZIP_DEFLATED,
++            compressed=compressed[:-8],
++        )
++        response = _import_zip(client, payload, target=item_id)
++        assert response.status_code == 400
++        assert response.json()["detail"] == IMPORT_ARCHIVE_INVALID
++        assert _staging_dirs(client) == []
++
++
++class TestPendingFailClosed:
++    def test_missing_session_factory_discard_fails_closed(self, client):
++        service = AttachmentStagingService(
++            client.app.state.attachment_storage,
++            session_factory=None,
++        )
++        staged = service.create_from_zip(_attachment_zip())
++        assert service.pending_staging_ids() is None
++        assert service.discard_committed(staged.staging_id) is False
++        assert staged.directory.is_dir()
++
++    def test_missing_session_factory_sweep_fails_closed(self, client):
++        service = AttachmentStagingService(
++            client.app.state.attachment_storage,
++            session_factory=None,
++        )
++        staged = service.create_from_zip(_attachment_zip())
++        decision = service.sweep_candidate(staged.staging_id)
++        assert decision.candidate is False
++        assert decision.reason == "pending_manifest_malformed"
++        assert staged.directory.is_dir()
++
++    def test_pending_query_failure_preserves_staging(self, client):
++        def broken_factory():
++            raise RuntimeError("database unavailable")
++
++        service = AttachmentStagingService(
++            client.app.state.attachment_storage,
++            session_factory=broken_factory,
++        )
++        staged = service.create_from_zip(_attachment_zip())
++        assert service.discard_rejected(staged.staging_id) is False
++        assert service.sweep_candidate(staged.staging_id).candidate is False
++        assert staged.directory.is_dir()
++
++
++class TestZipBudgetBoundaries:
++    def _small_service(self, client, *, max_total_bytes):
++        return AttachmentStagingService(
++            client.app.state.attachment_storage,
++            max_total_bytes=max_total_bytes,
++        )
++
++    def test_original_nul_filename_rejected(self, client):
++        service = self._small_service(client, max_total_bytes=1024 * 1024)
++        payload = _raw_single_entry_zip(b"attachments/a\x00.png", PNG)
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(payload)
++        assert exc.value.code == IMPORT_ARCHIVE_INVALID
++
++    def test_whole_archive_compressed_budget_includes_unselected(self, client):
++        service = self._small_service(client, max_total_bytes=512)
++        payload = _zip(
++            [
++                ("doc.md", _markdown("预算", "正文")),
++                ("attachments/a.bin", os.urandom(400)),
++                ("other/blob.bin", os.urandom(400)),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(payload)
++        assert exc.value.code == IMPORT_ARCHIVE_INVALID
++
++    def test_root_manifest_is_included_in_budget(self, client):
++        service = self._small_service(client, max_total_bytes=700)
++        manifest = json.dumps({"pad": "a" * 600}).encode("utf-8")
++        payload = _zip(
++            [
++                ("doc.md", _markdown("预算", "正文")),
++                ("attachments/design.png", os.urandom(400)),
++                ("manifest.json", manifest),
++            ]
++        )
++        with pytest.raises(AttachmentStagingError) as exc:
++            service.inspect_zip(payload)
++        assert exc.value.code == "ATTACHMENT_TOTAL_TOO_LARGE"
++
++
++class TestPendingReuseGuard:
++    def test_reuse_validates_manifest_under_guard(
++        self, client, settings, monkeypatch
++    ):
++        item_id = _item(client, content="旧正文")
++        payload = _attachment_zip(body="新正文")
++        first = _import_zip(client, payload, target=item_id)
++        assert first.status_code == 202, first.text
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++        observed: list[bool] = []
++        original = service.validate_manifest_locked
++
++        def checked(staging_id, manifest, **kwargs):
++            observed.append(service._guards[str(staging_id)].locked())
++            return original(staging_id, manifest, **kwargs)
++
++        monkeypatch.setattr(service, "validate_manifest_locked", checked)
++        second = _import_zip(client, payload, target=item_id)
++        assert second.status_code == 200, second.text
++        assert observed == [True]
++        assert len(_staging_dirs(client)) == 1
++
++    def test_reuse_rereads_pending_under_guard(
++        self, client, settings, monkeypatch
++    ):
++        item_id = _item(client, content="旧正文")
++        payload = _attachment_zip(body="新正文")
++        first = _import_zip(client, payload, target=item_id)
++        assert first.status_code == 202, first.text
++        review = _reviews()[0]
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++        original_guard = service.staging_guard
++
++        @contextlib.contextmanager
++        def guard_after_resolving(staging_id):
++            session = get_session_factory()()
++            try:
++                row = session.get(ReviewRequestORM, review.id)
++                assert row is not None
++                row.status = "approved"
++                session.commit()
++            finally:
++                session.close()
++            with original_guard(staging_id):
++                yield
++
++        monkeypatch.setattr(service, "staging_guard", guard_after_resolving)
++        second = _import_zip(client, payload, target=item_id)
++        assert second.status_code == 409
++        assert second.json()["detail"] == "SOURCE_CHANGED_DURING_WAIT"
++        assert len(_reviews()) == 1
++        assert len(_staging_dirs(client)) == 1
+\ No newline at end of file

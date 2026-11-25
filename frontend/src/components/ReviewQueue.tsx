@@ -50,6 +50,7 @@ export function ReviewQueue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const load = useCallback(async (status: ReviewStatus | "all") => {
     setLoading(true);
@@ -69,12 +70,13 @@ export function ReviewQueue() {
 
   async function handleResolve(id: string, approve: boolean) {
     setError(null);
+    const note = notes[id]?.trim() || undefined;
     try {
       if (approve) {
-        await api.approveReview(id);
+        await api.approveReview(id, note);
         setNotice("已批准并应用变更。");
       } else {
-        await api.rejectReview(id);
+        await api.rejectReview(id, note);
         setNotice("已驳回，数据未改动。");
       }
       await load(filter);
@@ -154,12 +156,29 @@ export function ReviewQueue() {
               </span>
             </div>
             <p className="text-sm text-slate-300">{payloadSummary(r)}</p>
+            {Boolean(r.payload?.__a1_import) && (
+              <div className="mt-2 rounded-md border border-slate-800 bg-slate-950/60 p-2 text-xs text-slate-400">
+                <div className="font-medium text-slate-300">V2 Active ZIP 导入清单</div>
+                {Array.isArray((r.payload.__a1_import as { attachments?: unknown[] }).attachments) && (
+                  <p className="mt-1">
+                    待发布附件：{((r.payload.__a1_import as { attachments?: unknown[] }).attachments ?? []).length} 个
+                  </p>
+                )}
+              </div>
+            )}
             {r.reason && <p className="mt-1 text-xs text-slate-500">理由：{r.reason}</p>}
             {r.resolution_note && (
               <p className="mt-1 text-xs text-slate-500">备注：{r.resolution_note}</p>
             )}
             {r.status === "pending" && (
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  value={notes[r.id] ?? ""}
+                  onChange={(e) => setNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                  placeholder="可选审批备注…"
+                  aria-label="审批备注"
+                  className="min-w-44 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs outline-none focus:border-slate-500"
+                />
                 <button
                   type="button"
                   onClick={() => void handleResolve(r.id, true)}

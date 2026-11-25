@@ -1,0 +1,20 @@
+timestamp=2026-11-23T19:14:25.2794608+08:00
+token_administrator=False
+command: VBoxManage list vms
+VBoxManage.exe: error: Failed to create the VirtualBox object!
+VBoxManage.exe: error: The object is not ready
+VBoxManage.exe: error: Details: code E_ACCESSDENIED (0x80070005), component VirtualBoxClientWrap, interface IVirtualBoxClient
+exit_code=1
+command: VBoxManage list runningvms
+VBoxManage.exe: error: Failed to create the VirtualBox object!
+VBoxManage.exe: error: The object is not ready
+VBoxManage.exe: error: Details: code E_ACCESSDENIED (0x80070005), component VirtualBoxClientWrap, interface IVirtualBoxClient
+exit_code=1
+command: vmrun list
+Total running VMs: 0
+exit_code=0
+command: Get-ChildItem D:\VirtualMachines (depth 2, VM and VHD metadata)
+command: Get-ChildItem D:\wsl2 (depth 2, VM and VHD metadata)
+D:\wsl2\Ubuntu\ext4.vhdx
+command: Get-ChildItem D:\VMware Workstation Pro (depth 2, VM and VHD metadata)
+command: Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss

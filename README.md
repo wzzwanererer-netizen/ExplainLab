@@ -1,73 +1,107 @@
-# ExplainLab
+# ExplainLab V2 — 原生桌面 AI 知识工作区与多 Agent 共享外脑
 
-基于持续对话的 AI 知识管理与交互式学习平台。
+![ExplainLab V2 Banner](docs/assets/explainlab-banner.png)
 
-## 核心能力（V1.0 已实现）
+> **给所有 AI 装上共享外脑** · 面向学习与科研的本地 AI 知识管理、交互式学习与多 Agent MCP 外脑平台（2026 Qoder 高校创造力大赛 · StudyHack 赛道作品）。
 
-1. AI 对话中自动提取知识
-2. 个人总知识库与项目知识空间
-3. 自动识别重复知识与知识关系
-4. 重要知识变更进入审核
-5. 跨会话混合检索
-6. 动态知识地图
-7. 交互式知识实验
+- **在线交互体验（Qoder Sites）**：https://explainlab-t6omhu7gei6.qoder.zone
+- **1080p 功能演示视频（B站）**：https://www.bilibili.com/video/BV1dgykzrE7h/
 
-> 状态：V1.0（M0–M5）七项能力均已落地并通过里程碑验收。当前已完成「M0 准入修复 + M5 回归修复」，详见 [修复验收报告](docs/acceptance/M0-M5-REMEDIATION-REPORT.md)；**等待独立审计，未自行进入后续新里程碑**。
+---
 
-## 技术栈
+## 核心特性
 
-| 层 | 技术 |
-|---|---|
-| 前端 | React + TypeScript + Vite + Tailwind CSS + React Flow (@xyflow/react) + ELK.js |
-| 后端 | Python 3.11 + FastAPI + SQLAlchemy + Alembic + Pydantic |
-| 数据库 | 开发：SQLite + FTS5（trigram）；部署：PostgreSQL 原生 `tsvector/tsquery` + GIN（方言封装在 backend 适配层） |
-| AI | 统一 Model Adapter 适配层（已实现 `OpenAICompatibleAdapter`：生成 DeepSeek、向量 SiliconFlow 等；公共失败契约 + 能力诚实声明，供应商可替换） |
-| 部署 | 本地部署 |
+1. **Markdown 双链知识库与严格知识治理**
+   - 支持 **源码 / 预览 / 分屏** 实时写作、输入 `[[` 自动联想补全双链、点击跳转与 `#标签` 筛选；
+   - 支持 `.md` / `.zip`（含附件）完整导入导出；
+   - 内置 **审核门禁（Review Queue / HTTP 202）**、线性版本快照回滚、词面 + 模型查重合并与来源追溯（`source_refs`），防止 AI 幻觉污染主知识库。
+2. **Obsidian 风格力导向知识星图**
+   - 纯 TypeScript 零重依赖自研物理引擎（库仑斥力 + 弹簧引力 + 矩形标签防重叠碰撞），HiDPI Canvas 渲染；
+   - 节点按连接度动态缩放、悬停聚光灯聚焦 1 跳邻居、物理拖拽弹性联动，支持 **全局 / 1 跳 / 2 跳局部图谱** 及 **主库与各 Agent 副库一键切换**。
+3. **SSE 实时流式研究对话与引用溯源**
+   - 提问前自动执行 **混合检索（SQLite FTS5 / PostgreSQL tsvector + 语义向量 RRF 融合排序）** 注入上下文；
+   - 逐字流式作答，点击下方引用胶囊在右侧直接滑出原笔记对照；支持一键从对话提取知识。
+4. **交互式知识实验（主动学习引擎）**
+   - 自动将知识库转化为 **测验（Quiz）**、**概念对比（Compare）** 与 **先修学习路径（Chain）**。
+5. **标准 MCP Server 多 Agent 共享外脑 + 动态独立副库**
+   - 内置标准 JSON-RPC 2.0 over stdio MCP Server（11 个工具），无缝接入 **Qoder、DSH、Cursor、Claude、Codex、Trae、Kimi、WorkBuddy** 等 Agent；
+   - 外部 Agent 首次写入时自动按名称动态创建专属副库（如 `Agent · Qoder`、`Agent · DSH`），与主库清晰隔离又可在全局星图中联合发现跨工具关联。
+6. **Nesti Fluent 原生桌面端 & Theme Studio**
+   - 基于 Electron 的独立 Windows 11 Mica 质感桌面窗口（无边框集成标题栏、多标签页条、`Ctrl+K` 命令面板），内置浅/深色模式与 6 套预设配色。
 
-## 仓库结构
+---
 
+## 架构概览
+
+```text
+外部 Agent 生态 (Qoder / DSH / Cursor / Claude / Codex / Trae / Kimi)
+        │  MCP (JSON-RPC 2.0 over stdio, 11 Tools)
+        ▼
+  ExplainLab MCP Server ──┐
+                          ├──HTTP + SSE /api──▶ FastAPI Backend (SQLAlchemy 2 + Alembic + 双库方言适配)
+  原生桌面端 (Electron) ───┘                              │  Protocol 端口注入
+                                                         ▼
+                                            knowledge-core (纯 Python 领域核心，零 Web/ORM 依赖)
+                                                         │
+                                                         ▼
+                                      SQLite FTS5 (桌面默认) / PostgreSQL tsvector (部署目标)
 ```
-ExplainLab/
-├── frontend/          # React 前端（不含任何 API Key）
-├── backend/           # FastAPI API 层
-├── knowledge-core/    # 独立知识核心包（不依赖前端 / Web 框架，可复用于 Nesti）
-├── scripts/           # 本地 setup / dev / test 脚本（PowerShell + Bash）
-└── docs/              # 架构、开发指南、验收报告
+
+---
+
+## 快速开始（Windows / macOS / Linux）
+
+### 环境要求
+- Python `3.11+` + [uv](https://docs.astral.sh/uv/)
+- Node.js `>= 22.23.2`
+
+### 1. 安装依赖与初始化数据库
+```bash
+# 安装 Python 后端与独立核心依赖
+uv sync --locked
+
+# 复制配置模板（如需 AI 对话与向量检索，请填入你自己的 API Key）
+cp backend/.env.example backend/.env
+
+# 初始化本地 SQLite 数据库
+cd backend && uv run alembic upgrade head
 ```
 
-## 快速开始
+### 2. 启动后端与前端（开发模式）
+```bash
+# 终端 1：启动 FastAPI 后端（http://127.0.0.1:8000）
+cd backend && uv run uvicorn app.main:app --reload
 
-前置要求：Node.js ≥ 22.23.2（审计复现基线 **22.23.2**）、Python 3.11、[uv](https://docs.astral.sh/uv/)、Git。
+# 终端 2：启动前端（http://localhost:5173）
+cd frontend && npm ci && npm run dev
+```
+
+### 3. 启动原生 Electron 桌面端（Windows）
+```bash
+cd frontend && npm run build
+cd ../desktop && npm install && npm start
+```
+
+### 4. 接入外部 Agent（MCP）
+详见 [docs/agent-mcp-setup.md](docs/agent-mcp-setup.md)，在任意支持 MCP 的 Agent 中配置 `scripts/explainlab-mcp.cmd` 即可。
+
+---
+
+## 测试与质量保障
 
 ```bash
-# 1. 安装依赖（前端 npm + Python uv workspace）
-bash scripts/setup.sh        # Windows PowerShell: scripts/setup.ps1
+# 后端 + knowledge-core 根级全量测试（1,520+ 项）
+uv run pytest -o addopts="--import-mode=importlib"
 
-# 2. 初始化数据库（Alembic 迁移）
-cd backend && uv run alembic upgrade head && cd ..
+# 代码检查
+uv run ruff check
 
-# 3. 同时启动前后端
-bash scripts/dev.sh          # Windows PowerShell: scripts/dev.ps1
+# 前端单元测试、类型检查与构建（79 项）
+cd frontend && npm run test && npm run typecheck && npm run build
 ```
 
-- 前端：http://localhost:5173
-- 后端 API：http://127.0.0.1:8000/api/health
-- API 文档：http://127.0.0.1:8000/docs
+---
 
-## 测试
+## License
 
-```bash
-bash scripts/test.sh         # 或 scripts/test.ps1
-```
-
-## 文档
-
-- [架构设计](docs/architecture.md)
-- [开发指南](docs/development.md)
-- [里程碑](MILESTONES.md)
-- [M0 验收报告](docs/acceptance/M0-report.md)
-
-## 安全约束
-
-- API Key 只允许存在于后端环境变量（`.env`，不入库），前端绝不持有。
-- Knowledge Core 不依赖前端页面与 Web 框架，知识提取 / 关系 / 版本 / 来源 / 检索均可脱离前端运行。
+本项目采用 [MIT License](LICENSE) 开源。

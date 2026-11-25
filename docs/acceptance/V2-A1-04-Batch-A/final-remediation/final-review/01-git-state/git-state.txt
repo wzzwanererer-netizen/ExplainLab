@@ -1,0 +1,78 @@
+captured_at: 2026-11-22T17:42:09+08:00
+repo: /d/ExplainLab
+HEAD: 784b1248065424e07273b272d6016cc121bc606c
+branch: fix/m0-admission-and-m5-regressions
+
+===== git status --porcelain=v2 =====
+1 .M N... 100644 100644 100644 3b13051d274f831cf4de08d3b7d22ef8caf9e8e3 3b13051d274f831cf4de08d3b7d22ef8caf9e8e3 backend/app/api/routes/governance.py
+1 .M N... 100644 100644 100644 9776988e47b7ec34807edfe32fed7242bf6fd012 9776988e47b7ec34807edfe32fed7242bf6fd012 backend/app/api/schemas.py
+1 .M N... 100644 100644 100644 8cb00f66c00b8c44159c185f0161e653ae21b6d1 8cb00f66c00b8c44159c185f0161e653ae21b6d1 backend/app/core/config.py
+1 .M N... 100644 100644 100644 b35d7559e0ab4deefd1f293991b7d3a6151eb041 b35d7559e0ab4deefd1f293991b7d3a6151eb041 backend/app/db/session.py
+1 .M N... 100644 100644 100644 e261aada54b58859652db2f39a2cf93492e7dda9 e261aada54b58859652db2f39a2cf93492e7dda9 backend/app/dependencies.py
+1 .M N... 100644 100644 100644 cd276aa5c97eb74a19d3cb3384a6728457388934 cd276aa5c97eb74a19d3cb3384a6728457388934 backend/app/main.py
+1 .M N... 100644 100644 100644 7330ac27edb8c62b302d8695cc3a7293694a0a24 7330ac27edb8c62b302d8695cc3a7293694a0a24 backend/tests/conftest.py
+1 .M N... 100644 100644 100644 7e2ca6ac2086962d678f5afe7500a4a69d9c8f78 7e2ca6ac2086962d678f5afe7500a4a69d9c8f78 backend/tests/test_health.py
+? backend/app/api/routes/import_export.py
+? backend/app/db/process_lock.py
+? backend/app/services/file_write.py
+? backend/app/services/import_coordinator.py
+? backend/app/services/import_review_hook.py
+? backend/app/services/journal_canonical.py
+? backend/app/services/markdown.py
+? backend/app/services/markdown_item_repository.py
+? backend/app/services/repositories_v2.py
+? backend/app/services/source_identity.py
+? backend/app/services/source_instance_id.py
+? backend/tests/test_batch_a_canonical.py
+? backend/tests/test_batch_a_fault_injection.py
+? backend/tests/test_batch_a_file_write.py
+? backend/tests/test_batch_a_process_and_identity.py
+? backend/tests/test_markdown_batch_a_identity.py
+? backend/tests/test_markdown_batch_a_import_conflict.py
+? backend/tests/test_markdown_batch_a_import_export.py
+? docs/acceptance/V2-A1-04-Batch-A/
+? docs/audit/V2-A1-03-final-stage-audit/
+? docs/audit/V2-A1-04-R1-independent-review.md
+? docs/audit/V2-A1-04-technical-verification.md
+? docs/plans/A1-04/
+? docs/plans/README-A1-04-R1.1.md
+? docs/plans/README-A1-04-R1.2.md
+? docs/plans/README-A1-04-R1.3.md
+? docs/plans/V2-A1-04-R1.2-merge-report.md
+? docs/plans/V2-A1-04-R1.3-merge-report.md
+? docs/plans/V2-A1-04-acceptance-matrix.md
+? docs/plans/V2-A1-04-implementation-plan.md
+? docs/plans/V2-A1-04-open-decisions.md
+? docs/plans/V2-A1-04-risk-register.md
+? knowledge-core/src/knowledge_core/markdown/import_report.py
+? knowledge-core/src/knowledge_core/markdown/service.py
+? knowledge-core/tests/test_markdown_service.py
+
+===== git diff --stat =====
+warning: in the working copy of 'backend/app/api/routes/governance.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/api/schemas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/core/config.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/db/session.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/dependencies.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/conftest.py', LF will be replaced by CRLF the next time Git touches it
+ backend/app/api/routes/governance.py | 193 +++++++++++++++++++++++++++++------
+ backend/app/api/schemas.py           |  37 ++++++-
+ backend/app/core/config.py           |   5 +
+ backend/app/db/session.py            |  16 +++
+ backend/app/dependencies.py          |  19 +++-
+ backend/app/main.py                  |  83 +++++++++++++--
+ backend/tests/conftest.py            |   1 +
+ backend/tests/test_health.py         |   9 +-
+ 8 files changed, 317 insertions(+), 46 deletions(-)
+
+===== git diff --cached --stat =====
+
+===== git log --oneline -5 =====
+784b124 test: A1-03 最终审计补充 — phantom 非碰撞新增 ID 集合守护验证
+9634ad1 fix: 专项审计修复 — 重建步8c 逐行复核补齐 no-op 行窗口②并发保护
+b6c7e15 fix: 专项审计修复 — 重建步7 P2 乐观前置扩至门禁C同口径6字段
+ccf6194 fix: V2 K1+K2 整改批 — 治理审核批准路径链接维护 + 重建并发窗口控制
+7e0582c docs: V2 A1-03 验收记录 + 计划 T22–T40 状态由【待验证】更新为【已验证】
+
+===== git stash list =====

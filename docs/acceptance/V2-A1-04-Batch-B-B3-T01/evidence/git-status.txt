@@ -1,0 +1,64 @@
+ M MILESTONES.md
+ M backend/app/api/routes/import_export.py
+ M backend/app/api/schemas.py
+ M backend/app/core/config.py
+ M backend/app/db/session.py
+ M backend/app/dependencies.py
+ M backend/app/main.py
+ M backend/app/services/markdown.py
+ M backend/app/services/repositories_v2.py
+?? ExplainLab-Batch-B-GPT-Review.zip
+?? backend/app/api/routes/attachments.py
+?? backend/app/db/storage_lock.py
+?? backend/app/services/attachment_staging.py
+?? backend/app/services/attachment_storage.py
+?? backend/app/services/attachment_validation.py
+?? backend/app/services/attachments.py
+?? backend/tests/test_attachment_api.py
+?? backend/tests/test_attachment_gc.py
+?? backend/tests/test_attachment_pg.py
+?? backend/tests/test_attachment_staging.py
+?? backend/tests/test_attachment_storage.py
+?? backend/tests/test_attachment_validation.py
+?? backend/tests/test_attachment_windows.py
+?? backend/tests/test_storage_lock_pg.py
+?? backend/tests/test_storage_lock_pg_faults.py
+?? backend/tests/test_storage_lock_sqlite.py
+?? docs/acceptance/ExplainLab-B1-Final-Verification-BLOCKED.zip
+?? docs/acceptance/ExplainLab-B1-PowerShell-GPT-Evidence.zip
+?? docs/acceptance/ExplainLab-B1-PowerShell-GPT-Handoff.md
+?? docs/acceptance/ExplainLab-B1-PowerShell-GPT-Review/
+?? docs/acceptance/ExplainLab-B1-Remediation-Round3.zip
+?? docs/acceptance/ExplainLab-B1-Round3-Linux-Input.zip
+?? docs/acceptance/V2-A1-04-Batch-A/audit-round2/
+?? docs/acceptance/V2-A1-04-Batch-A/final-remediation/final-review/
+?? docs/acceptance/V2-A1-04-Batch-B-B1-environment-recovery/
+?? docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/
+?? docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/
+?? docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/
+?? docs/acceptance/V2-A1-04-Batch-B-B2-T01.md
+?? docs/acceptance/V2-A1-04-Batch-B-B2-task-list.md
+?? docs/acceptance/V2-A1-04-Batch-B-B3-T01/
+?? docs/audit/ExplainLab-B1-Final-Environment-Preflight.zip
+?? docs/audit/ExplainLab-B1-Independent-Review-Round2.zip
+?? docs/audit/ExplainLab-B1-Remediation-Round2.zip
+?? docs/audit/V2-A1-03-final-stage-audit/
+?? docs/audit/V2-A1-04-Batch-A-format-check-report.md
+?? docs/audit/V2-A1-04-Batch-B-B1-independent-review-round2/
+?? docs/audit/V2-A1-04-Batch-B-B1-remediation-round2/
+?? docs/audit/V2-A1-04-Batch-B-B1/
+?? docs/audit/V2-A1-04-Batch-B-B2-audit-remediation/
+?? docs/audit/V2-A1-04-Batch-B-B2/
+?? docs/audit/V2-A1-04-Batch-B-final-environment-preflight/
+?? docs/audit/V2-A1-04-Batch-B-final-review.zip
+?? docs/audit/V2-A1-04-Batch-B-final-review/
+?? docs/audit/V2-A1-04-Batch-B-freeze-review-package.zip
+?? docs/audit/V2-A1-04-Batch-B-freeze-review-package/
+?? docs/audit/V2-A1-04-Batch-B-freeze/
+?? docs/audit/V2-A1-04-Batch-B-preflight/
+?? docs/audit/V2-A1-04-Batch-B-remediation-review.zip
+?? docs/audit/V2-A1-04-Batch-B-remediation/
+?? docs/audit/V2-A1-04-R1-independent-review.md
+?? docs/audit/V2-A1-04-technical-verification.md
+?? docs/plans/A1-04/
+?? docs/plans/V2-A1-04-Batch-B/

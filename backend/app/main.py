@@ -10,11 +10,13 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.routes.attachments import router as attachments_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.experiments import router as experiments_router
 from app.api.routes.governance import router as governance_router
@@ -27,9 +29,22 @@ from app.api.routes.search import router as search_router
 from app.api.routes.spaces import router as spaces_router
 from app.core.config import Settings, get_settings
 from app.db.process_lock import ProcessLock
-from app.db.session import dispose_db, get_session_factory, init_db, session_scope
+from app.db.session import (
+    dispose_db,
+    get_engine,
+    get_session_factory,
+    init_db,
+    run_short_write,
+    session_scope,
+)
+from app.db.storage_lock import build_storage_lock
+from app.services.attachment_maintenance import AttachmentMaintenance, GcWorker, OrphanRecovery
+from app.services.attachment_staging import AttachmentStagingService
+from app.services.attachment_storage import preflight_storage_roots, validate_storage_roots
+from app.services.attachments import AttachmentService
 from app.services.import_coordinator import ImportCoordinator
 from app.services.markdown import MarkdownService
+from app.services.repositories_v2 import SQLAlchemyGcTaskRepository
 from app.services.source_identity import SourceIdentityService
 from app.services.source_instance_id import SourceInstanceIdStore
 from app.services.spaces import ensure_default_space
@@ -66,12 +81,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         if _configured_workers() > 1:
             raise RuntimeError("MULTI_WORKER_UNSUPPORTED")
+        preflight_storage_roots(settings)
         init_db(settings)
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         # 单实例 OS 锁必须先于 source-instance-id 生成与任何导入/身份写操作。
         lock = ProcessLock(settings.data_dir)
         lock.acquire()
+        maintenance = None
         try:
+            # Batch B：附件根必须真实存在、互不重叠、非链接且同卷；失败拒绝启动。
+            attachment_storage = validate_storage_roots(settings)
+            application.state.attachment_storage = attachment_storage
+            application.state.attachment_staging_service = AttachmentStagingService(
+                attachment_storage,
+                max_file_bytes=settings.attachment_max_bytes,
+                max_attachment_count=settings.attachment_import_max_count,
+                max_total_bytes=settings.attachment_import_max_total_bytes,
+                mime_allowlist=settings.attachment_mime_allowlist,
+                staging_grace_seconds=settings.staging_grace_seconds,
+                session_factory=get_session_factory(),
+            )
+            # 方言装配：SQLite 租约锁 / PostgreSQL advisory 锁（不提交业务事务）。
+            storage_key_lock = build_storage_lock(settings)
+            application.state.storage_key_lock = storage_key_lock
+            application.state.attachment_service = AttachmentService(
+                session_factory=get_session_factory(),
+                layout=attachment_storage,
+                storage_lock=storage_key_lock,
+                max_bytes=settings.attachment_max_bytes,
+                mime_allowlist=settings.attachment_mime_allowlist,
+                lock_ttl_seconds=settings.storage_lock_ttl_seconds,
+                lock_wait_seconds=settings.storage_lock_wait_seconds,
+                lock_heartbeat_seconds=settings.storage_lock_heartbeat_seconds,
+                gc_max_attempts=settings.gc_max_attempts,
+                gc_quarantine_seconds=settings.gc_quarantine_seconds,
+            )
+            application.state.gc_task_repository_factory = partial(
+                SQLAlchemyGcTaskRepository, max_attempts=settings.gc_max_attempts,
+                quarantine_seconds=settings.gc_quarantine_seconds,
+            )
+            application.state.gc_task_write_transaction = partial(
+                run_short_write, get_session_factory(), is_sqlite=settings.is_sqlite,
+            )
             instance_store = SourceInstanceIdStore(settings.data_dir)
             instance_store.ensure()
             coordinator = ImportCoordinator(
@@ -86,7 +137,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except SQLAlchemyError:
                 logger.warning("启动时数据库不可达，身份 Journal 恢复延后")
             markdown_service = MarkdownService(
-                get_session_factory(), coordinator, identity, instance_store
+                get_session_factory(), coordinator, identity, instance_store,
+                storage_lock=storage_key_lock,
             )
             application.state.process_lock = lock
             application.state.import_coordinator = coordinator
@@ -100,8 +152,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # 数据库暂不可达时不阻断启动；/api/health 会如实报告 degraded，
                 # 默认空间在数据库恢复后的下次启动时幂等补建。
                 logger.warning("默认知识空间初始化失败，将在下次启动时重试", exc_info=True)
+            gc_worker = GcWorker(get_session_factory(), attachment_storage, storage_key_lock, settings)
+            recovery = OrphanRecovery(
+                gc_worker, application.state.attachment_staging_service, get_engine(),
+            )
+            maintenance = AttachmentMaintenance(gc_worker, recovery)
+            application.state.attachment_maintenance = maintenance
+            maintenance.start()
             yield
         finally:
+            if maintenance is not None:
+                maintenance.stop()
             dispose_db()
             lock.release()
 
@@ -124,6 +185,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(links_router, prefix="/api")
     # A1-04：/knowledge/import、/knowledge/export 静态段亦须先于 {item_id}。
     application.include_router(import_export_router, prefix="/api")
+    application.include_router(attachments_router, prefix="/api")
     application.include_router(knowledge_router, prefix="/api")
     application.include_router(governance_router, prefix="/api")
     application.include_router(search_router, prefix="/api")

@@ -1,0 +1,1683 @@
+# B2-only combined diff (main vs reconstructed B1-final; new files; B2 tests)
+# B2 production-only diff: main (vs reconstructed B1-final) + schemas/dependencies + 3 new files
+diff --git a/backend/app/main.py b/backend/app/main.py
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -16,6 +16,7 @@
+ from fastapi.middleware.cors import CORSMiddleware
+ from sqlalchemy.exc import SQLAlchemyError
+ 
++from app.api.routes.attachments import router as attachments_router
+ from app.api.routes.conversations import router as conversations_router
+ from app.api.routes.experiments import router as experiments_router
+ from app.api.routes.governance import router as governance_router
+@@ -37,6 +38,7 @@
+ )
+ from app.db.storage_lock import build_storage_lock
+ from app.services.attachment_storage import preflight_storage_roots, validate_storage_roots
++from app.services.attachments import AttachmentService
+ from app.services.import_coordinator import ImportCoordinator
+ from app.services.markdown import MarkdownService
+ from app.services.repositories_v2 import SQLAlchemyGcTaskRepository
+@@ -89,6 +91,18 @@
+             # 方言装配：SQLite 租约锁 / PostgreSQL advisory 锁（不提交业务事务）。
+             storage_key_lock = build_storage_lock(settings)
+             application.state.storage_key_lock = storage_key_lock
++            application.state.attachment_service = AttachmentService(
++                session_factory=get_session_factory(),
++                layout=attachment_storage,
++                storage_lock=storage_key_lock,
++                max_bytes=settings.attachment_max_bytes,
++                mime_allowlist=settings.attachment_mime_allowlist,
++                lock_ttl_seconds=settings.storage_lock_ttl_seconds,
++                lock_wait_seconds=settings.storage_lock_wait_seconds,
++                lock_heartbeat_seconds=settings.storage_lock_heartbeat_seconds,
++                gc_max_attempts=settings.gc_max_attempts,
++                gc_quarantine_seconds=settings.gc_quarantine_seconds,
++            )
+             application.state.gc_task_repository_factory = partial(
+                 SQLAlchemyGcTaskRepository, max_attempts=settings.gc_max_attempts,
+                 quarantine_seconds=settings.gc_quarantine_seconds,
+@@ -148,6 +162,7 @@
+     application.include_router(links_router, prefix="/api")
+     # A1-04：/knowledge/import、/knowledge/export 静态段亦须先于 {item_id}。
+     application.include_router(import_export_router, prefix="/api")
++    application.include_router(attachments_router, prefix="/api")
+     application.include_router(knowledge_router, prefix="/api")
+     application.include_router(governance_router, prefix="/api")
+     application.include_router(search_router, prefix="/api")
+diff --git a/backend/app/api/schemas.py b/backend/app/api/schemas.py
+index 9c7719d..24cd26a 100644
+--- a/backend/app/api/schemas.py
++++ b/backend/app/api/schemas.py
+@@ -109,6 +109,29 @@ class KnowledgeUpdate(BaseModel):
+     space_id: str | None = None
+ 
+ 
++class AttachmentUploadIn(BaseModel):
++    """JSON Base64 上传体；只接受三个字段，不使用 multipart。"""
++
++    model_config = ConfigDict(extra="forbid")
++
++    filename: str
++    mime: str
++    content_base64: str
++
++
++class AttachmentOut(BaseModel):
++    model_config = ConfigDict(from_attributes=True)
++
++    id: UUID
++    item_id: UUID
++    filename: str
++    mime: str
++    size: int
++    storage_key: str
++    content_hash: str
++    created_at: datetime
++
++
+ class ExtractRequest(BaseModel):
+     space_id: str | None = None
+ 
+diff --git a/backend/app/dependencies.py b/backend/app/dependencies.py
+index dfa60c3..c070801 100644
+--- a/backend/app/dependencies.py
++++ b/backend/app/dependencies.py
+@@ -11,6 +11,7 @@ from typing import Annotated
+ from fastapi import Depends, HTTPException, Request
+ 
+ from app.core.config import Settings, get_settings
++from app.services.attachments import AttachmentService
+ from app.services.markdown import MarkdownService
+ from app.services.model import build_embed_adapter, build_model_adapter
+ from app.services.source_identity import SourceIdentityService
+@@ -59,3 +60,10 @@ def get_markdown_service(request: Request) -> MarkdownService:
+     if service is None:
+         raise HTTPException(status_code=503, detail="markdown_service_unavailable")
+     return service
++
++
++def get_attachment_service(request: Request) -> AttachmentService:
++    service = getattr(request.app.state, "attachment_service", None)
++    if service is None:
++        raise HTTPException(status_code=503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
++    return service
+# B2 新增生产文件（B1 基线中不存在）
+diff --git a/backend/app/services/attachment_validation.py b/backend/app/services/attachment_validation.py
+new file mode 100644
+index 0000000..ff2b560
+--- /dev/null
++++ b/backend/app/services/attachment_validation.py
+@@ -0,0 +1,124 @@
++"""Pure validation for the frozen Batch B attachment upload contract."""
++
++from __future__ import annotations
++
++import base64
++import binascii
++import re
++import unicodedata
++from collections.abc import Collection
++from dataclasses import dataclass
++from pathlib import PureWindowsPath
++
++from app.core.config import DEFAULT_ATTACHMENT_MIME_ALLOWLIST
++
++ATTACHMENT_BASE64_INVALID = "ATTACHMENT_BASE64_INVALID"
++ATTACHMENT_CONTENT_MISMATCH = "ATTACHMENT_CONTENT_MISMATCH"
++ATTACHMENT_EMPTY = "ATTACHMENT_EMPTY"
++ATTACHMENT_FILENAME_INVALID = "ATTACHMENT_FILENAME_INVALID"
++ATTACHMENT_MIME_UNSUPPORTED = "ATTACHMENT_MIME_UNSUPPORTED"
++ATTACHMENT_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
++
++MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
++MAX_FILENAME_LENGTH = 500
++_TEXT_MIMES = frozenset({"text/plain", "text/markdown", "text/csv"})
++_BINARY_SIGNATURES = (
++    ("image/png", (b"\x89PNG\r\n\x1a\n",)),
++    ("image/jpeg", (b"\xff\xd8\xff",)),
++    ("image/gif", (b"GIF87a", b"GIF89a")),
++    ("application/pdf", (b"%PDF-",)),
++)
++_UNSAFE_FILENAME_CHARACTERS = str.maketrans({char: "_" for char in '/\\:<>"|?*'})
++
++
++class AttachmentValidationError(ValueError):
++    """A rejected upload, carrying only a stable error code."""
++
++    def __init__(self, code: str) -> None:
++        super().__init__(code)
++        self.code = code
++
++
++@dataclass(frozen=True, slots=True)
++class ValidatedAttachment:
++    filename: str
++    mime: str
++    data: bytes
++
++
++def sanitize_attachment_filename(filename: str) -> str:
++    """Return a display name from either Windows or POSIX spelling."""
++    if not 1 <= len(filename) <= MAX_FILENAME_LENGTH:
++        raise AttachmentValidationError(ATTACHMENT_FILENAME_INVALID)
++    basename = filename.replace("\\", "/").rsplit("/", 1)[-1]
++    basename = "".join(
++        char for char in basename if unicodedata.category(char) not in {"Cc", "Cs"}
++    )
++    name = re.sub(r"\.{2,}", ".", basename.translate(_UNSAFE_FILENAME_CHARACTERS))
++    name = name.strip().rstrip(". ")
++    if name and PureWindowsPath(name).is_reserved():
++        name = f"_{name}"
++    if not name or len(name) > MAX_FILENAME_LENGTH:
++        raise AttachmentValidationError(ATTACHMENT_FILENAME_INVALID)
++    return name
++
++
++def _decode_base64(encoded: str, max_bytes: int) -> bytes:
++    if len(encoded) > 4 * ((max_bytes + 2) // 3):
++        raise AttachmentValidationError(ATTACHMENT_TOO_LARGE)
++    try:
++        data = base64.b64decode(encoded, validate=True)
++    except (ValueError, binascii.Error):
++        raise AttachmentValidationError(ATTACHMENT_BASE64_INVALID) from None
++
++    # Strict decoding alone permits some redundant padding and nonzero pad bits.
++    if len(encoded) != 4 * ((len(data) + 2) // 3):
++        raise AttachmentValidationError(ATTACHMENT_BASE64_INVALID)
++    remainder = len(data) % 3
++    if remainder and base64.b64encode(data[-remainder:]).decode("ascii") != encoded[-4:]:
++        raise AttachmentValidationError(ATTACHMENT_BASE64_INVALID)
++    if not data:
++        raise AttachmentValidationError(ATTACHMENT_EMPTY)
++    if len(data) > max_bytes:
++        raise AttachmentValidationError(ATTACHMENT_TOO_LARGE)
++    return data
++
++
++def _binary_mime(header: bytes) -> str | None:
++    if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
++        return "image/webp"
++    for mime, signatures in _BINARY_SIGNATURES:
++        if header.startswith(signatures):
++            return mime
++    return None
++
++
++def _validate_content(data: bytes, mime: str) -> None:
++    detected = _binary_mime(data[:16])
++    if mime in _TEXT_MIMES:
++        if detected is not None or b"\x00" in data:
++            raise AttachmentValidationError(ATTACHMENT_CONTENT_MISMATCH)
++        try:
++            data.decode("utf-8", errors="strict")
++        except UnicodeDecodeError:
++            raise AttachmentValidationError(ATTACHMENT_CONTENT_MISMATCH) from None
++    elif detected != mime:
++        raise AttachmentValidationError(ATTACHMENT_CONTENT_MISMATCH)
++
++
++def validate_attachment_upload(
++    filename: str,
++    declared_mime: str,
++    content_base64: str,
++    *,
++    max_bytes: int = MAX_ATTACHMENT_BYTES,
++    mime_allowlist: Collection[str] = DEFAULT_ATTACHMENT_MIME_ALLOWLIST,
++) -> ValidatedAttachment:
++    """Validate upload fields and return the safe name, declared MIME, and bytes."""
++    mime = declared_mime.partition(";")[0].strip().lower()
++    if mime not in DEFAULT_ATTACHMENT_MIME_ALLOWLIST or mime not in mime_allowlist:
++        raise AttachmentValidationError(ATTACHMENT_MIME_UNSUPPORTED)
++
++    data = _decode_base64(content_base64, min(max_bytes, MAX_ATTACHMENT_BYTES))
++    _validate_content(data, mime)
++    return ValidatedAttachment(sanitize_attachment_filename(filename), mime, data)
+diff --git a/backend/app/services/attachments.py b/backend/app/services/attachments.py
+new file mode 100644
+index 0000000..717941b
+--- /dev/null
++++ b/backend/app/services/attachments.py
+@@ -0,0 +1,488 @@
++"""附件业务编排（V2 A1-04 Batch B，B2-T02）。
++
++职责严格限定为：上传入参校验、归档策略、内容去重、引用写入、元数据列表、
++下载文件句柄、删除引用与 GC 入队、稳定错误码映射。物理存储与锁复用 B1 的
++``attachment_storage`` / ``storage_lock``；Repository 只 flush，本服务及
++Repository **不 commit/rollback**，提交边界由路由外层 Unit of Work 独占。
++
++冻结契约见 ``docs/plans/V2-A1-04-Batch-B/``（api-contracts、attachment-lifecycle、
++storage-and-lock-contract、architecture §4）。
++"""
++
++from __future__ import annotations
++
++import logging
++import os
++from collections.abc import Collection
++from dataclasses import dataclass
++from typing import BinaryIO
++from urllib.parse import quote
++from uuid import UUID
++
++from sqlalchemy import select, update
++from sqlalchemy.exc import SQLAlchemyError
++from sqlalchemy.orm import Session
++
++from app.db.storage_lock import (
++    LockGuard,
++    StorageLeaseLost,
++    StorageLockError,
++    StorageLockTransient,
++    new_owner,
++)
++from app.models import KnowledgeItemORM
++from app.services.attachment_storage import (
++    ATTACHMENT_BLOB_CORRUPTED,
++    ATTACHMENT_BLOB_MISSING,
++    ATTACHMENT_HASH_MISMATCH,
++    ATTACHMENT_KEY_COLLISION,
++    ATTACHMENT_STORAGE_CROSS_VOLUME,
++    ATTACHMENT_STORAGE_UNAVAILABLE,
++    ATTACHMENT_WRITE_BUSY,
++    ATTACHMENT_WRITE_CORRUPTED,
++    ATTACHMENT_WRITE_FAILED,
++    AttachmentStorageError,
++    StorageLayout,
++    TempBlob,
++    open_verified_blob,
++    publish_no_clobber,
++    sha256_bytes,
++    verify_blob,
++    write_temp,
++)
++from app.services.attachment_validation import (
++    ATTACHMENT_BASE64_INVALID,
++    ATTACHMENT_CONTENT_MISMATCH,
++    ATTACHMENT_EMPTY,
++    ATTACHMENT_FILENAME_INVALID,
++    ATTACHMENT_MIME_UNSUPPORTED,
++    ATTACHMENT_TOO_LARGE,
++    AttachmentValidationError,
++    validate_attachment_upload,
++)
++from app.services.repositories_v2 import (
++    SQLAlchemyAttachmentRepository,
++    SQLAlchemyGcTaskRepository,
++)
++from knowledge_core.domain.entities import (
++    Attachment,
++    GcStatus,
++    GcTask,
++    KnowledgeStatus,
++    utcnow,
++)
++
++__all__ = [
++    "ATTACHMENT_FAILED",
++    "ATTACHMENT_ITEM_ARCHIVED",
++    "ATTACHMENT_MAINTENANCE_UNAVAILABLE",
++    "ATTACHMENT_NOT_FOUND",
++    "ITEM_NOT_FOUND",
++    "STORAGE_LOCK_TIMEOUT",
++    "AttachmentDownload",
++    "AttachmentService",
++    "AttachmentServiceError",
++    "AttachmentUploadResult",
++    "attachment_content_disposition",
++    "release_storage_guard",
++]
++
++logger = logging.getLogger(__name__)
++
++ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
++ATTACHMENT_NOT_FOUND = "ATTACHMENT_NOT_FOUND"
++ATTACHMENT_ITEM_ARCHIVED = "ATTACHMENT_ITEM_ARCHIVED"
++ATTACHMENT_FAILED = "ATTACHMENT_FAILED"
++ATTACHMENT_MAINTENANCE_UNAVAILABLE = "ATTACHMENT_MAINTENANCE_UNAVAILABLE"
++STORAGE_LOCK_TIMEOUT = "STORAGE_LOCK_TIMEOUT"
++STORAGE_LOCK_UNAVAILABLE = "STORAGE_LOCK_UNAVAILABLE"
++
++_VALIDATION_STATUS = {
++    ATTACHMENT_BASE64_INVALID: 400,
++    ATTACHMENT_EMPTY: 400,
++    ATTACHMENT_FILENAME_INVALID: 400,
++    ATTACHMENT_TOO_LARGE: 413,
++    ATTACHMENT_MIME_UNSUPPORTED: 415,
++    ATTACHMENT_CONTENT_MISMATCH: 415,
++}
++
++_STORAGE_STATUS = {
++    ATTACHMENT_HASH_MISMATCH: 422,
++    ATTACHMENT_KEY_COLLISION: 409,
++    ATTACHMENT_WRITE_BUSY: 503,
++    ATTACHMENT_WRITE_CORRUPTED: 503,
++    ATTACHMENT_WRITE_FAILED: 503,
++    ATTACHMENT_STORAGE_UNAVAILABLE: 503,
++    ATTACHMENT_STORAGE_CROSS_VOLUME: 503,
++    ATTACHMENT_BLOB_MISSING: 503,
++    ATTACHMENT_BLOB_CORRUPTED: 503,
++}
++
++_ACTIVE_GC_STATUSES = {
++    GcStatus.PENDING,
++    GcStatus.RUNNING,
++    GcStatus.FAILED_RETRYABLE,
++}
++_BLOCKING_GC_STATUSES = {
++    GcStatus.FAILED_PERMANENT,
++    GcStatus.NEEDS_MANUAL,
++}
++
++
++class AttachmentServiceError(RuntimeError):
++    """业务拒绝，只携带冻结稳定码与 HTTP 状态。"""
++
++    def __init__(
++        self,
++        code: str,
++        status_code: int,
++        *,
++        headers: dict[str, str] | None = None,
++    ) -> None:
++        self.code = code
++        self.status_code = status_code
++        self.headers = headers
++        self.attachment_guard: LockGuard | None = None
++        super().__init__(code)
++
++
++@dataclass(frozen=True)
++class AttachmentUploadResult:
++    attachment: Attachment
++    created: bool
++    guard: LockGuard | None
++
++    def release(self) -> None:
++        """Commit/rollback 之后释放存储锁；释放失败不改变已提交业务结果。"""
++        release_storage_guard(self.guard)
++
++
++@dataclass(frozen=True)
++class AttachmentDownload:
++    attachment: Attachment
++    handle: BinaryIO
++
++
++def _storage_service_error(exc: AttachmentStorageError) -> AttachmentServiceError:
++    status = _STORAGE_STATUS.get(exc.code, 503)
++    headers = {"Retry-After": "1"} if exc.code == ATTACHMENT_WRITE_BUSY else None
++    return AttachmentServiceError(exc.code, status, headers=headers)
++
++
++def _lock_service_error(exc: StorageLockError) -> AttachmentServiceError:
++    code = getattr(exc, "code", STORAGE_LOCK_UNAVAILABLE)
++    if code == "STORAGE_LEASE_LOST":
++        return AttachmentServiceError(code, 503)
++    return AttachmentServiceError(code or STORAGE_LOCK_UNAVAILABLE, 503)
++
++
++def _discard_temp(temp: TempBlob) -> None:
++    try:
++        info = temp.path.lstat()
++        if (info.st_dev, info.st_ino) == temp.identity:
++            os.unlink(temp.path)
++    except OSError:
++        pass
++
++
++def release_storage_guard(guard: LockGuard | None) -> None:
++    """释放存储锁；只用于路由完成 rollback 之后或已提交之后。"""
++    if guard is None:
++        return
++    try:
++        if not guard.release():
++            logger.warning("STORAGE_LOCK_RELEASE_FAILED")
++    except StorageLockError:
++        logger.warning("STORAGE_LOCK_RELEASE_FAILED")
++    except Exception:  # noqa: BLE001 - cleanup cannot change the response
++        logger.warning("STORAGE_LOCK_RELEASE_FAILED")
++
++
++def _clean_header_filename(filename: str) -> str:
++    cleaned = "".join(
++        char for char in filename
++        if char not in {'"', "\\", "\r", "\n"} and ord(char) >= 0x20
++    )
++    return cleaned or "attachment"
++
++
++def attachment_content_disposition(filename: str) -> str:
++    """RFC 5987/6266 下载头；ASCII fallback 与 UTF-8 原名均做头字段清洗。"""
++    cleaned = _clean_header_filename(filename)
++    fallback = "".join(
++        char if 0x20 <= ord(char) < 0x7F else "_" for char in cleaned
++    ) or "_"
++    encoded = quote(cleaned, safe="")
++    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
++
++
++class AttachmentService:
++    """附件业务服务；所有 DB 写入只 flush，提交由路由外层协调器完成。"""
++
++    def __init__(
++        self,
++        *,
++        session_factory,
++        layout: StorageLayout,
++        storage_lock,
++        max_bytes: int,
++        mime_allowlist: Collection[str],
++        lock_ttl_seconds: float,
++        lock_wait_seconds: float,
++        lock_heartbeat_seconds: float,
++        gc_max_attempts: int = 8,
++        gc_quarantine_seconds: int = 86400,
++    ) -> None:
++        self.session_factory = session_factory
++        self.layout = layout
++        self.storage_lock = storage_lock
++        self.max_bytes = max_bytes
++        self.mime_allowlist = tuple(mime_allowlist)
++        self.lock_ttl_seconds = lock_ttl_seconds
++        self.lock_wait_seconds = lock_wait_seconds
++        self.lock_heartbeat_seconds = lock_heartbeat_seconds
++        self.gc_max_attempts = gc_max_attempts
++        self.gc_quarantine_seconds = gc_quarantine_seconds
++
++    # -- 读取入口 -----------------------------------------------------------
++    def _require_item(self, session: Session, item_id: UUID) -> KnowledgeItemORM:
++        item = session.get(KnowledgeItemORM, str(item_id))
++        if item is None:
++            raise AttachmentServiceError(ITEM_NOT_FOUND, 404)
++        return item
++
++    def _require_upload_target(self, item_id: UUID) -> None:
++        with self.session_factory() as probe:
++            item = probe.get(KnowledgeItemORM, str(item_id))
++            if item is None:
++                raise AttachmentServiceError(ITEM_NOT_FOUND, 404)
++            if item.status == KnowledgeStatus.ARCHIVED.value:
++                raise AttachmentServiceError(ATTACHMENT_ITEM_ARCHIVED, 409)
++
++    def _find_reference(self, session: Session, item_id: UUID, storage_key: str) -> Attachment | None:
++        for attachment in SQLAlchemyAttachmentRepository(session).list_attachments(item_id):
++            if attachment.storage_key == storage_key:
++                return attachment
++        return None
++
++    # -- 上传 ---------------------------------------------------------------
++    def upload(
++        self,
++        session: Session,
++        item_id: UUID,
++        *,
++        filename: str,
++        mime: str,
++        content_base64: str,
++    ) -> AttachmentUploadResult:
++        # 1. archived 早拒：必须发生在解码与写临时文件之前。
++        self._require_upload_target(item_id)
++
++        # 2. 纯函数校验（Base64/大小/MIME/magic/UTF-8/文件名）。
++        try:
++            validated = validate_attachment_upload(
++                filename,
++                mime,
++                content_base64,
++                max_bytes=self.max_bytes,
++                mime_allowlist=self.mime_allowlist,
++            )
++        except AttachmentValidationError as exc:
++            raise AttachmentServiceError(
++                exc.code, _VALIDATION_STATUS.get(exc.code, 400)
++            ) from None
++
++        storage_key = sha256_bytes(validated.data)
++
++        # 3. 快速路径：已有同 item+key 引用且正式 blob 可验证 → 200，不重写。
++        with self.session_factory() as probe:
++            existing = self._find_reference(probe, item_id, storage_key)
++        if existing is not None:
++            try:
++                verify_blob(self.layout, storage_key, expected_size=existing.size)
++            except AttachmentStorageError as exc:
++                if exc.code == ATTACHMENT_BLOB_MISSING:
++                    existing = None  # 在锁内重新发布后再复用引用。
++                elif exc.code == ATTACHMENT_BLOB_CORRUPTED:
++                    raise AttachmentServiceError(ATTACHMENT_KEY_COLLISION, 409) from None
++                else:
++                    raise _storage_service_error(exc) from None
++            if existing is not None:
++                return AttachmentUploadResult(existing, False, None)
++
++        # 4. 锁外写临时文件并重读 Hash；临时文件不进入正式根。
++        try:
++            temp = write_temp(self.layout, validated.data)
++        except AttachmentStorageError as exc:
++            raise _storage_service_error(exc) from None
++        if temp.sha256 != storage_key:
++            _discard_temp(temp)
++            raise AttachmentServiceError(ATTACHMENT_HASH_MISMATCH, 422)
++
++        # 5. 先取 key 锁、再发布；业务写事务从发布之后才开始。
++        try:
++            guard = self.storage_lock.acquire_many(
++                [storage_key],
++                new_owner(),
++                ttl_seconds=self.lock_ttl_seconds,
++                wait_seconds=self.lock_wait_seconds,
++                heartbeat_seconds=self.lock_heartbeat_seconds,
++            )
++        except StorageLockError as exc:
++            _discard_temp(temp)
++            raise _lock_service_error(exc) from None
++        except StorageLockTransient:
++            _discard_temp(temp)
++            raise AttachmentServiceError(STORAGE_LOCK_UNAVAILABLE, 503) from None
++        if guard is None:
++            _discard_temp(temp)
++            raise AttachmentServiceError(STORAGE_LOCK_TIMEOUT, 409)
++
++        try:
++            try:
++                publish_no_clobber(
++                    self.layout, temp, storage_key, lock_guard=guard
++                )
++            except StorageLeaseLost as exc:
++                raise _lock_service_error(exc) from None
++            except AttachmentStorageError as exc:
++                raise _storage_service_error(exc) from None
++            except StorageLockError as exc:
++                raise _lock_service_error(exc) from None
++
++            try:
++                self._guard_writable_item(session, item_id)
++                attachment = self._find_reference(session, item_id, storage_key)
++                created = attachment is None
++                if attachment is None:
++                    attachment = Attachment(
++                        item_id=item_id,
++                        filename=validated.filename,
++                        mime=validated.mime,
++                        size=len(validated.data),
++                        storage_key=storage_key,
++                        content_hash=storage_key,
++                        created_at=utcnow(),
++                    )
++                    SQLAlchemyAttachmentRepository(session).save_attachment(attachment)
++                # 与将执行 commit 的同一 session 做末次 fencing。
++                guard.verify_all(session)
++            except AttachmentServiceError:
++                raise
++            except StorageLeaseLost as exc:
++                raise _lock_service_error(exc) from None
++            except StorageLockError as exc:
++                raise _lock_service_error(exc) from None
++            except SQLAlchemyError:
++                raise
++            return AttachmentUploadResult(attachment, created, guard)
++        except BaseException as exc:
++            if isinstance(exc, Exception):
++                # 路由须先 rollback 业务事务，再释放锁（architecture §4.4 / F13）。
++                exc.attachment_guard = guard  # type: ignore[attr-defined]
++                raise
++            _release_after_failure(guard)
++            raise
++
++    def _guard_writable_item(self, session: Session, item_id: UUID) -> None:
++        """在业务写事务内做归档保护（PG 行锁 / SQLite 条件防护更新）。"""
++        dialect = session.get_bind().dialect.name
++        if dialect == "postgresql":
++            session.execute(
++                select(KnowledgeItemORM)
++                .where(KnowledgeItemORM.id == str(item_id))
++                .with_for_update()
++            )
++        elif dialect == "sqlite":
++            session.execute(
++                update(KnowledgeItemORM)
++                .where(
++                    KnowledgeItemORM.id == str(item_id),
++                    KnowledgeItemORM.status != KnowledgeStatus.ARCHIVED.value,
++                )
++                .values(
++                    status=KnowledgeItemORM.status,
++                    updated_at=KnowledgeItemORM.updated_at,
++                )
++                .execution_options(synchronize_session=False)
++            )
++        else:
++            raise AttachmentServiceError(ATTACHMENT_FAILED, 500)
++
++        item = session.get(
++            KnowledgeItemORM, str(item_id), populate_existing=True
++        )
++        if item is None:
++            raise AttachmentServiceError(ITEM_NOT_FOUND, 404)
++        if item.status == KnowledgeStatus.ARCHIVED.value:
++            raise AttachmentServiceError(ATTACHMENT_ITEM_ARCHIVED, 409)
++
++    # -- 列表 ---------------------------------------------------------------
++    def list(self, session: Session, item_id: UUID) -> list[Attachment]:
++        self._require_item(session, item_id)
++        return SQLAlchemyAttachmentRepository(session).list_attachments(item_id)
++
++    # -- 下载 ---------------------------------------------------------------
++    def download(
++        self, session: Session, item_id: UUID, attachment_id: UUID
++    ) -> AttachmentDownload:
++        if session.get(KnowledgeItemORM, str(item_id)) is None:
++            raise AttachmentServiceError(ATTACHMENT_NOT_FOUND, 404)
++        repository = SQLAlchemyAttachmentRepository(session)
++        attachment = repository.get_attachment(attachment_id)
++        if attachment is None or attachment.item_id != item_id:
++            raise AttachmentServiceError(ATTACHMENT_NOT_FOUND, 404)
++        try:
++            handle = open_verified_blob(
++                self.layout,
++                attachment.storage_key,
++                expected_size=attachment.size,
++            )
++        except AttachmentStorageError as exc:
++            raise _storage_service_error(exc) from None
++        return AttachmentDownload(attachment, handle)
++
++    # -- 删除 ---------------------------------------------------------------
++    def delete(
++        self, session: Session, item_id: UUID, attachment_id: UUID
++    ) -> None:
++        if session.get(KnowledgeItemORM, str(item_id)) is None:
++            raise AttachmentServiceError(ATTACHMENT_NOT_FOUND, 404)
++        repository = SQLAlchemyAttachmentRepository(session)
++        attachment = repository.get_attachment(attachment_id)
++        if attachment is None or attachment.item_id != item_id:
++            raise AttachmentServiceError(ATTACHMENT_NOT_FOUND, 404)
++        if not repository.delete_attachment(attachment_id):
++            raise AttachmentServiceError(ATTACHMENT_NOT_FOUND, 404)
++        if repository.count_references(attachment.storage_key) != 0:
++            return
++        try:
++            self._ensure_gc_task(session, attachment.storage_key)
++        except SQLAlchemyError:
++            raise AttachmentServiceError(
++                ATTACHMENT_MAINTENANCE_UNAVAILABLE, 503
++            ) from None
++
++    def _ensure_gc_task(self, session: Session, storage_key: str) -> None:
++        repository = SQLAlchemyGcTaskRepository(
++            session,
++            max_attempts=self.gc_max_attempts,
++            quarantine_seconds=self.gc_quarantine_seconds,
++        )
++        for task in repository.list_tasks(storage_key=storage_key):
++            if task.status in _ACTIVE_GC_STATUSES:
++                return
++            if task.status in _BLOCKING_GC_STATUSES:
++                logger.warning(
++                    "gc task requires manual attention for key prefix %s",
++                    storage_key[:8],
++                )
++                return
++        repository.save_task(GcTask(storage_key=storage_key, status=GcStatus.PENDING))
++
++
++def _release_after_failure(guard: LockGuard) -> None:
++    try:
++        guard.release()
++    except Exception:  # noqa: BLE001 - original failure is authoritative
++        logger.warning("STORAGE_LOCK_RELEASE_FAILED")
+\ No newline at end of file
+diff --git a/backend/app/api/routes/attachments.py b/backend/app/api/routes/attachments.py
+new file mode 100644
+index 0000000..f8fd680
+--- /dev/null
++++ b/backend/app/api/routes/attachments.py
+@@ -0,0 +1,190 @@
++"""附件 HTTP 路由（V2 A1-04 Batch B，B2-T02）。
++
++四条 item 作用域路由：上传（JSON Base64）、元数据列表、下载、删除。
++全部同步 ``def``（D20）；事务由本层外层 Unit of Work 提交一次，附件服务与
++Repository 不提交。下载使用服务返回的**已打开并校验的同一句柄**流式输出。
++"""
++
++from __future__ import annotations
++
++import logging
++from typing import Annotated
++from uuid import UUID
++
++from fastapi import APIRouter, Depends, HTTPException, Response
++from fastapi.responses import StreamingResponse
++from sqlalchemy.orm import Session
++
++from app.api.schemas import AttachmentOut, AttachmentUploadIn
++from app.db.session import get_session
++from app.dependencies import get_attachment_service
++from app.services.attachment_storage import iter_file
++from app.services.attachments import (
++    ATTACHMENT_FAILED,
++    AttachmentService,
++    AttachmentServiceError,
++    attachment_content_disposition,
++    release_storage_guard,
++)
++
++logger = logging.getLogger(__name__)
++
++router = APIRouter(tags=["attachments"])
++
++
++def _http_error(exc: AttachmentServiceError) -> HTTPException:
++    return HTTPException(
++        status_code=exc.status_code,
++        detail=exc.code,
++        headers=exc.headers,
++    )
++
++
++def _log_failure(operation: str, exc: BaseException) -> None:
++    # 只记录异常类型；不记录路径、文件名、异常文本或字节内容。
++    logger.warning("attachment %s failed: %s", operation, type(exc).__name__)
++
++
++def _release_failed_guard(exc: BaseException) -> None:
++    release_storage_guard(getattr(exc, "attachment_guard", None))
++
++
++@router.post(
++    "/knowledge/{item_id}/attachments",
++    response_model=AttachmentOut,
++    status_code=201,
++)
++def upload_attachment(
++    item_id: UUID,
++    payload: AttachmentUploadIn,
++    session: Annotated[Session, Depends(get_session)],
++    service: Annotated[AttachmentService, Depends(get_attachment_service)],
++    response: Response,
++) -> AttachmentOut:
++    try:
++        result = service.upload(
++            session,
++            item_id,
++            filename=payload.filename,
++            mime=payload.mime,
++            content_base64=payload.content_base64,
++        )
++    except AttachmentServiceError as exc:
++        try:
++            session.rollback()
++        finally:
++            _release_failed_guard(exc)
++        raise _http_error(exc) from None
++    except Exception as exc:  # noqa: BLE001 - stable code only
++        try:
++            session.rollback()
++        finally:
++            _release_failed_guard(exc)
++        _log_failure("upload", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++
++    try:
++        session.commit()
++    except Exception as exc:  # noqa: BLE001 - commit owner is this route
++        try:
++            session.rollback()
++        finally:
++            result.release()
++        _log_failure("upload-commit", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++    result.release()
++
++    if result.created:
++        response.status_code = 201
++        response.headers["Location"] = (
++            f"/api/knowledge/{item_id}/attachments/{result.attachment.id}"
++        )
++    else:
++        response.status_code = 200
++    return AttachmentOut.model_validate(result.attachment)
++
++
++@router.get(
++    "/knowledge/{item_id}/attachments",
++    response_model=list[AttachmentOut],
++)
++def list_attachments(
++    item_id: UUID,
++    session: Annotated[Session, Depends(get_session)],
++    service: Annotated[AttachmentService, Depends(get_attachment_service)],
++) -> list[AttachmentOut]:
++    try:
++        attachments = service.list(session, item_id)
++    except AttachmentServiceError as exc:
++        raise _http_error(exc) from None
++    except Exception as exc:  # noqa: BLE001 - stable code only
++        _log_failure("list", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++    return [AttachmentOut.model_validate(item) for item in attachments]
++
++
++@router.get(
++    "/knowledge/{item_id}/attachments/{attachment_id}",
++    response_model=None,
++)
++def download_attachment(
++    item_id: UUID,
++    attachment_id: UUID,
++    session: Annotated[Session, Depends(get_session)],
++    service: Annotated[AttachmentService, Depends(get_attachment_service)],
++) -> StreamingResponse:
++    try:
++        download = service.download(session, item_id, attachment_id)
++    except AttachmentServiceError as exc:
++        raise _http_error(exc) from None
++    except Exception as exc:  # noqa: BLE001 - stable code only
++        _log_failure("download", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++
++    attachment = download.attachment
++    handle = download.handle
++
++    def stream():
++        try:
++            yield from iter_file(handle)
++        finally:
++            handle.close()
++
++    headers = {
++        "Content-Type": attachment.mime,
++        "Content-Length": str(attachment.size),
++        "Content-Disposition": attachment_content_disposition(attachment.filename),
++        "ETag": f'"{attachment.storage_key}"',
++        "Cache-Control": "private, max-age=0, must-revalidate",
++        "X-Content-Type-Options": "nosniff",
++    }
++    return StreamingResponse(stream(), headers=headers, media_type=None)
++
++
++@router.delete(
++    "/knowledge/{item_id}/attachments/{attachment_id}",
++    status_code=204,
++)
++def delete_attachment(
++    item_id: UUID,
++    attachment_id: UUID,
++    session: Annotated[Session, Depends(get_session)],
++    service: Annotated[AttachmentService, Depends(get_attachment_service)],
++) -> Response:
++    try:
++        service.delete(session, item_id, attachment_id)
++    except AttachmentServiceError as exc:
++        session.rollback()
++        raise _http_error(exc) from None
++    except Exception as exc:  # noqa: BLE001 - stable code only
++        session.rollback()
++        _log_failure("delete", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++
++    try:
++        session.commit()
++    except Exception as exc:  # noqa: BLE001 - commit owner is this route
++        session.rollback()
++        _log_failure("delete-commit", exc)
++        raise HTTPException(status_code=500, detail=ATTACHMENT_FAILED) from None
++    return Response(status_code=204)
+\ No newline at end of file
+# B2 新增测试文件
+diff --git a/backend/tests/test_attachment_validation.py b/backend/tests/test_attachment_validation.py
+new file mode 100644
+index 0000000..e75e62b
+--- /dev/null
++++ b/backend/tests/test_attachment_validation.py
+@@ -0,0 +1,130 @@
++from __future__ import annotations
++
++from base64 import b64encode
++from unittest.mock import patch
++
++import pytest
++
++from app.services import attachment_validation as validation
++
++
++def _validate(data: bytes, mime: str, filename: str = "attachment.txt"):
++    return validation.validate_attachment_upload(filename, mime, b64encode(data).decode("ascii"))
++
++
++@pytest.mark.parametrize(("mime", "data"), [
++    ("image/png", b"\x89PNG\r\n\x1a\nrest"),
++    ("image/jpeg", b"\xff\xd8\xffrest"),
++    ("image/gif", b"GIF87arest"),
++    ("image/gif", b"GIF89arest"),
++    ("image/webp", b"RIFF\x04\x00\x00\x00WEBPrest"),
++    ("application/pdf", b"%PDF-1.7\n"),
++])
++def test_binary_magic_and_declared_mime_are_authoritative(mime, data):
++    result = _validate(data, f" {mime.upper()}; parameter=value", "mismatched.txt")
++    assert (result.filename, result.mime, result.data) == ("mismatched.txt", mime, data)
++
++
++@pytest.mark.parametrize("mime", ["text/plain", "text/markdown", "text/csv"])
++@pytest.mark.parametrize("text", ["普通文本", "# Markdown", "a,b\n1,2", "\ufeff仓库", "<svg/>"])
++def test_text_subtypes_share_utf8_validation_and_keep_declared_mime(mime, text):
++    data = text.encode()
++    result = _validate(data, mime, "中文说明.svg")
++    assert (result.mime, result.data) == (mime, data)
++
++
++@pytest.mark.parametrize(("mime", "data"), [
++    ("image/png", b"\xff\xd8\xffrest"),
++    ("image/png", b"plain text"),
++    ("image/webp", b"RIFF0000WAVE"),
++    ("image/webp", b"RIFF0000WEB"),
++    ("image/gif", b"GIF88a"),
++    ("text/plain", b"\x89PNG\r\n\x1a\n"),
++    ("text/plain", b"%PDF-1.7"),  # Valid UTF-8 without NUL, but known binary magic.
++    ("text/markdown", b"GIF89a"),
++    ("text/csv", b"not\x00text"),
++    ("text/csv", b"not\xffutf8"),
++])
++def test_invalid_magic_or_text_is_rejected(mime, data):
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        _validate(data, mime, "pretends-to-be.png")
++    assert caught.value.code == validation.ATTACHMENT_CONTENT_MISMATCH
++
++
++@pytest.mark.parametrize("mime", ["image/svg+xml", " IMAGE/SVG+XML; x=y ", "application/zip", ""])
++def test_unsupported_mime_is_rejected_even_if_configured(mime):
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        validation.validate_attachment_upload(
++            "vector.svg", mime, "PHN2Zy8+", mime_allowlist={mime.partition(";")[0].strip().lower()}
++        )
++    assert caught.value.code == validation.ATTACHMENT_MIME_UNSUPPORTED
++
++
++@pytest.mark.parametrize("encoded", ["YQ", "YQ=", "YQ===", "YQ==\n", "Y!==", "é===", "_w==",
++                                    "YWJj====", "YR==", "YWJ=", "YQ==Yg=="])
++def test_rejects_nonstandard_or_invalid_base64(encoded):
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        validation.validate_attachment_upload("note.txt", "text/plain", encoded)
++    assert caught.value.code == validation.ATTACHMENT_BASE64_INVALID
++
++
++def test_empty_attachment_reports_its_own_error():
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        _validate(b"", "text/plain")
++    assert caught.value.code == validation.ATTACHMENT_EMPTY
++
++
++def test_attachment_size_limit_checks_actual_decoded_bytes():
++    data = b"a" * (10 * 1024 * 1024)
++    assert _validate(data, "text/plain").data == data
++    # 10 MiB and 10 MiB + 1 have the same encoded length, so the byte gate matters.
++    assert len(b64encode(data)) == len(b64encode(data + b"b"))
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        _validate(data + b"b", "text/plain")
++    assert caught.value.code == validation.ATTACHMENT_TOO_LARGE
++
++
++def test_11_mib_is_rejected_before_decoding():
++    encoded = b64encode(b"a" * (11 * 1024 * 1024)).decode("ascii")
++    with (
++        patch.object(validation.base64, "b64decode") as decode,
++        pytest.raises(validation.AttachmentValidationError) as caught,
++    ):
++        validation.validate_attachment_upload("note.txt", "text/plain", encoded)
++    assert caught.value.code == validation.ATTACHMENT_TOO_LARGE
++    decode.assert_not_called()
++
++
++def test_optional_settings_can_narrow_frozen_limits():
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        validation.validate_attachment_upload("note.txt", "text/plain", "YWJj", max_bytes=2)
++    assert caught.value.code == validation.ATTACHMENT_TOO_LARGE
++
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        validation.validate_attachment_upload(
++            "note.txt", "text/plain", "YWJj", mime_allowlist={"application/pdf"}
++        )
++    assert caught.value.code == validation.ATTACHMENT_MIME_UNSUPPORTED
++
++
++@pytest.mark.parametrize(("raw", "safe"), [
++    ("../../evil.png", "evil.png"),
++    (r"C:\x.png", "x.png"),
++    (r"\\server\share\说明..稿.pdf", "说明.稿.pdf"),
++    ("目录/中\r\n\t\x00\u0085文:说明.pdf", "中文_说明.pdf"),
++    ('name"with?quotes. ', "name_with_quotes"),
++    ("NUL.txt", "_NUL.txt"),
++    ("cOm¹.pdf", "_cOm¹.pdf"),
++    (" LPT1. ", "_LPT1"),
++    ("便签📎.md", "便签📎.md"),
++    ("a" * 500, "a" * 500),
++])
++def test_filename_sanitization(raw, safe):
++    assert validation.sanitize_attachment_filename(raw) == safe
++
++
++@pytest.mark.parametrize("raw", ["", "  ", "..", "dir/", "\x00\r\n", "a" * 501])
++def test_empty_or_oversized_display_name_is_rejected(raw):
++    with pytest.raises(validation.AttachmentValidationError) as caught:
++        _validate(b"ok", "text/plain", raw)
++    assert caught.value.code == validation.ATTACHMENT_FILENAME_INVALID
+diff --git a/backend/tests/test_attachment_api.py b/backend/tests/test_attachment_api.py
+new file mode 100644
+index 0000000..39ff9e4
+--- /dev/null
++++ b/backend/tests/test_attachment_api.py
+@@ -0,0 +1,611 @@
++"""B2 附件 HTTP API 验收（真实 SQLite + 真实 tmp 文件系统）。
++
++覆盖冻结 acceptance-plan ATT-01…13 的 HTTP/DB/FS 部分；不替 B3 staging、
++B4 approve 或 B5 GC/ORP worker 取证。所有断言直接查询真实数据库与文件系统，
++不以响应体推断替代。
++"""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import threading
++from concurrent.futures import ThreadPoolExecutor
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from uuid import uuid4
++
++import pytest
++from fastapi.testclient import TestClient
++from sqlalchemy import func, select
++from sqlalchemy.orm import Session
++
++import app.models  # noqa: F401  ORM 元数据
++from app.api.routes import attachments as attachments_route
++from app.db.session import get_session_factory
++from app.models import AttachmentORM, GcTaskORM, KnowledgeItemORM
++from app.services import attachments as attachments_module
++from knowledge_core.domain.entities import GcStatus
++
++PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"png-body"
++PDF = b"%PDF-1.7\n" + b"pdf-body"
++TEXT = "普通文本\n".encode()
++
++
++def _b64(data: bytes) -> str:
++    return base64.b64encode(data).decode("ascii")
++
++
++def _upload(
++    client: TestClient,
++    item_id: str,
++    data: bytes = PNG,
++    *,
++    mime: str = "image/png",
++    filename: str = "design.png",
++):
++    return client.post(
++        f"/api/knowledge/{item_id}/attachments",
++        json={"filename": filename, "mime": mime, "content_base64": _b64(data)},
++    )
++
++
++def _item(client: TestClient, title: str = "附件条目") -> str:
++    response = client.post("/api/knowledge", json={"title": title, "content": "正文"})
++    assert response.status_code == 201
++    return response.json()["id"]
++
++
++def _set_status(item_id: str, status: str) -> None:
++    with get_session_factory()() as session:
++        row = session.get(KnowledgeItemORM, item_id)
++        assert row is not None
++        row.status = status
++        session.commit()
++
++
++def _attachment_rows(item_id: str | None = None) -> list[AttachmentORM]:
++    with get_session_factory()() as session:
++        stmt = select(AttachmentORM).order_by(AttachmentORM.created_at, AttachmentORM.id)
++        if item_id is not None:
++            stmt = stmt.where(AttachmentORM.item_id == item_id)
++        return list(session.scalars(stmt))
++
++
++def _gc_rows() -> list[GcTaskORM]:
++    with get_session_factory()() as session:
++        return list(session.scalars(select(GcTaskORM)))
++
++
++def _layout(client: TestClient):
++    return client.app.state.attachment_storage
++
++
++def _blob(client: TestClient, key: str) -> Path:
++    return _layout(client).final_path(key)
++
++
++def _temp_files(client: TestClient) -> list[Path]:
++    return list(_layout(client).temp_dir.iterdir())
++
++
++def test_upload_png_creates_row_blob_and_download_headers(client: TestClient):
++    item_id = _item(client)
++    response = _upload(client, item_id, PNG)
++    assert response.status_code == 201
++    body = response.json()
++    key = hashlib.sha256(PNG).hexdigest()
++    assert body["storage_key"] == body["content_hash"] == key
++    assert body["size"] == len(PNG)
++    assert body["mime"] == "image/png"
++    assert body["filename"] == "design.png"
++    assert body["item_id"] == item_id
++    assert response.headers["location"] == (
++        f"/api/knowledge/{item_id}/attachments/{body['id']}"
++    )
++
++    blob = _blob(client, key)
++    assert blob == _layout(client).storage_root / key[:2] / key[2:4] / key
++    assert blob.read_bytes() == PNG
++    assert _temp_files(client) == []
++    assert len(_attachment_rows(item_id)) == 1
++
++    download = client.get(f"/api/knowledge/{item_id}/attachments/{body['id']}")
++    assert download.status_code == 200
++    assert download.content == PNG
++    assert download.headers["content-type"] == "image/png"
++    assert download.headers["content-length"] == str(len(PNG))
++    assert download.headers["etag"] == f'"{key}"'
++    assert download.headers["x-content-type-options"] == "nosniff"
++    assert download.headers["cache-control"] == "private, max-age=0, must-revalidate"
++    disposition = download.headers["content-disposition"]
++    assert disposition.startswith('attachment; filename="design.png"')
++    assert "filename*=UTF-8''design.png" in disposition
++
++    listed = client.get(f"/api/knowledge/{item_id}/attachments")
++    assert listed.status_code == 200
++    assert [row["id"] for row in listed.json()] == [body["id"]]
++
++
++def test_pdf_is_accepted_and_declared_magic_is_checked(client: TestClient):
++    item_id = _item(client)
++    response = _upload(client, item_id, PDF, mime="application/pdf", filename="paper.pdf")
++    assert response.status_code == 201
++    assert response.json()["mime"] == "application/pdf"
++    mismatch = _upload(client, item_id, PDF, mime="image/png", filename="paper.pdf")
++    assert mismatch.status_code == 415
++    assert mismatch.json()["detail"] == "ATTACHMENT_CONTENT_MISMATCH"
++
++
++def test_same_content_two_items_shares_one_physical_blob(client: TestClient):
++    item_a = _item(client, "A")
++    item_b = _item(client, "B")
++    first = _upload(client, item_a, PNG)
++    second = _upload(client, item_b, PNG, filename="copy.png")
++    assert first.status_code == second.status_code == 201
++    assert first.json()["id"] != second.json()["id"]
++    assert first.json()["storage_key"] == second.json()["storage_key"]
++    key = first.json()["storage_key"]
++    shard = _blob(client, key).parent
++    assert [path.name for path in shard.iterdir()] == [key]
++    with get_session_factory()() as session:
++        count = session.scalar(
++            select(func.count())
++            .select_from(AttachmentORM)
++            .where(AttachmentORM.storage_key == key)
++        )
++    assert count == 2
++
++    duplicate = _upload(client, item_a, PNG, filename="again.png")
++    assert duplicate.status_code == 200
++    assert duplicate.json()["id"] == first.json()["id"]
++    assert len(_attachment_rows(item_a)) == 1
++
++
++def test_size_and_base64_limits_write_nothing(client: TestClient):
++    item_id = _item(client)
++    too_large = b"a" * (10 * 1024 * 1024 + 1)
++    response = _upload(client, item_id, too_large, mime="text/plain", filename="big.txt")
++    assert response.status_code == 413
++    assert response.json()["detail"] == "ATTACHMENT_TOO_LARGE"
++
++    invalid = client.post(
++        f"/api/knowledge/{item_id}/attachments",
++        json={"filename": "x.txt", "mime": "text/plain", "content_base64": "YQ==="},
++    )
++    assert invalid.status_code == 400
++    assert invalid.json()["detail"] == "ATTACHMENT_BASE64_INVALID"
++
++    empty = _upload(client, item_id, b"", mime="text/plain", filename="empty.txt")
++    assert empty.status_code == 400
++    assert empty.json()["detail"] == "ATTACHMENT_EMPTY"
++
++    assert _attachment_rows(item_id) == []
++    assert _temp_files(client) == []
++    assert not any(
++        path.is_file() for path in _layout(client).storage_root.rglob("*")
++    )
++
++
++def test_content_mismatch_svg_and_text_subtypes(client: TestClient):
++    item_id = _item(client)
++    mismatch = _upload(
++        client, item_id, b"not a png", mime="image/png", filename="fake.png"
++    )
++    assert mismatch.status_code == 415
++    assert mismatch.json()["detail"] == "ATTACHMENT_CONTENT_MISMATCH"
++
++    text_as_png = _upload(
++        client, item_id, TEXT, mime="image/png", filename="fake.png"
++    )
++    assert text_as_png.status_code == 415
++    assert text_as_png.json()["detail"] == "ATTACHMENT_CONTENT_MISMATCH"
++
++    svg = _upload(
++        client,
++        item_id,
++        b"<svg xmlns='http://www.w3.org/2000/svg'/>",
++        mime="image/svg+xml",
++        filename="vector.svg",
++    )
++    assert svg.status_code == 415
++    assert svg.json()["detail"] == "ATTACHMENT_MIME_UNSUPPORTED"
++
++    for mime in ("text/plain", "text/markdown", "text/csv"):
++        response = _upload(
++            client,
++            item_id,
++            f"same {mime}".encode(),
++            mime=mime,
++            filename="note.dat",
++        )
++        assert response.status_code == 201
++        assert response.json()["mime"] == mime
++
++    text_svg = _upload(
++        client, item_id, b"<svg/>", mime="text/plain", filename="safe.svg"
++    )
++    assert text_svg.status_code == 201
++    assert text_svg.json()["mime"] == "text/plain"
++    assert len(_attachment_rows(item_id)) == 4
++
++
++def test_filename_is_sanitized_and_extra_fields_rejected(client: TestClient):
++    item_id = _item(client)
++    traversal = _upload(
++        client, item_id, PNG, filename="../../evil\r\n.png"
++    )
++    assert traversal.status_code == 201
++    assert traversal.json()["filename"] == "evil.png"
++    download = client.get(
++        f"/api/knowledge/{item_id}/attachments/{traversal.json()['id']}"
++    )
++    disposition = download.headers["content-disposition"]
++    assert "\r" not in disposition and "\n" not in disposition
++    assert ".." not in disposition
++
++    windows = _upload(client, item_id, b"%PDF-1.7\nx", mime="application/pdf",
++                      filename="C:\\temp\\paper.pdf")
++    assert windows.status_code == 201
++    assert windows.json()["filename"] == "paper.pdf"
++
++    reserved = _upload(client, item_id, TEXT, mime="text/plain", filename="CON")
++    assert reserved.status_code == 201
++    assert reserved.json()["filename"] == "_CON"
++
++    unicode = _upload(
++        client, item_id, TEXT + b"unicode", mime="text/plain", filename="报告 2026.txt"
++    )
++    assert unicode.status_code == 201
++    assert unicode.json()["filename"] == "报告 2026.txt"
++    unicode_download = client.get(
++        f"/api/knowledge/{item_id}/attachments/{unicode.json()['id']}"
++    )
++    disposition = unicode_download.headers["content-disposition"]
++    assert "filename*=UTF-8''%E6%8A%A5%E5%91%8A%202026.txt" in disposition
++    assert disposition.isascii()
++
++    empty = _upload(client, item_id, TEXT, mime="text/plain", filename="")
++    assert empty.status_code == 400
++    assert empty.json()["detail"] == "ATTACHMENT_FILENAME_INVALID"
++
++    extra = client.post(
++        f"/api/knowledge/{item_id}/attachments",
++        json={
++            "filename": "x.txt",
++            "mime": "text/plain",
++            "content_base64": _b64(TEXT),
++            "path": "escape",
++        },
++    )
++    assert extra.status_code == 422
++
++    missing = client.post(
++        f"/api/knowledge/{item_id}/attachments",
++        json={"filename": "x.txt", "mime": "text/plain"},
++    )
++    assert missing.status_code == 422
++
++
++def test_unknown_item_and_cross_item_do_not_leak(client: TestClient):
++    missing_item = str(uuid4())
++    assert _upload(client, missing_item, PNG).status_code == 404
++    assert _upload(client, missing_item, PNG).json()["detail"] == "ITEM_NOT_FOUND"
++    assert client.get(
++        f"/api/knowledge/{missing_item}/attachments"
++    ).status_code == 404
++
++    item_a = _item(client, "A")
++    item_b = _item(client, "B")
++    created = _upload(client, item_a, PNG)
++    attachment_id = created.json()["id"]
++
++    assert client.get(f"/api/knowledge/{item_b}/attachments").json() == []
++    assert client.get(
++        f"/api/knowledge/{item_b}/attachments/{attachment_id}"
++    ).status_code == 404
++    assert client.delete(
++        f"/api/knowledge/{item_b}/attachments/{attachment_id}"
++    ).status_code == 404
++    assert client.get(
++        f"/api/knowledge/{item_a}/attachments/{uuid4()}"
++    ).status_code == 404
++
++
++def test_delete_last_reference_enqueues_gc_but_shared_reference_does_not(
++    client: TestClient,
++):
++    item_a = _item(client, "A")
++    item_b = _item(client, "B")
++    first = _upload(client, item_a, PNG).json()
++    second = _upload(client, item_b, PNG).json()
++    key = first["storage_key"]
++
++    shared_delete = client.delete(
++        f"/api/knowledge/{item_a}/attachments/{first['id']}"
++    )
++    assert shared_delete.status_code == 204
++    assert _attachment_rows(item_a) == []
++    assert _blob(client, key).read_bytes() == PNG
++    assert _gc_rows() == []
++
++    last_delete = client.delete(
++        f"/api/knowledge/{item_b}/attachments/{second['id']}"
++    )
++    assert last_delete.status_code == 204
++    assert _blob(client, key).read_bytes() == PNG
++    tasks = _gc_rows()
++    assert len(tasks) == 1
++    assert tasks[0].storage_key == key
++    assert tasks[0].status == GcStatus.PENDING.value
++
++    assert client.delete(
++        f"/api/knowledge/{item_b}/attachments/{second['id']}"
++    ).status_code == 404
++
++
++def test_delete_does_not_duplicate_active_gc_task(client: TestClient):
++    item_id = _item(client)
++    first = _upload(client, item_id, PNG).json()
++    assert client.delete(
++        f"/api/knowledge/{item_id}/attachments/{first['id']}"
++    ).status_code == 204
++    assert len(_gc_rows()) == 1
++
++    second = _upload(client, item_id, PNG).json()
++    assert second["id"] != first["id"]
++    assert client.delete(
++        f"/api/knowledge/{item_id}/attachments/{second['id']}"
++    ).status_code == 204
++    assert len(_gc_rows()) == 1
++
++
++def test_archived_blocks_upload_but_allows_list_download_delete(
++    client: TestClient,
++):
++    item_id = _item(client)
++    created = _upload(client, item_id, PNG).json()
++    _set_status(item_id, "archived")
++
++    blocked = _upload(client, item_id, PDF, mime="application/pdf", filename="x.pdf")
++    assert blocked.status_code == 409
++    assert blocked.json()["detail"] == "ATTACHMENT_ITEM_ARCHIVED"
++    assert len(_attachment_rows(item_id)) == 1
++    assert _temp_files(client) == []
++
++    assert client.get(f"/api/knowledge/{item_id}/attachments").status_code == 200
++    download = client.get(
++        f"/api/knowledge/{item_id}/attachments/{created['id']}"
++    )
++    assert download.status_code == 200 and download.content == PNG
++    assert client.delete(
++        f"/api/knowledge/{item_id}/attachments/{created['id']}"
++    ).status_code == 204
++    assert _attachment_rows(item_id) == []
++    assert _blob(client, created["storage_key"]).exists()
++
++
++def test_archive_committed_after_publish_leaves_zero_references(
++    client: TestClient, monkeypatch: pytest.MonkeyPatch
++):
++    item_id = _item(client)
++    original = attachments_module.publish_no_clobber
++
++    def publish_then_archive(*args, **kwargs):
++        result = original(*args, **kwargs)
++        _set_status(item_id, "archived")
++        return result
++
++    monkeypatch.setattr(attachments_module, "publish_no_clobber", publish_then_archive)
++    response = _upload(client, item_id, PNG)
++    assert response.status_code == 409
++    assert response.json()["detail"] == "ATTACHMENT_ITEM_ARCHIVED"
++    assert _attachment_rows(item_id) == []
++    assert _blob(client, hashlib.sha256(PNG).hexdigest()).read_bytes() == PNG
++    assert _temp_files(client) == []
++
++
++def test_corrupted_and_missing_blob_return_503(client: TestClient):
++    item_id = _item(client)
++    first = _upload(client, item_id, PNG).json()
++    blob = _blob(client, first["storage_key"])
++    original = blob.read_bytes()
++    blob.write_bytes(b"\x00" * len(original))
++
++    response = client.get(
++        f"/api/knowledge/{item_id}/attachments/{first['id']}"
++    )
++    assert response.status_code == 503
++    assert response.json()["detail"] == "ATTACHMENT_BLOB_CORRUPTED"
++    # 列表只读元数据，不做 hash 校验。
++    assert client.get(f"/api/knowledge/{item_id}/attachments").status_code == 200
++
++    blob.unlink()
++    missing = client.get(
++        f"/api/knowledge/{item_id}/attachments/{first['id']}"
++    )
++    assert missing.status_code == 503
++    assert missing.json()["detail"] == "ATTACHMENT_BLOB_MISSING"
++    assert len(_attachment_rows(item_id)) == 1
++
++
++def test_upload_repairs_missing_blob_for_existing_reference(client: TestClient):
++    item_id = _item(client)
++    first = _upload(client, item_id, PNG).json()
++    _blob(client, first["storage_key"]).unlink()
++
++    repaired = _upload(client, item_id, PNG)
++    assert repaired.status_code == 200
++    assert repaired.json()["id"] == first["id"]
++    assert _blob(client, first["storage_key"]).read_bytes() == PNG
++    assert len(_attachment_rows(item_id)) == 1
++
++
++def test_upload_refuses_to_reuse_corrupted_blob(client: TestClient):
++    item_id = _item(client)
++    first = _upload(client, item_id, PNG).json()
++    blob = _blob(client, first["storage_key"])
++    blob.write_bytes(b"\x00" * len(PNG))
++
++    response = _upload(client, item_id, PNG)
++    assert response.status_code == 409
++    assert response.json()["detail"] == "ATTACHMENT_KEY_COLLISION"
++    assert blob.read_bytes() == b"\x00" * len(PNG)
++    assert len(_attachment_rows(item_id)) == 1
++    assert _temp_files(client) == []
++
++
++def test_storage_lock_timeout_returns_409_and_writes_nothing(client: TestClient):
++    item_id = _item(client)
++    key = hashlib.sha256(PNG).hexdigest()
++    manager = client.app.state.storage_key_lock
++    service = client.app.state.attachment_service
++    guard = manager.acquire_many([key], "test-blocker", heartbeat_seconds=0)
++    assert guard is not None
++    previous_wait = service.lock_wait_seconds
++    service.lock_wait_seconds = 0.05
++    try:
++        response = _upload(client, item_id, PNG)
++    finally:
++        service.lock_wait_seconds = previous_wait
++        guard.release()
++    assert response.status_code == 409
++    assert response.json()["detail"] == "STORAGE_LOCK_TIMEOUT"
++    assert _attachment_rows(item_id) == []
++    assert _temp_files(client) == []
++    assert not _blob(client, key).exists()
++
++
++def test_archived_failure_releases_key_lock_after_rollback(
++    client: TestClient, monkeypatch: pytest.MonkeyPatch
++):
++    item_id = _item(client)
++    service = client.app.state.attachment_service
++    previous_wait = service.lock_wait_seconds
++    service.lock_wait_seconds = 0.05
++    original = attachments_module.publish_no_clobber
++
++    def publish_then_archive(*args, **kwargs):
++        result = original(*args, **kwargs)
++        _set_status(item_id, "archived")
++        return result
++
++    try:
++        monkeypatch.setattr(
++            attachments_module, "publish_no_clobber", publish_then_archive
++        )
++        assert _upload(client, item_id, PNG).status_code == 409
++        monkeypatch.setattr(attachments_module, "publish_no_clobber", original)
++        _set_status(item_id, "active")
++        recovered = _upload(client, item_id, PNG)
++    finally:
++        service.lock_wait_seconds = previous_wait
++    assert recovered.status_code == 201
++    assert len(_attachment_rows(item_id)) == 1
++
++
++def test_commit_failure_leaves_no_row_but_published_blob(client: TestClient, monkeypatch):
++    item_id = _item(client)
++    key = hashlib.sha256(PNG).hexdigest()
++    original_commit = Session.commit
++
++    def failing_commit(self):
++        raise RuntimeError("commit failed")
++
++    monkeypatch.setattr(Session, "commit", failing_commit)
++    response = _upload(client, item_id, PNG)
++    monkeypatch.setattr(Session, "commit", original_commit)
++
++    assert response.status_code == 500
++    assert response.json()["detail"] == "ATTACHMENT_FAILED"
++    assert _attachment_rows(item_id) == []
++    assert _blob(client, key).read_bytes() == PNG
++    assert _temp_files(client) == []
++
++
++def test_concurrent_same_item_upload_reuses_one_reference(client: TestClient):
++    item_id = _item(client)
++    barrier = threading.Barrier(2)
++
++    def send(filename: str):
++        barrier.wait(timeout=5)
++        return _upload(client, item_id, PNG, filename=filename)
++
++    with ThreadPoolExecutor(2) as pool:
++        responses = list(pool.map(send, ("one.png", "two.png")))
++    assert sorted(response.status_code for response in responses) == [200, 201]
++    assert len({response.json()["id"] for response in responses}) == 1
++    assert len(_attachment_rows(item_id)) == 1
++    assert len(list(_blob(client, hashlib.sha256(PNG).hexdigest()).parent.iterdir())) == 1
++
++
++def test_concurrent_different_items_share_one_physical_blob(client: TestClient):
++    item_a = _item(client, "A")
++    item_b = _item(client, "B")
++    barrier = threading.Barrier(2)
++
++    def send(item_id: str):
++        barrier.wait(timeout=5)
++        return _upload(client, item_id, PDF, mime="application/pdf", filename="p.pdf")
++
++    with ThreadPoolExecutor(2) as pool:
++        responses = list(pool.map(send, (item_a, item_b)))
++    assert [response.status_code for response in responses] == [201, 201]
++    key = responses[0].json()["storage_key"]
++    assert responses[1].json()["storage_key"] == key
++    assert len(list(_blob(client, key).parent.iterdir())) == 1
++    assert len(_attachment_rows()) == 2
++
++
++def test_large_text_download_is_streamed_from_verified_handle(client: TestClient):
++    item_id = _item(client)
++    payload = ("段落" * 400_000).encode()  # >2 MiB, 合法 UTF-8
++    created = _upload(client, item_id, payload, mime="text/plain", filename="long.txt")
++    assert created.status_code == 201
++    response = client.get(
++        f"/api/knowledge/{item_id}/attachments/{created.json()['id']}"
++    )
++    assert response.status_code == 200
++    assert response.content == payload
++    assert response.headers["content-length"] == str(len(payload))
++
++
++def test_download_streams_the_same_verified_handle(
++    client: TestClient, monkeypatch: pytest.MonkeyPatch
++):
++    item_id = _item(client)
++    created = _upload(client, item_id, PNG).json()
++    original_iter_file = attachments_route.iter_file
++    handles: list[object] = []
++
++    def spy(handle):
++        handles.append(handle)
++        yield from original_iter_file(handle)
++
++    monkeypatch.setattr(attachments_route, "iter_file", spy)
++    response = client.get(
++        f"/api/knowledge/{item_id}/attachments/{created['id']}"
++    )
++    assert response.status_code == 200
++    assert response.content == PNG
++    assert len(handles) == 1
++    assert handles[0].closed
++
++
++def test_list_sorts_by_created_at_then_id(client: TestClient):
++    item_id = _item(client)
++    ids = [
++        _upload(client, item_id, data).json()["id"]
++        for data in (PNG + b"1", PNG + b"2", PNG + b"3")
++    ]
++    base = datetime(2026, 1, 1, tzinfo=UTC)
++    with get_session_factory()() as session:
++        for offset, attachment_id in enumerate(ids):
++            row = session.get(AttachmentORM, attachment_id)
++            assert row is not None
++            row.created_at = base + timedelta(seconds=offset)
++        session.commit()
++
++    listed = client.get(f"/api/knowledge/{item_id}/attachments")
++    assert listed.status_code == 200
++    assert [row["id"] for row in listed.json()] == ids
+\ No newline at end of file

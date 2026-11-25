@@ -1,0 +1,34 @@
+### git branch/HEAD/status
+fix/m0-admission-and-m5-regressions
+784b1248065424e07273b272d6016cc121bc606c
+(porcelain empty above = clean tracked worktree)
+
+### untracked (excl. ignored)
+?? docs/audit/V2-A1-03-final-stage-audit/
+
+### full linear chain (oldest->newest)
+2d2b634  | chore: M0 项目初始化与工程规范建立
+a2a8e01 2d2b634 | feat: M1 对话与知识提取基础
+4dcf61b a2a8e01 | feat: M2 知识关系、去重与审核
+872db27 4dcf61b | feat: M3 跨会话混合检索（FTS5 全文 + 真实向量 + RRF 融合）
+d6b29e7 872db27 | feat: M4 动态知识地图（Core 图装配 + 只读图 API + React Flow/ELK 渲染与联动）
+59068e2 d6b29e7 | feat: M5 交互式知识实验（Core 测验/对比/路径编排 + 实验 API + 三模式前端）
+4557d2e 59068e2 | fix: M0 准入修复（01–07）与 M5 回归修复（ZIP-01–04）
+3c9b28b 4557d2e | docs: 补记修复批次提交哈希 4557d2e 至验收报告与里程碑台账
+6d91718 3c9b28b | fix: 迁移 0004 回填历史 knowledge_item 到全文索引（SQLite FTS5 + PG tsvector）
+f847e4f 6d91718 | feat: V2 A1-01/A1-02 开放 Markdown 知识库底座（实体/端口 + 迁移 0006 + MarkdownCodec 与三 Hash）
+41ff761 f847e4f | docs: V2 规划与批次 A 设计、A1-01/A1-02 验收记录、独立复审报告与 A1-03 计划归档
+5d6dcf1 41ff761 | chore: gitignore 忽略 release/ 审计交接构建产物
+715d9e7 5d6dcf1 | feat: V2 A1-03 稳定链接与反链四层实现 + 全局版本同构守卫 + 计划新鲜度门禁 C
+7e0582c 715d9e7 | docs: V2 A1-03 验收记录 + 计划 T22–T40 状态由【待验证】更新为【已验证】
+ccf6194 7e0582c | fix: V2 K1+K2 整改批 — 治理审核批准路径链接维护 + 重建并发窗口控制
+b6c7e15 ccf6194 | fix: 专项审计修复 — 重建步7 P2 乐观前置扩至门禁C同口径6字段
+9634ad1 b6c7e15 | fix: 专项审计修复 — 重建步8c 逐行复核补齐 no-op 行窗口②并发保护
+784b124 9634ad1 | test: A1-03 最终审计补充 — phantom 非碰撞新增 ID 集合守护验证
+
+### merge commits (expect none)
+
+### HEAD not pushed? branch upstream:
+fatal: no upstream configured for branch 'fix/m0-admission-and-m5-regressions'
+(no upstream = not pushed)
+EXIT_CODE=0

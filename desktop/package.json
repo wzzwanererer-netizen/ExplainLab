@@ -1,0 +1,13 @@
+{
+  "name": "explainlab-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "ExplainLab V2 Native Windows Desktop Application (Nesti Fluent)",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^35.1.5"
+  }
+}

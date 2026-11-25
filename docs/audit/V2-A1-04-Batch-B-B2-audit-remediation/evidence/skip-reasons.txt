@@ -1,0 +1,23 @@
+att12-windows.xml tests=2 skipped=0 failures=0 errors=0
+b1-targeted-windows.xml tests=212 skipped=37 failures=0 errors=0
+   27 missing real EXPLAINLAB_PG_TEST_URL
+    3 normal Windows token could not create junction (exit 1)
+    1 Linux real filesystem mount required
+    1 cannot create a Windows junction or symlink
+    1 cannot create symlink/junction in this environment
+    1 Windows 打开文件默认拒绝 rename，句柄路径替换另行取证
+    1 directory link creation unavailable
+    1 mklink /J unavailable
+    1 no writable second Windows volume selected
+b2-api-windows.xml tests=29 skipped=5 failures=0 errors=0
+    5 missing real EXPLAINLAB_PG_TEST_URL
+backend-core-full-windows.xml tests=1609 skipped=220 failures=0 errors=0
+  210 missing real EXPLAINLAB_PG_TEST_URL
+    3 normal Windows token could not create junction (exit 1)
+    1 Linux real filesystem mount required
+    1 cannot create a Windows junction or symlink
+    1 cannot create symlink/junction in this environment
+    1 Windows 打开文件默认拒绝 rename，句柄路径替换另行取证
+    1 directory link creation unavailable
+    1 mklink /J unavailable
+    1 no writable second Windows volume selected

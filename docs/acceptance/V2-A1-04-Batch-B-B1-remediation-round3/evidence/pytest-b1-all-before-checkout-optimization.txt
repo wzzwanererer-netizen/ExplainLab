@@ -1,0 +1,80 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_sqlite.py
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 196 items
+
+backend\tests\test_attachment_gc.py .......................              [ 11%]
+backend\tests\test_attachment_pg.py ssss                                 [ 13%]
+backend\tests\test_attachment_storage.py ..........s...............s.... [ 29%]
+.............s.....................................s...................  [ 65%]
+backend\tests\test_attachment_windows.py ...s..                          [ 68%]
+backend\tests\test_storage_lock_pg_faults.py ....................        [ 79%]
+backend\tests\test_storage_lock_pg.py sssssssssssss                      [ 85%]
+backend\tests\test_storage_lock_sqlite.py .....F...F..................   [100%]
+
+================================== FAILURES ===================================
+______________________ test_lck02_two_managers_share_db _______________________
+
+lock_env = (sessionmaker(class_='Session', bind=Engine(sqlite:///C%3A%5CUsers%5Cwzz%5CAppData%5CLocal%5CPackages%5COpenAI.Codex_2...db), autoflush=False, expire_on_commit=False), <app.db.storage_lock.SQLiteStorageKeyLock object at 0x0000018D229E8810>)
+
+    def test_lck02_two_managers_share_db(lock_env):
+        factory, lock = lock_env
+        other = SQLiteStorageKeyLock(factory, ttl_seconds=60.0, wait_seconds=2.0)
+        lease = lock.acquire(KEY_A, "owner-1", ttl_seconds=60)
+        assert lease is not None
+        assert other.acquire(KEY_A, "owner-2", ttl_seconds=60) is None
+        lock.release(lease)
+        second = other.acquire(KEY_A, "owner-3", ttl_seconds=60)
+>       assert second is not None
+E       assert None is not None
+
+backend\tests\test_storage_lock_sqlite.py:179: AssertionError
+___________________ test_lck04_renew_after_own_expiry_fails ___________________
+
+lock_env = (sessionmaker(class_='Session', bind=Engine(sqlite:///C%3A%5CUsers%5Cwzz%5CAppData%5CLocal%5CPackages%5COpenAI.Codex_2...db), autoflush=False, expire_on_commit=False), <app.db.storage_lock.SQLiteStorageKeyLock object at 0x0000018D22A9E0D0>)
+
+    def test_lck04_renew_after_own_expiry_fails(lock_env):
+        factory, lock = lock_env
+        lease = lock.acquire(KEY_A, "owner-a", ttl_seconds=0.2)
+>       assert lease is not None
+E       assert None is not None
+
+backend\tests\test_storage_lock_sqlite.py:234: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_attachment_pg.py:99: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:117: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:170: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_pg.py:195: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过附件/GC 仓储 PG 测试
+SKIPPED [1] backend\tests\test_attachment_storage.py:205: cannot create a Windows junction or symlink
+SKIPPED [1] backend\tests\test_attachment_storage.py:403: cannot create symlink/junction in this environment
+SKIPPED [1] backend\tests\test_attachment_storage.py:702: Windows 打开文件默认拒绝 rename，句柄路径替换另行取证
+SKIPPED [1] backend\tests\test_attachment_storage.py:922: directory link creation unavailable
+SKIPPED [1] backend\tests\test_attachment_windows.py:95: mklink /J unavailable
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:128: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:149: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:165: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:183: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:196: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:213: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:229: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:244: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:273: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:286: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:298: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:304: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:330: 未配置 EXPLAINLAB_PG_TEST_URL（真实 PostgreSQL 实例），跳过 StorageKeyLock PG 测试
+FAILED backend/tests/test_storage_lock_sqlite.py::test_lck02_two_managers_share_db
+FAILED backend/tests/test_storage_lock_sqlite.py::test_lck04_renew_after_own_expiry_fails
+============ 2 failed, 172 passed, 22 skipped, 1 warning in 55.57s ============
+exit_code=1

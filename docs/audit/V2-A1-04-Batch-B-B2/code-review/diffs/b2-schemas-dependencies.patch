@@ -1,0 +1,57 @@
+diff --git a/backend/app/api/schemas.py b/backend/app/api/schemas.py
+index 9c7719d..24cd26a 100644
+--- a/backend/app/api/schemas.py
++++ b/backend/app/api/schemas.py
+@@ -109,6 +109,29 @@ class KnowledgeUpdate(BaseModel):
+     space_id: str | None = None
+ 
+ 
++class AttachmentUploadIn(BaseModel):
++    """JSON Base64 上传体；只接受三个字段，不使用 multipart。"""
++
++    model_config = ConfigDict(extra="forbid")
++
++    filename: str
++    mime: str
++    content_base64: str
++
++
++class AttachmentOut(BaseModel):
++    model_config = ConfigDict(from_attributes=True)
++
++    id: UUID
++    item_id: UUID
++    filename: str
++    mime: str
++    size: int
++    storage_key: str
++    content_hash: str
++    created_at: datetime
++
++
+ class ExtractRequest(BaseModel):
+     space_id: str | None = None
+ 
+diff --git a/backend/app/dependencies.py b/backend/app/dependencies.py
+index dfa60c3..c070801 100644
+--- a/backend/app/dependencies.py
++++ b/backend/app/dependencies.py
+@@ -11,6 +11,7 @@ from typing import Annotated
+ from fastapi import Depends, HTTPException, Request
+ 
+ from app.core.config import Settings, get_settings
++from app.services.attachments import AttachmentService
+ from app.services.markdown import MarkdownService
+ from app.services.model import build_embed_adapter, build_model_adapter
+ from app.services.source_identity import SourceIdentityService
+@@ -59,3 +60,10 @@ def get_markdown_service(request: Request) -> MarkdownService:
+     if service is None:
+         raise HTTPException(status_code=503, detail="markdown_service_unavailable")
+     return service
++
++
++def get_attachment_service(request: Request) -> AttachmentService:
++    service = getattr(request.app.state, "attachment_service", None)
++    if service is None:
++        raise HTTPException(status_code=503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
++    return service

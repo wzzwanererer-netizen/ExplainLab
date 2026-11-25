@@ -1,0 +1,97 @@
+# Command: .venv/Scripts/python.exe -m ruff check 
+UP035 [*] Import from `collections.abc` instead: `Sequence`
+  --> docs\audit\V2-A1-04-Batch-B-freeze-review-package\source-evidence\batch-a\backend\alembic\versions\0006_v2_markdown_kb.py:33:1
+   |
+31 | rowid锛堝凡鐢ㄧ湡瀹?SQLite 楠岃瘉锛夈€備綆浜?3.35 鏃舵樉寮忔姤閿欙紝涓嶉潤榛橀檷绾с€?32 | """
+33 | from typing import Sequence, Union
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+34 |
+35 | from alembic import op
+   |
+help: Import from `collections.abc`
+   |
+32 | """
+   - from typing import Sequence, Union
+33 + from typing import Union
+34 + from collections.abc import Sequence
+35 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> docs\audit\V2-A1-04-Batch-B-freeze-review-package\source-evidence\batch-a\backend\alembic\versions\0006_v2_markdown_kb.py:33:1
+   |
+31 |   rowid锛堝凡鐢ㄧ湡瀹?SQLite 楠岃瘉锛夈€備綆浜?3.35 鏃舵樉寮忔姤閿欙紝涓嶉潤榛橀檷绾с€?32 |   """
+33 | / from typing import Sequence, Union
+34 | |
+35 | | from alembic import op
+36 | | import sqlalchemy as sa
+   | |_______________________^
+37 |
+38 |   revision: str = "0006_v2_markdown_kb"
+   |
+help: Organize imports
+   |
+34 |
+   - from alembic import op
+35 | import sqlalchemy as sa
+36 |
+37 + from alembic import op
+38 +
+39 | revision: str = "0006_v2_markdown_kb"
+   |
+
+UP007 [*] Use `X | Y` for type annotations
+  --> docs\audit\V2-A1-04-Batch-B-freeze-review-package\source-evidence\batch-a\backend\alembic\versions\0006_v2_markdown_kb.py:39:16
+   |
+38 | revision: str = "0006_v2_markdown_kb"
+39 | down_revision: Union[str, None] = "0005_m5_experiments"
+   |                ^^^^^^^^^^^^^^^^
+40 | branch_labels: Union[str, Sequence[str], None] = None
+41 | depends_on: Union[str, Sequence[str], None] = None
+   |
+help: Convert to `X | Y`
+   |
+38 | revision: str = "0006_v2_markdown_kb"
+   - down_revision: Union[str, None] = "0005_m5_experiments"
+39 + down_revision: str | None = "0005_m5_experiments"
+40 | branch_labels: Union[str, Sequence[str], None] = None
+   |
+
+UP007 [*] Use `X | Y` for type annotations
+  --> docs\audit\V2-A1-04-Batch-B-freeze-review-package\source-evidence\batch-a\backend\alembic\versions\0006_v2_markdown_kb.py:40:16
+   |
+38 | revision: str = "0006_v2_markdown_kb"
+39 | down_revision: Union[str, None] = "0005_m5_experiments"
+40 | branch_labels: Union[str, Sequence[str], None] = None
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | depends_on: Union[str, Sequence[str], None] = None
+   |
+help: Convert to `X | Y`
+   |
+39 | down_revision: Union[str, None] = "0005_m5_experiments"
+   - branch_labels: Union[str, Sequence[str], None] = None
+40 + branch_labels: str | Sequence[str] | None = None
+41 | depends_on: Union[str, Sequence[str], None] = None
+   |
+
+UP007 [*] Use `X | Y` for type annotations
+  --> docs\audit\V2-A1-04-Batch-B-freeze-review-package\source-evidence\batch-a\backend\alembic\versions\0006_v2_markdown_kb.py:41:13
+   |
+39 | down_revision: Union[str, None] = "0005_m5_experiments"
+40 | branch_labels: Union[str, Sequence[str], None] = None
+41 | depends_on: Union[str, Sequence[str], None] = None
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+42 |
+43 | # downgrade 鏃堕渶瑕佸垹闄ょ殑 knowledge_item 鏂板鍒楋紙椤哄簭鏃犲叧锛屽潎鏈绱㈠紩/瑙﹀彂鍣ㄥ紩鐢級
+   |
+help: Convert to `X | Y`
+   |
+40 | branch_labels: Union[str, Sequence[str], None] = None
+   - depends_on: Union[str, Sequence[str], None] = None
+41 + depends_on: str | Sequence[str] | None = None
+42 |
+   |
+
+Found 5 errors.
+[*] 5 fixable with `--fix`.
+exit_code=1

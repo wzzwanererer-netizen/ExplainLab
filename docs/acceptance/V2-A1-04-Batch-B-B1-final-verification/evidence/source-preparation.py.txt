@@ -1,0 +1,62 @@
+import datetime
+import hashlib
+import io
+import subprocess
+import zipfile
+from pathlib import Path
+
+base = "970c0d8ec05f0b8c68286839a56b14c74ea230c6"
+round3 = Path("docs/acceptance/ExplainLab-B1-Remediation-Round3.zip")
+round3_manifest = "docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/SHA256SUMS"
+freeze_dir = "docs/plans/V2-A1-04-Batch-B/"
+output = Path("docs/acceptance/ExplainLab-B1-Round3-Linux-Input.zip")
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+def git(*args):
+    return subprocess.check_output(["git", *args])
+print("started_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+assert git("rev-parse", "HEAD").decode().strip() == base
+assert not git("diff", "--cached", "--name-only").strip()
+seeds = ["backend","knowledge-core","frontend","scripts","pyproject.toml","uv.lock",
+         ".python-version",".gitignore",".editorconfig","README.md","AGENTS.md","MILESTONES.md"]
+seed_command = ["-c","core.autocrlf=false","-c","core.eol=lf","archive","--format=zip",base,"--",*seeds]
+print("command: git", " ".join(seed_command))
+with zipfile.ZipFile(io.BytesIO(git(*seed_command))) as seed:
+    payload = {n: seed.read(n) for n in seed.namelist() if not n.endswith("/")}
+    attributes = {n: seed.getinfo(n).external_attr for n in payload}
+with zipfile.ZipFile(round3) as z:
+    assert z.testzip() is None
+    manifest = [line.split("  ", 1) for line in z.read(round3_manifest).decode().splitlines()]
+    assert len(manifest) == 74
+    overlays = []
+    for digest, name in manifest:
+        data = z.read(name)
+        assert sha(data) == digest == sha(Path(name).read_bytes()), name
+        if name.startswith(("backend/", freeze_dir)):
+            payload[name] = data
+            overlays.append(name)
+assert sum(n.startswith("backend/") for n in overlays) == 13
+assert sum(n.startswith(freeze_dir) for n in overlays) == 10
+assert all(not n.startswith(("docs/audit/","docs/acceptance/","backend/data/")) for n in payload)
+assert all(Path(n).name != ".env" for n in payload)
+assert payload["uv.lock"] == git("show", f"{base}:uv.lock")
+assert payload["MILESTONES.md"] == git("show", f"{base}:MILESTONES.md")
+manifest_data = "".join(f"{sha(payload[n])}  {n}\n" for n in sorted(payload)).encode()
+with zipfile.ZipFile(output,"w",compression=zipfile.ZIP_DEFLATED) as z:
+    for n,data in sorted(payload.items()):
+        entry = zipfile.ZipInfo(n)
+        entry.create_system = 3
+        entry.external_attr = attributes.get(n, 0o100644 << 16)
+        z.writestr(entry, data, compress_type=zipfile.ZIP_DEFLATED)
+    z.writestr("SHA256SUMS",manifest_data)
+with zipfile.ZipFile(output) as z:
+    assert z.testzip() is None and len(z.namelist()) == len(payload)+1
+    assert all(z.read(n)==data for n,data in payload.items())
+print("Round 3 ZIP sha256",sha(round3.read_bytes()))
+print("Round 3 worktree matches",len(manifest))
+print("Round 3 code overlays",13,"frozen design overlays",10)
+print("Linux input manifest entries",len(payload))
+print("Linux input ZIP sha256",sha(output.read_bytes()))
+print("finished_at",datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+

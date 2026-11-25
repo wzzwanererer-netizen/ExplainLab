@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="8" time="27.487" timestamp="2026-11-24T20:45:21.272840+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp01_publish_commit_failure_recovers_through_purge" time="2.410"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/6e7238ed-4d6c-4b0f-93d2-c70382dfd266/attachments "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/6e7238ed-4d6c-4b0f-93d2-c70382dfd266/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=209b81a1-daf1-4f9e-9dce-657ce03e9b88 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:186ab2093731 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=209b81a1-daf1-4f9e-9dce-657ce03e9b88 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:186ab2093731 from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=209b81a1-daf1-4f9e-9dce-657ce03e9b88 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:186ab2093731 from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=209b81a1-daf1-4f9e-9dce-657ce03e9b88 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:186ab2093731 from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp07_one_report_preserves_missing_orphan_and_corrupt" time="2.157"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/ff03ab77-7792-4e99-8235-ad0f20ad7c28/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/ff03ab77-7792-4e99-8235-ad0f20ad7c28/attachments "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/ff03ab77-7792-4e99-8235-ad0f20ad7c28/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_gc02_different_tasks_serialize_physical_generations" time="2.960"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/7a59b8c4-2347-40c0-b72a-3544ba2e0cff/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/7a59b8c4-2347-40c0-b72a-3544ba2e0cff/attachments/5fa38b2e-ff25-4014-8039-4174ccfa8b5c "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=844c5631-0386-4c4c-84a2-4a8f572ea0f3 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=844c5631-0386-4c4c-84a2-4a8f572ea0f3 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/7a59b8c4-2347-40c0-b72a-3544ba2e0cff/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/7a59b8c4-2347-40c0-b72a-3544ba2e0cff/attachments/bcfdebfa-bcc5-4128-bcb9-2d2fc6e5142e "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=844c5631-0386-4c4c-84a2-4a8f572ea0f3 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=bd8cc8fe-4a14-4e61-ab21-62bca0d95d70 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:c1f571268c07 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=844c5631-0386-4c4c-84a2-4a8f572ea0f3 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=bd8cc8fe-4a14-4e61-ab21-62bca0d95d70 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:c1f571268c07 from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=bd8cc8fe-4a14-4e61-ab21-62bca0d95d70 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=bd8cc8fe-4a14-4e61-ab21-62bca0d95d70 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:dfbe88702e4c from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp05_handoff_process_death[before_receiver]" time="3.963"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/683f3a55-842f-44a3-9ef2-13bedc32de2c/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c65a4c98-5f40-41a6-a80c-a70b24ec92aa key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:740290fa02e5 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c65a4c98-5f40-41a6-a80c-a70b24ec92aa key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:740290fa02e5 from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/683f3a55-842f-44a3-9ef2-13bedc32de2c/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/683f3a55-842f-44a3-9ef2-13bedc32de2c/attachments/d69cf1ee-c6bf-4d99-8cad-2bb9ea5f4ffd "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c65a4c98-5f40-41a6-a80c-a70b24ec92aa key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:740290fa02e5 from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c65a4c98-5f40-41a6-a80c-a70b24ec92aa key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:740290fa02e5 from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp05_handoff_process_death[after_receiver]" time="3.899"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/a107a204-9e64-4112-b14f-d958683bf3fe/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=ff0e2d49-77d5-46a4-876a-a712f333e58d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=ff0e2d49-77d5-46a4-876a-a712f333e58d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=running to=done attempts=1 token=1 reason=slot_absent
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c2bb891a-e9ef-4295-abc2-71a2d1810453 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c2bb891a-e9ef-4295-abc2-71a2d1810453 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/a107a204-9e64-4112-b14f-d958683bf3fe/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/a107a204-9e64-4112-b14f-d958683bf3fe/attachments/10d1795e-c82b-4b58-8f75-4da5a805cf61 "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c2bb891a-e9ef-4295-abc2-71a2d1810453 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=c2bb891a-e9ef-4295-abc2-71a2d1810453 key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:bf1a85eb9721 from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp05_handoff_process_death[before_transfer]" time="3.927"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/50ad78f0-7172-4ee4-973a-2dadc30f1160/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=6233aeda-dccf-4719-b73b-f082502bfebd key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=6233aeda-dccf-4719-b73b-f082502bfebd key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=running to=done attempts=1 token=1 reason=slot_absent
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=798fdd89-a5a7-4ee9-94ff-f31d3a72a51d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=798fdd89-a5a7-4ee9-94ff-f31d3a72a51d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/50ad78f0-7172-4ee4-973a-2dadc30f1160/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/50ad78f0-7172-4ee4-973a-2dadc30f1160/attachments/7e0a47ea-c6bf-45ac-87ea-a3c7d6654f20 "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=798fdd89-a5a7-4ee9-94ff-f31d3a72a51d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=798fdd89-a5a7-4ee9-94ff-f31d3a72a51d key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:19714f13cf8a from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp05_handoff_process_death[after_transfer]" time="3.773"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+WARNING  app.api.routes.attachments:attachments.py:45 attachment upload-commit failed: RuntimeError
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/db27a4be-a1e7-4275-bfe6-91ad665284e4/attachments "HTTP/1.1 500 Internal Server Error"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=0fc7f728-b336-400f-912e-ede11e8a710f key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:a4a5beee1a35 from=pending to=running attempts=1 token=1 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=0fc7f728-b336-400f-912e-ede11e8a710f key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:a4a5beee1a35 from=running to=running attempts=1 token=1 reason=quarantine_wait
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/db27a4be-a1e7-4275-bfe6-91ad665284e4/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: DELETE http://testserver/api/knowledge/db27a4be-a1e7-4275-bfe6-91ad665284e4/attachments/d31b1f7e-a53a-4cec-9dc2-de0f3746bd8a "HTTP/1.1 204 No Content"
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=0fc7f728-b336-400f-912e-ede11e8a710f key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:a4a5beee1a35 from=running to=running attempts=2 token=2 reason=claim
+INFO     app.services.attachment_maintenance:attachment_maintenance.py:435 GC_TRANSITION task=0fc7f728-b336-400f-912e-ede11e8a710f key=b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3 owner=DESKTOP-HISORNQ:47336:a4a5beee1a35 from=running to=done attempts=2 token=2 reason=slot_purged
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp05_handoff_process_death[during_restore]" time="3.845"><system-out>--------------------------------- Captured Log ---------------------------------
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/knowledge/097cb47b-51ad-461f-830a-0571f5a7f9f8/attachments "HTTP/1.1 201 Created"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://testserver/api/knowledge/097cb47b-51ad-461f-830a-0571f5a7f9f8/attachments/2598e592-b72a-467d-b10b-a6a3a2a17f1c "HTTP/1.1 200 OK"
+INFO     app.db.session._BudgetQueuePool:impl.py:227 Pool disposed. Pool size: 5  Connections in pool: 0 Current Overflow: -5 Current Checked out connections: 0
+INFO     app.db.session._BudgetQueuePool:impl.py:202 Pool recreating
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

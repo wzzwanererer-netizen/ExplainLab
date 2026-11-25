@@ -1,0 +1,300 @@
+diff --git a/.tmp/b2-audit-baseline/backend/tests/test_attachment_api.py b/backend/tests/test_attachment_api.py
+index 39ff9e4..c770179 100644
+--- a/.tmp/b2-audit-baseline/backend/tests/test_attachment_api.py
++++ b/backend/tests/test_attachment_api.py
+@@ -8,22 +8,32 @@ B4 approve 鎴?B5 GC/ORP worker 鍙栬瘉銆傛墍鏈夋柇瑷€鐩存帴鏌ヨ鐪熷疄鏁版嵁搴? from __future__ import annotations
+ 
+ import base64
++import errno
+ import hashlib
++import os
+ import threading
++import time
+ from concurrent.futures import ThreadPoolExecutor
+ from datetime import UTC, datetime, timedelta
+ from pathlib import Path
+ from uuid import uuid4
+ 
+ import pytest
++from alembic.config import Config
+ from fastapi.testclient import TestClient
+-from sqlalchemy import func, select
++from sqlalchemy import event, func, select, text
++from sqlalchemy.engine import make_url
+ from sqlalchemy.orm import Session
+ 
+ import app.models  # noqa: F401  ORM 鍏冩暟鎹?+from alembic import command
+ from app.api.routes import attachments as attachments_route
+-from app.db.session import get_session_factory
++from app.core.config import Settings, get_settings
++from app.db.session import dispose_db, get_engine, get_session_factory
++from app.db.storage_lock import LockGuard, PostgresStorageKeyLock
++from app.main import create_app
+ from app.models import AttachmentORM, GcTaskORM, KnowledgeItemORM
++from app.services import attachment_storage
+ from app.services import attachments as attachments_module
+ from knowledge_core.domain.entities import GcStatus
+ 
+@@ -429,6 +439,48 @@ def test_corrupted_and_missing_blob_return_503(client: TestClient):
+     assert len(_attachment_rows(item_id)) == 1
+ 
+ 
++@pytest.mark.parametrize("io_call", [
++    "link",
++    pytest.param("rename", marks=pytest.mark.skipif(os.name != "nt", reason="Windows rename fallback")),
++])
++def test_publish_io_failure_returns_503_and_cleans_temp(
++    client: TestClient, monkeypatch: pytest.MonkeyPatch, io_call: str
++):
++    item_id = _item(client)
++    target = _blob(client, hashlib.sha256(PNG).hexdigest())
++    calls = []
++    original_link, original_rename = os.link, os.rename
++
++    def fault(name, original, source, destination, *args, **kwargs):
++        if Path(destination) != target:
++            return original(source, destination, *args, **kwargs)
++        source = Path(source)
++        assert source.parent == _layout(client).temp_dir
++        assert source.read_bytes() == PNG
++        calls.append(name)
++        if name == io_call:
++            raise OSError(errno.EIO, "injected publication I/O fault")
++        unsupported = OSError(errno.ENOTSUP, "injected Windows hard-link limitation")
++        unsupported.winerror = 50
++        raise unsupported
++
++    with monkeypatch.context() as patch:
++        patch.setattr(attachment_storage.os, "link", lambda *a, **kw: fault("link", original_link, *a, **kw))
++        if io_call == "rename":
++            patch.setattr(
++                attachment_storage.os, "rename", lambda *a, **kw: fault("rename", original_rename, *a, **kw)
++            )
++        response = _upload(client, item_id)
++
++    assert calls == (["link"] if io_call == "link" else ["link", "rename"])
++    assert response.status_code == 503
++    assert response.json() == {"detail": "ATTACHMENT_WRITE_FAILED"}
++    assert _attachment_rows() == []
++    assert _temp_files(client) == []
++    assert not target.exists()
++    assert not any(path.is_file() for path in _layout(client).storage_root.rglob("*"))
++
++
+ def test_upload_repairs_missing_blob_for_existing_reference(client: TestClient):
+     item_id = _item(client)
+     first = _upload(client, item_id, PNG).json()
+@@ -608,4 +660,211 @@ def test_list_sorts_by_created_at_then_id(client: TestClient):
+ 
+     listed = client.get(f"/api/knowledge/{item_id}/attachments")
+     assert listed.status_code == 200
+-    assert [row["id"] for row in listed.json()] == ids
+\ No newline at end of file
++    assert [row["id"] for row in listed.json()] == ids
++
++
++@pytest.fixture(scope="module")
++def pg_http_url():
++    url = os.environ.get("EXPLAINLAB_PG_TEST_URL")
++    if not url:
++        pytest.skip("EXPLAINLAB_PG_TEST_URL unavailable for real PostgreSQL HTTP")
++    parsed = make_url(url)
++    assert parsed.get_backend_name() == "postgresql"
++    assert (parsed.database or "").startswith("explainlab_b2_http_"), "dedicated B2 test DB required"
++    backend = Path(__file__).resolve().parents[1]
++    cfg = Config(str(backend / "alembic.ini"))
++    cfg.set_main_option("script_location", str(backend / "alembic"))
++    with pytest.MonkeyPatch.context() as patch:
++        patch.setenv("DATABASE_URL", url)
++        get_settings.cache_clear()
++        try:
++            command.upgrade(cfg, "head")
++        finally:
++            get_settings.cache_clear()
++    return url
++
++
++@pytest.fixture
++def pg_http_client(pg_http_url, tmp_path):
++    settings = Settings(database_url=pg_http_url, data_dir=tmp_path / "data", _env_file=None)
++    try:
++        with TestClient(create_app(settings)) as client:
++            assert isinstance(client.app.state.storage_key_lock, PostgresStorageKeyLock)
++            with get_engine().connect() as conn:
++                assert conn.execute(text("SELECT current_database()")).scalar_one() == (
++                    make_url(pg_http_url).database
++                )
++            yield client
++    finally:
++        dispose_db()
++
++
++def _assert_pg_blob(client, key, data):
++    assert _blob(client, key).read_bytes() == data
++    assert list(_blob(client, key).parent.iterdir()) == [_blob(client, key)]
++    assert _temp_files(client) == []
++
++
++def test_pg_http_upload_download_and_shared_reference(pg_http_client):
++    client = pg_http_client
++    item_a, item_b = _item(client), _item(client)
++    data = PNG + item_a.encode()
++    first, second = (_upload(client, item, data) for item in (item_a, item_b))
++    assert first.status_code == second.status_code == 201
++    key = hashlib.sha256(data).hexdigest()
++    assert first.json()["storage_key"] == second.json()["storage_key"] == key
++    assert _attachment_rows(item_a)[0].storage_key == _attachment_rows(item_b)[0].storage_key == key
++    assert len(_attachment_rows(item_a)) == len(_attachment_rows(item_b)) == 1
++    url = f"/api/knowledge/{item_a}/attachments/{first.json()['id']}"
++    response = client.get(url)
++    assert response.status_code == 200 and response.content == data
++    assert response.headers["etag"] == f'"{key}"'
++    _assert_pg_blob(client, key, data)
++    assert client.delete(url).status_code == 204
++    assert _attachment_rows(item_a) == [] and len(_attachment_rows(item_b)) == 1
++    assert all(task.storage_key != key for task in _gc_rows())
++    _assert_pg_blob(client, key, data)
++    print(f"PG HTTP upload=201/201, download=200, shared delete=204; remaining=1; SHA-256={key}")
++
++
++def test_pg_http_archive_update_blocks_upload_select_for_update(pg_http_client):
++    client = pg_http_client
++    item = _item(client)
++    data = PNG + item.encode()
++    engine = get_engine()
++    selecting = threading.Event()
++    upload_pids = []
++
++    def observe_sql(conn, _cursor, statement, *_args):
++        if "knowledge_item" in statement.lower() and "FOR UPDATE" in statement.upper():
++            upload_pids.append(conn.connection.driver_connection.info.backend_pid)
++            selecting.set()
++
++    event.listen(engine, "before_cursor_execute", observe_sql)
++    try:
++        with ThreadPoolExecutor(1) as pool, engine.connect() as archiver:
++            archiver_pid = archiver.execute(text("SELECT pg_backend_pid()")).scalar_one()
++            archiver.execute(
++                text("UPDATE knowledge_item SET status='archived' WHERE id=:id"), {"id": item}
++            )
++            pending = pool.submit(_upload, client, item, data)
++            assert selecting.wait(timeout=10)
++            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as observer:
++                deadline = time.monotonic() + 5
++                while archiver_pid not in observer.execute(
++                    text("SELECT pg_blocking_pids(:pid)"), {"pid": upload_pids[0]}
++                ).scalar_one():
++                    assert time.monotonic() < deadline
++                    time.sleep(0.02)
++            archiver.commit()
++            response = pending.result(timeout=10)
++    finally:
++        event.remove(engine, "before_cursor_execute", observe_sql)
++    assert upload_pids[0] != archiver_pid
++    assert response.status_code == 409
++    assert response.json() == {"detail": "ATTACHMENT_ITEM_ARCHIVED"}
++    assert _attachment_rows(item) == []
++    _assert_pg_blob(client, hashlib.sha256(data).hexdigest(), data)
++    print(f"PG FOR UPDATE backend={upload_pids[0]}, archiver={archiver_pid}; HTTP=409, references=0")
++
++
++def test_pg_http_concurrent_uploads_wait_on_distinct_advisory_sessions(
++    pg_http_client, monkeypatch,
++):
++    client = pg_http_client
++    item = _item(client)
++    data = PNG + item.encode()
++    key = hashlib.sha256(data).hexdigest()
++    engine = get_engine()
++    manager = client.app.state.storage_key_lock
++    original_connect = manager._connect
++    original_commit = Session.commit
++    first_at_commit, second_connected, allow_commit = (threading.Event() for _ in range(3))
++    pids = []
++
++    def observe_connect(deadline):
++        conn = original_connect(deadline)
++        pids.append(conn.connection.driver_connection.info.backend_pid)
++        if len(pids) == 2:
++            second_connected.set()
++        return conn
++
++    def hold_first_commit(session):
++        if not first_at_commit.is_set():
++            first_at_commit.set()
++            assert allow_commit.wait(timeout=8)
++        return original_commit(session)
++
++    monkeypatch.setattr(manager, "_connect", observe_connect)
++    monkeypatch.setattr(Session, "commit", hold_first_commit)
++    with ThreadPoolExecutor(2) as pool:
++        first = pool.submit(_upload, client, item, data)
++        try:
++            assert first_at_commit.wait(timeout=8)
++            second = pool.submit(_upload, client, item, data)
++            assert second_connected.wait(timeout=5)
++            assert pids[0] != pids[1] and not second.done()
++            with engine.connect() as observer:
++                holding = observer.execute(
++                    text("SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND pid IN (:a,:b)"),
++                    {"a": pids[0], "b": pids[1]},
++                ).scalars().all()
++            assert holding == [pids[0]]
++            assert _attachment_rows(item) == []
++        finally:
++            allow_commit.set()
++        responses = first.result(timeout=10), second.result(timeout=10)
++    assert [r.status_code for r in responses] == [201, 200]
++    assert responses[0].json()["id"] == responses[1].json()["id"]
++    assert len(_attachment_rows(item)) == 1
++    _assert_pg_blob(client, key, data)
++    print(f"PG advisory backends={pids}; holder={holding}; HTTP=201/200; one row/blob")
++
++
++@pytest.mark.parametrize("fail_commit", [False, True], ids=["commit", "rollback"])
++def test_pg_http_finishes_transaction_before_advisory_release(pg_http_client, monkeypatch, fail_commit):
++    client = pg_http_client
++    item = _item(client)
++    data = PNG + item.encode()
++    original_commit, original_rollback, original_release = Session.commit, Session.rollback, LockGuard.release
++    sequence = []
++
++    def commit(session):
++        if fail_commit:
++            session.execute(text("SELECT 1 / 0"))  # Real server error aborts the write transaction.
++        original_commit(session)
++        sequence.append("committed")
++
++    def rollback(session):
++        original_rollback(session)
++        sequence.append("rolled back")
++
++    def release(guard):
++        pid = guard.pg_state.driver_connection.info.backend_pid
++        with get_engine().connect() as observer:
++            held = observer.execute(
++                text("SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted AND pid=:pid"),
++                {"pid": pid},
++            ).scalar_one()
++        assert held == 1
++        assert len(_attachment_rows(item)) == int(not fail_commit)
++        sequence.append("released")
++        return original_release(guard)
++
++    with monkeypatch.context() as patch:
++        patch.setattr(Session, "commit", commit)
++        patch.setattr(Session, "rollback", rollback)
++        patch.setattr(LockGuard, "release", release)
++        response = _upload(client, item, data)
++    assert sequence == ["rolled back" if fail_commit else "committed", "released"]
++    if fail_commit:
++        assert response.status_code == 500
++        assert response.json() == {"detail": "ATTACHMENT_FAILED"}
++    else:
++        assert response.status_code == 201
++    key = hashlib.sha256(data).hexdigest()
++    _assert_pg_blob(client, key, data)
++    guard = client.app.state.storage_key_lock.acquire_many([key], "release-observer", heartbeat_seconds=0)
++    assert guard is not None
++    assert guard.release()
++    print(f"PG transaction order={sequence}; references={len(_attachment_rows(item))}; HTTP={response.status_code}")

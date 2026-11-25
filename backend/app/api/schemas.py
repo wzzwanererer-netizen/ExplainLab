@@ -109,6 +109,29 @@ class KnowledgeUpdate(BaseModel):
     space_id: str | None = None
 
 
+class AttachmentUploadIn(BaseModel):
+    """JSON Base64 上传体；只接受三个字段，不使用 multipart。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    mime: str
+    content_base64: str
+
+
+class AttachmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    item_id: UUID
+    filename: str
+    mime: str
+    size: int
+    storage_key: str
+    content_hash: str
+    created_at: datetime
+
+
 class ExtractRequest(BaseModel):
     space_id: str | None = None
 

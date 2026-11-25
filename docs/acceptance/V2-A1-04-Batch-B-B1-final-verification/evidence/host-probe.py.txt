@@ -1,0 +1,25 @@
+import datetime, os, platform, shutil, socket, subprocess
+from importlib.metadata import version
+print("started_at",datetime.datetime.now(datetime.timezone.utc).isoformat())
+print("platform",platform.platform(),platform.machine())
+for cmd in [["wsl.exe","--version"],["wsl.exe","--status"],["wsl.exe","-l","-v"],["wsl.exe","-e","uname","-a"],["sc.exe","query","WslService"],["sc.exe","query","LxssManager"]]:
+    print("command",subprocess.list2cmdline(cmd),flush=True)
+    try:
+        p=subprocess.run(cmd,timeout=6,capture_output=True)
+        for data in (p.stdout,p.stderr):
+            if data:
+                enc="utf-16-le" if b"\x00" in data else ("utf-8" if cmd[0]=="wsl.exe" else "mbcs")
+                print(data.decode(enc,errors="replace").strip())
+        print("exit_code",p.returncode)
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        print(type(exc).__name__)
+for cmd in ("vmrun","VBoxManage","ssh","docker","podman","psql","pg_ctl"):
+    print(cmd,"on_path",bool(shutil.which(cmd)))
+print("EXPLAINLAB_PG_TEST_URL configured",bool(os.environ.get("EXPLAINLAB_PG_TEST_URL")))
+try:
+    with socket.create_connection(("127.0.0.1",5432),timeout=0.5): print("loopback 5432 connected")
+except OSError as exc:
+    print("TCP 127.0.0.1:5432",type(exc).__name__,"winerror",getattr(exc,"winerror",None))
+import psycopg, sqlalchemy, fastapi, app.db.storage_lock, knowledge_core, sqlite3
+print("windows imports",platform.python_version(),sqlite3.sqlite_version,*[version(n) for n in ("psycopg","sqlalchemy","fastapi","alembic")])
+print("finished_at",datetime.datetime.now(datetime.timezone.utc).isoformat())

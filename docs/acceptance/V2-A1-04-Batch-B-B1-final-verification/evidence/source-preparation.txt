@@ -1,0 +1,10 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/evidence/source-preparation.py.txt
+started_at 2026-11-23T11:15:25.622858+00:00
+command: git -c core.autocrlf=false -c core.eol=lf archive --format=zip 970c0d8ec05f0b8c68286839a56b14c74ea230c6 -- backend knowledge-core frontend scripts pyproject.toml uv.lock .python-version .gitignore .editorconfig README.md AGENTS.md MILESTONES.md
+Round 3 ZIP sha256 50e18afefa96f38743047312cfa17a20f887eaaf5c72d1665a5c0dfc00166af5
+Round 3 worktree matches 74
+Round 3 code overlays 13 frozen design overlays 10
+Linux input manifest entries 232
+Linux input ZIP sha256 503dc59a89b68578df9fbfedb65b357c4c1f854ed158b7a5722a79469802d486
+finished_at 2026-11-23T11:15:25.994549+00:00
+exit_code=0

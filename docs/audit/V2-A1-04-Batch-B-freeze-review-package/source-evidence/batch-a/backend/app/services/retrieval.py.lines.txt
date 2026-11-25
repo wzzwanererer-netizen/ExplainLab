@@ -1,0 +1,32 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 3bdf9c9305307384bffb78cb13fcf064feb1ff5d
+Source: backend/app/services/retrieval.py
+
+ 272: async def sync_index(
+ 273:     session: Session,
+ 274:     embedder: Embedder | None,
+ 275:     *,
+ 276:     index_ids: Sequence[UUID] = (),
+ 277:     remove_ids: Sequence[UUID] = (),
+ 278: ) -> None:
+ 279:     """条目变更提交后同步检索索引（路由层 await）。
+ 280: 
+ 281:     FTS 日常由触发器同步，这里 upsert 作兜底；向量在此重算（embed 异步）。
+ 282:     embedder 为 None 时仅维护 FTS，向量通道如实关闭。单条 embed 失败不阻断
+ 283:     已提交的变更，也不影响其余条目：记录告警并降级（FTS 仍可用），不造假。
+ 284:     """
+ 285:     if not index_ids and not remove_ids:
+ 286:         return
+ 287:     model = getattr(embedder, "default_model", "none") if embedder else "none"
+ 288:     indexer = RetrievalIndexer(session, embedder, model=model)
+ 289:     repository = SQLAlchemyKnowledgeRepository(session)
+ 290:     for item_id in index_ids:
+ 291:         item = repository.get(item_id)
+ 292:         if item is None:
+ 293:             continue
+ 294:         try:
+ 295:             await indexer.index_item(item)
+ 296:         except ModelAdapterError as exc:
+ 297:             logger.warning("向量索引失败，降级为仅全文 item=%s: %s", item_id, exc)
+ 298:     for item_id in remove_ids:
+ 299:         await indexer.remove_item(item_id)

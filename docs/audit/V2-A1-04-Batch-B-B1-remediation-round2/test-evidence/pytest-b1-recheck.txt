@@ -1,0 +1,49 @@
+# Command: .venv/Scripts/python.exe -u docs/audit/V2-A1-04-Batch-B-B1-remediation-round2/test-evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_sqlite.py
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 171 items
+
+backend\tests\test_attachment_gc.py .......................              [ 13%]
+backend\tests\test_attachment_pg.py ssss                                 [ 15%]
+backend\tests\test_attachment_storage.py ..............s................ [ 33%]
+.s.....................................s...................              [ 68%]
+backend\tests\test_attachment_windows.py ...s..                          [ 71%]
+backend\tests\test_storage_lock_pg_faults.py ..........                  [ 77%]
+backend\tests\test_storage_lock_pg.py sssssssssssss                      [ 85%]
+backend\tests\test_storage_lock_sqlite.py .........................      [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_attachment_pg.py:99: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃闄勪欢/GC 浠撳偍 PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_attachment_pg.py:117: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃闄勪欢/GC 浠撳偍 PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_attachment_pg.py:170: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃闄勪欢/GC 浠撳偍 PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_attachment_pg.py:195: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃闄勪欢/GC 浠撳偍 PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_attachment_storage.py:250: cannot create symlink/junction in this environment
+SKIPPED [1] backend\tests\test_attachment_storage.py:549: Windows 鎵撳紑鏂囦欢榛樿鎷掔粷 rename锛屽彞鏌勮矾寰勬浛鎹㈠彟琛屽彇璇?
+SKIPPED [1] backend\tests\test_attachment_storage.py:769: directory link creation unavailable
+SKIPPED [1] backend\tests\test_attachment_windows.py:95: mklink /J unavailable
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:128: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:149: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:165: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:183: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:196: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:213: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:229: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:244: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:273: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:286: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:298: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:304: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+SKIPPED [1] backend\tests\test_storage_lock_pg.py:330: 鏈厤缃?EXPLAINLAB_PG_TEST_URL锛堢湡瀹?PostgreSQL 瀹炰緥锛夛紝璺宠繃 StorageKeyLock PG 娴嬭瘯
+================= 150 passed, 21 skipped, 1 warning in 42.64s =================
+exit_code=0

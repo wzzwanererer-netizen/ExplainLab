@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="8" time="5.624" timestamp="2026-11-24T20:57:37.774490+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_activity_uses_maximum_entry_mtime[.creating]" time="0.611"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_activity_uses_maximum_entry_mtime[.activity]" time="0.667"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_activity_uses_maximum_entry_mtime[.complete]" time="0.538"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_activity_uses_maximum_entry_mtime[blob]" time="0.494"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_empty_and_unsafe_paths_preserve_formal" time="0.653"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_pending_rises_during_physical_boundary[move]" time="0.873"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_pending_rises_during_physical_boundary[purge]" time="0.862"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_sweep42_producer_and_waiter_share_one_staging_guard" time="0.434"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

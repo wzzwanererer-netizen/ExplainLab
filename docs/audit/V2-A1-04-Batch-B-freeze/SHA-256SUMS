@@ -1,0 +1,14 @@
+39dd0bf126636753d23bf153856e36023a9c00c32ed2e7d72fdbec924a50ae4f  docs/audit/V2-A1-04-Batch-B-freeze/architecture-freeze-record.md
+38cea82028bd8b383eaa01e7271d5c53ab82655a0eeb0731e3d78da01bc6901d  docs/audit/V2-A1-04-Batch-B-freeze/b1-development-baseline.md
+f78b31c64877317933651c0e742512d5bfd461b88dd7efc31c7fb54081dce778  docs/audit/V2-A1-04-Batch-B-freeze/document-consistency-report.md
+c55b619df6dd0894df54c9f6fb6f995038bb45d9982f1bfaad74adfb4bad7ffc  docs/audit/V2-A1-04-Batch-B-freeze/freeze-decision-log.md
+edce48fff7bc62322117a8cd1cba97f4f722cf894807e23de3428941cf778c7f  docs/plans/V2-A1-04-Batch-B/acceptance-plan.md
+1ca80e731377ceedf9ff730d89e94a4ed020bf7719854c7f44d866abe64de811  docs/plans/V2-A1-04-Batch-B/active-review-integration.md
+400bacc0dfe11fe952ef446c57040671eafd9edc9fb330f937538d5ad50237f7  docs/plans/V2-A1-04-Batch-B/api-contracts.md
+2113ba883f7b95f488b0daeef18910d9100d349ead098fce14d981f432cf427e  docs/plans/V2-A1-04-Batch-B/architecture.md
+a135b5ac9f5bb7661d56a80cb7d94087b4fe8a1d0dff80809808c8aa336fa7d7  docs/plans/V2-A1-04-Batch-B/attachment-lifecycle.md
+128bc0e472e5f2d2a0acce55115e89bdd18af57d0c5f2aabb31f327460e564e1  docs/plans/V2-A1-04-Batch-B/gc-and-orphan-recovery.md
+e24c77cfbdd4af0a9532d2cd481d72724e3a9a5ebc18b4a5ed832cc73d0701f3  docs/plans/V2-A1-04-Batch-B/implementation-roadmap.md
+8b626ed7aa10e9cacd399ba38dd703ca74b495faff82c775091d7306c427f972  docs/plans/V2-A1-04-Batch-B/README.md
+014f3fdd19d656acb52eec7bfacf4136faeeafd54743e9d24af0eb0027a22d9a  docs/plans/V2-A1-04-Batch-B/risk-register.md
+66c06d61a26e5647f00d358fc82a83f681e2223aef02b288b95a42a13bcf049e  docs/plans/V2-A1-04-Batch-B/storage-and-lock-contract.md

@@ -1,0 +1,77 @@
+--- a/backend/app/services/source_identity.py
++++ b/backend/app/services/source_identity.py
+@@ -24,10 +24,11 @@
+ 
+ from sqlalchemy import or_, select, update
+ from sqlalchemy.orm import Session, sessionmaker
+ 
+ from app.models import ImportOriginORM, KnowledgeItemORM
++from app.services.file_write import write_all
+ from app.services.journal_canonical import (
+     CanonicalJsonError,
+     canonical_dumps,
+     canonical_loads,
+     sha256_canonical,
+@@ -428,11 +429,11 @@
+         target.parent.mkdir(parents=True, exist_ok=True)
+         tmp = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+         try:
+             try:
+-                os.write(fd, payload)
++                write_all(fd, payload)
+                 os.fsync(fd)
+             finally:
+                 os.close(fd)
+             os.replace(tmp, target)
+         finally:
+@@ -469,11 +470,11 @@
+             return
+         tmp = self.archive_dir / f".{target.name}.{uuid.uuid4().hex}.tmp"
+         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+         try:
+             try:
+-                os.write(fd, payload)
++                write_all(fd, payload)
+                 os.fsync(fd)
+             finally:
+                 os.close(fd)
+             if target.exists():
+                 if target.read_bytes() != payload:
+@@ -557,10 +558,21 @@
+     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
+         index: dict[str, list[dict[str, Any]]] = {}
+         for record in self.journal.committed_materialize_records():
+             index.setdefault(record["item_id"], []).append(record)
+         return index
++
++    @staticmethod
++    def _origin_materialize_conflict(
++        snapshot: dict[str, Any], records: list[dict[str, Any]]
++    ) -> bool:
++        """§22.2：ImportOrigin 与任意 COMMITTED MATERIALIZE 记录并存即冲突。
++
++        仅检查 ImportOrigin 自身是否 complete 不足以发现跨记录冲突；
++        冲突时不选任何一条作为可信来源。
++        """
++        return snapshot["import_origin_count"] > 0 and bool(records)
+ 
+     def classify(self, session: Session, item_id: UUID | str) -> ClassifiedIdentity:
+         item = session.get(KnowledgeItemORM, str(item_id))
+         if item is None:
+             raise SourceIdentityError(SOURCE_IDENTITY_INCONSISTENT, "item not found")
+@@ -580,10 +592,14 @@
+             for record in records
+             if record["source_instance_id"] == item.source_instance_id
+             and record["source_document_id"] == str(item.id)
+         ]
+         origin_state = snapshot["import_origin_state"]
++        if self._origin_materialize_conflict(snapshot, records):
++            # §22.2：任何 ImportOrigin 与本地 MATERIALIZE 记录并存均为冲突态，
++            # 即使 ImportOrigin 自身为 complete。不得任选一条作为可信来源。
++            return ClassifiedIdentity(str(item.id), "3", None, None, snapshot)
+         if snapshot["import_origin_count"] > 0:
+             if origin_state == "complete":
+                 return ClassifiedIdentity(
+                     str(item.id),
+                     "1",

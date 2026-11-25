@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="3" tests="4" time="0.156" timestamp="2026-11-23T21:52:43.582026+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[database-ancestor]" time="0.024"><skipped type="pytest.skip" message="normal Windows token could not create junction (exit 1)">D:\ExplainLab\backend\tests\test_attachment_windows.py:149: normal Windows token could not create junction (exit 1)</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[attachment]" time="0.023"><skipped type="pytest.skip" message="normal Windows token could not create junction (exit 1)">D:\ExplainLab\backend\tests\test_attachment_windows.py:149: normal Windows token could not create junction (exit 1)</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_real_junction[staging]" time="0.022"><skipped type="pytest.skip" message="normal Windows token could not create junction (exit 1)">D:\ExplainLab\backend\tests\test_attachment_windows.py:149: normal Windows token could not create junction (exit 1)</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="backend.tests.test_attachment_windows" name="test_t01_windows_lifespan_rejects_root_on_real_other_drive" time="0.041"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

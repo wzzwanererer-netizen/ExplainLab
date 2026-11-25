@@ -1,0 +1,555 @@
+diff --git a/backend/app/api/routes/governance.py b/backend/app/api/routes/governance.py
+index 3b13051..892385e 100644
+--- a/backend/app/api/routes/governance.py
++++ b/backend/app/api/routes/governance.py
+@@ -6,10 +6,13 @@
+ 
+ from __future__ import annotations
+ 
++import asyncio
++import json
++from contextlib import nullcontext as _null_context
+ from typing import Annotated
+ from uuid import UUID
+ 
+-from fastapi import APIRouter, Depends, HTTPException, Response
++from fastapi import APIRouter, Depends, HTTPException, Request, Response
+ from sqlalchemy.orm import Session
+ 
+ from app.api.routes.links import sync_links_or_conflict
+@@ -27,7 +30,7 @@ from app.api.schemas import (
+     SourceRefOut,
+     VersionOut,
+ )
+-from app.db.session import get_session
++from app.db.session import create_session, get_session
+ from app.dependencies import get_embedder, get_model_adapter
+ from app.services.governance import (
+     SQLAlchemyRelationRepository,
+@@ -37,9 +40,18 @@ from app.services.governance import (
+     build_provenance_service,
+     build_review_service,
+ )
++from app.services.import_coordinator import ImportCoordinator
++from app.services.import_review_hook import (
++    ImportReviewHook,
++    envelope_from_review,
++    review_is_import,
++)
++from app.services.journal_canonical import sha256_canonical
+ from app.services.knowledge import SQLAlchemyKnowledgeRepository
+ from app.services.links import demote_backlinks_on_delete
++from app.services.markdown import IMPORT_ENVELOPE_INVALID, MarkdownServiceError
+ from app.services.retrieval import sync_index
++from app.services.source_identity import SourceIdentityError
+ from knowledge_core.domain.entities import (
+     KnowledgeItem,
+     KnowledgeRelation,
+@@ -349,43 +361,158 @@ def _sync_links_after_content_change(
+             sync_links_or_conflict(session, item)
+ 
+ 
++def _import_http_error(exc: Exception) -> HTTPException:
++    code = getattr(exc, "code", IMPORT_ENVELOPE_INVALID)
++    status = getattr(exc, "status_code", 409)
++    return HTTPException(status_code=status, detail=code)
++
++
++def _review_lock_key(envelope, item_id: UUID) -> str:
++    if envelope is not None and envelope.source_instance_id and envelope.source_document_id:
++        return "identity:" + sha256_canonical(
++            {
++                "source_instance_id": envelope.source_instance_id,
++                "source_document_id": envelope.source_document_id,
++            }
++        )
++    return f"target-item:{item_id}"
++
++
++def _payload_digest(payload: dict) -> str:
++    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++
++
++def _preflight_review(review_id: UUID) -> tuple[dict, bytes | None, str | None]:
++    """S0 只读预检：读取 pending 与 envelope 摘要，立即关闭会话。"""
++    session = create_session()
++    try:
++        review = _pending_review(session, review_id)
++        if not review_is_import(review):
++            return review.payload, None, None
++        envelope = envelope_from_review(review)
++        if envelope is None:
++            raise MarkdownServiceError(
++                IMPORT_ENVELOPE_INVALID, "导入 envelope 缺失", status_code=409
++            )
++        if review.action != ReviewAction.UPDATE_ITEM:
++            raise MarkdownServiceError(
++                IMPORT_ENVELOPE_INVALID, "导入 envelope 仅允许 UPDATE_ITEM", status_code=409
++            )
++        return review.payload, _payload_digest(review.payload).encode("utf-8"), _review_lock_key(
++            envelope, review.item_id
++        )
++    finally:
++        session.close()
++
++
+ @router.post("/reviews/{review_id}/approve", response_model=ReviewOut)
+-async def approve_review(
++def approve_review(
+     review_id: UUID,
+-    session: Annotated[Session, Depends(get_session)],
++    request: Request,
+     embedder: Annotated[Embedder | None, Depends(get_embedder)],
+     payload: ReviewResolve | None = None,
+ ) -> ReviewOut:
+-    pending = _pending_review(session, review_id)
+-    service = build_review_service(session)
+-    # K1：DELETE 预降级。approve 内部先 update_review 再 _apply_action（删除会
+-    # CASCADE 审核单自身），入链降级须在 delete flush 前、同事务完成。
+-    _demote_backlinks_before_delete(session, pending.item_id, pending.action)
++    """审核批准（同步写入口，D20）。
++
++    导入分支：与 submit 共用同一身份键锁；S0 预检 → 获锁 → S1 fresh session
++    重读并校验 envelope 未变 → Core approve → 导入钩子补齐 → 单次 commit。
++    非导入分支保持既有 K1 行为，不额外解析正文。
++    """
+     try:
+-        review = await service.approve(review_id, payload.note if payload else None)
+-    except ValueError as exc:
+-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+-    # K1：UPDATE/RESTORE 应用后同步出链（commit 前，同事务；409 整事务零写入）。
+-    _sync_links_after_content_change(session, review.item_id, review.action)
+-    session.commit()
+-    await _sync_applied_action(
+-        session, embedder, review.item_id, review.action, review.payload
+-    )
+-    session.commit()
+-    return ReviewOut.model_validate(review)
++        _s0_payload, s0_digest, lock_key = _preflight_review(review_id)
++    except (MarkdownServiceError, SourceIdentityError) as exc:
++        raise _import_http_error(exc) from exc
++
++    coordinator: ImportCoordinator = request.app.state.import_coordinator
++    context = coordinator.keyed(lock_key) if lock_key else _null_context()
++    with context:
++        session = create_session()
++        try:
++            pending = _pending_review(session, review_id)
++            is_import = review_is_import(pending)
++            envelope = None
++            if is_import:
++                envelope = envelope_from_review(pending)
++                if envelope is None or pending.action != ReviewAction.UPDATE_ITEM:
++                    raise MarkdownServiceError(
++                        IMPORT_ENVELOPE_INVALID,
++                        "导入 envelope 非法",
++                        status_code=409,
++                    )
++            if s0_digest is not None and (
++                not is_import
++                or s0_digest != _payload_digest(pending.payload).encode("utf-8")
++            ):
++                raise MarkdownServiceError(
++                    IMPORT_ENVELOPE_INVALID,
++                    "审核 envelope 在获锁前被改动",
++                    status_code=409,
++                )
++            service = build_review_service(session)
++            _demote_backlinks_before_delete(session, pending.item_id, pending.action)
++            try:
++                review = asyncio.run(
++                    service.approve(review_id, payload.note if payload else None)
++                )
++            except ValueError as exc:
++                raise HTTPException(status_code=400, detail=str(exc)) from exc
++            if is_import:
++                assert envelope is not None
++                # 导入分支不再额外普通正文 sync（避免双重解析覆盖绑定恢复）。
++                ImportReviewHook(session).apply_approved(review, envelope)
++            else:
++                _sync_links_after_content_change(session, review.item_id, review.action)
++            session.commit()
++            asyncio.run(
++                _sync_applied_action(
++                    session, embedder, review.item_id, review.action, review.payload
++                )
++            )
++            session.commit()
++            return ReviewOut.model_validate(review)
++        except (MarkdownServiceError, SourceIdentityError) as exc:
++            session.rollback()
++            raise _import_http_error(exc) from exc
++        except Exception:
++            session.rollback()
++            raise
++        finally:
++            session.close()
+ 
+ 
+ @router.post("/reviews/{review_id}/reject", response_model=ReviewOut)
+-async def reject_review(
++def reject_review(
+     review_id: UUID,
+-    session: Annotated[Session, Depends(get_session)],
++    request: Request,
+     payload: ReviewResolve | None = None,
+ ) -> ReviewOut:
+-    _pending_review(session, review_id)
+-    service = build_review_service(session)
++    """审核拒绝（同步写入口）；导入分支不写任何 item/tags/links/origin。"""
+     try:
+-        review = await service.reject(review_id, payload.note if payload else None)
+-    except ValueError as exc:
+-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+-    session.commit()
+-    return ReviewOut.model_validate(review)
+\ No newline at end of file
++        _s0_payload, _digest, lock_key = _preflight_review(review_id)
++    except (MarkdownServiceError, SourceIdentityError) as exc:
++        raise _import_http_error(exc) from exc
++    coordinator: ImportCoordinator = request.app.state.import_coordinator
++    context = coordinator.keyed(lock_key) if lock_key else _null_context()
++    with context:
++        session = create_session()
++        try:
++            _pending_review(session, review_id)
++            service = build_review_service(session)
++            try:
++                review = asyncio.run(
++                    service.reject(review_id, payload.note if payload else None)
++                )
++            except ValueError as exc:
++                raise HTTPException(status_code=400, detail=str(exc)) from exc
++            if review_is_import(review):
++                ImportReviewHook(session).apply_rejected(review)
++            session.commit()
++            return ReviewOut.model_validate(review)
++        except (MarkdownServiceError, SourceIdentityError) as exc:
++            session.rollback()
++            raise _import_http_error(exc) from exc
++        except Exception:
++            session.rollback()
++            raise
++        finally:
++            session.close()
+\ No newline at end of file
+diff --git a/backend/app/api/schemas.py b/backend/app/api/schemas.py
+index 9776988..9c7719d 100644
+--- a/backend/app/api/schemas.py
++++ b/backend/app/api/schemas.py
+@@ -7,7 +7,7 @@
+ from __future__ import annotations
+ 
+ from datetime import datetime
+-from typing import Literal
++from typing import Any, Literal
+ from uuid import UUID
+ 
+ from pydantic import BaseModel, ConfigDict, Field
+@@ -359,4 +359,37 @@ class AttemptOut(BaseModel):
+ 
+ class ExperimentCompleteResult(BaseModel):
+     session: ExperimentOut
+-    attempt: AttemptOut
+\ No newline at end of file
++    attempt: AttemptOut
++
++class MarkdownImportItemIn(BaseModel):
++    """单篇 Markdown 入参（非附件 Batch A）。
++
++    ``attachments`` 仅用于识别附件请求（显式拒绝），本批不写任何附件。
++    """
++
++    content: str = Field(min_length=1)
++    filename: str | None = None
++    target_item_id: UUID | None = None
++    frontmatter_resolution: Literal["normalize", "keep_original"] | None = None
++    attachments: list[dict[str, Any]] = Field(default_factory=list)
++
++
++class MarkdownImportIn(BaseModel):
++    """单篇/批量导入 JSON 入参；``archive_base64`` 支持导出 ZIP 回灌。"""
++
++    content: str | None = None
++    filename: str | None = None
++    target_item_id: UUID | None = None
++    frontmatter_resolution: Literal["normalize", "keep_original"] | None = None
++    attachments: list[dict[str, Any]] = Field(default_factory=list)
++    documents: list[MarkdownImportItemIn] | None = None
++    space_id: str | None = None
++    batch_id: str | None = None
++    manifest: dict[str, Any] | None = None
++    archive_base64: str | None = None
++
++
++class MarkdownExportIn(BaseModel):
++    ids: list[UUID] = Field(default_factory=list)
++    space_id: str | None = None
++    include_attachments: bool = False
+diff --git a/backend/app/core/config.py b/backend/app/core/config.py
+index 8cb00f6..9270d5e 100644
+--- a/backend/app/core/config.py
++++ b/backend/app/core/config.py
+@@ -42,6 +42,11 @@ class Settings(BaseSettings):
+     environment: str = "development"
+ 
+     database_url: str = DEFAULT_DATABASE_URL
++    # V2 A1-04：本机数据根（进程锁 / source-instance-id / Journal）。
++    # 默认与 SQLite 数据文件同目录；测试注入临时目录以隔离。
++    data_dir: Path = BACKEND_DIR / "data"
++    # 同步导入身份锁有界等待（秒）；超时返回 IMPORT_LOCK_TIMEOUT。
++    import_lock_wait_seconds: float = 10.0
+     cors_origins: list[str] = [
+         "http://localhost:5173",
+         "http://127.0.0.1:5173",
+diff --git a/backend/app/db/session.py b/backend/app/db/session.py
+index b35d755..78a664f 100644
+--- a/backend/app/db/session.py
++++ b/backend/app/db/session.py
+@@ -73,6 +73,22 @@ def get_engine() -> Engine:
+     return _engine
+ 
+ 
++def get_session_factory() -> sessionmaker[Session]:
++    """返回会话工厂（V2 导入/身份服务需要在线程内自建多个短会话）。"""
++    if _session_factory is None:
++        init_db()
++    assert _session_factory is not None
++    return _session_factory
++
++
++def create_session() -> Session:
++    """创建独立会话（V2 导入协调器在锁内自建 S1，不共享请求会话）。"""
++    if _session_factory is None:
++        init_db()
++    assert _session_factory is not None
++    return _session_factory()
++
++
+ def get_session() -> Generator[Session, None, None]:
+     """FastAPI 依赖：每个请求一个会话。"""
+     if _session_factory is None:
+diff --git a/backend/app/dependencies.py b/backend/app/dependencies.py
+index e261aad..dfa60c3 100644
+--- a/backend/app/dependencies.py
++++ b/backend/app/dependencies.py
+@@ -8,10 +8,12 @@ from __future__ import annotations
+ 
+ from typing import Annotated
+ 
+-from fastapi import Depends, HTTPException
++from fastapi import Depends, HTTPException, Request
+ 
+ from app.core.config import Settings, get_settings
++from app.services.markdown import MarkdownService
+ from app.services.model import build_embed_adapter, build_model_adapter
++from app.services.source_identity import SourceIdentityService
+ from knowledge_core.model_adapter import ModelAdapter
+ from knowledge_core.ports import Embedder
+ 
+@@ -43,4 +45,17 @@ def get_model_adapter_optional(
+ ) -> ModelAdapter | None:
+     """M5 实验用可选适配器。未配置返回 None：学习路径仍可用，
+     测验/对比由 Core 抛 ModelRequiredError，路由层翻译为 503。"""
+-    return build_model_adapter(settings)
+\ No newline at end of file
++    return build_model_adapter(settings)
++
++def get_identity_service(request: Request) -> SourceIdentityService:
++    service = getattr(request.app.state, "source_identity", None)
++    if service is None:
++        raise HTTPException(status_code=503, detail="identity_service_unavailable")
++    return service
++
++
++def get_markdown_service(request: Request) -> MarkdownService:
++    service = getattr(request.app.state, "markdown_service", None)
++    if service is None:
++        raise HTTPException(status_code=503, detail="markdown_service_unavailable")
++    return service
+diff --git a/backend/app/main.py b/backend/app/main.py
+index cd276aa..df042a1 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -6,43 +6,104 @@ backend 只做 API 层；知识业务逻辑全部在 knowledge-core。
+ from __future__ import annotations
+ 
+ import logging
++import os
++import sys
+ from collections.abc import AsyncIterator
+ from contextlib import asynccontextmanager
+ 
+ from fastapi import FastAPI
+ from fastapi.middleware.cors import CORSMiddleware
++from sqlalchemy.exc import SQLAlchemyError
+ 
+ from app.api.routes.conversations import router as conversations_router
+ from app.api.routes.experiments import router as experiments_router
+ from app.api.routes.governance import router as governance_router
+ from app.api.routes.graph import router as graph_router
+ from app.api.routes.health import router as health_router
++from app.api.routes.import_export import router as import_export_router
+ from app.api.routes.knowledge import router as knowledge_router
+ from app.api.routes.links import router as links_router
+ from app.api.routes.search import router as search_router
+ from app.api.routes.spaces import router as spaces_router
+ from app.core.config import Settings, get_settings
+-from app.db.session import dispose_db, init_db, session_scope
++from app.db.process_lock import ProcessLock
++from app.db.session import dispose_db, get_session_factory, init_db, session_scope
++from app.services.import_coordinator import ImportCoordinator
++from app.services.markdown import MarkdownService
++from app.services.source_identity import SourceIdentityService
++from app.services.source_instance_id import SourceInstanceIdStore
+ from app.services.spaces import ensure_default_space
+ 
+ logger = logging.getLogger(__name__)
+ 
+ 
++def _configured_workers() -> int:
++    """尽力识别多 worker 启动；A1-04 仅允许单 Backend 单 worker。"""
++    candidates: list[str] = []
++    args = sys.argv[1:]
++    for index, arg in enumerate(args):
++        if arg == "--workers" and index + 1 < len(args):
++            candidates.append(args[index + 1])
++        elif arg.startswith("--workers="):
++            candidates.append(arg.split("=", 1)[1])
++    for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS"):
++        value = os.environ.get(key)
++        if value:
++            candidates.append(value)
++    for value in candidates:
++        try:
++            if int(value) > 1:
++                return int(value)
++        except ValueError:
++            continue
++    return 1
++
++
+ def create_app(settings: Settings | None = None) -> FastAPI:
+     settings = settings if settings is not None else get_settings()
+ 
+     @asynccontextmanager
+-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
++    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
++        if _configured_workers() > 1:
++            raise RuntimeError("MULTI_WORKER_UNSUPPORTED")
+         init_db(settings)
++        settings.data_dir.mkdir(parents=True, exist_ok=True)
++        # 单实例 OS 锁必须先于 source-instance-id 生成与任何导入/身份写操作。
++        lock = ProcessLock(settings.data_dir)
++        lock.acquire()
+         try:
+-            with session_scope() as session:
+-                ensure_default_space(session)
+-        except Exception:
+-            # 数据库暂不可达时不阻断启动；/api/health 会如实报告 degraded，
+-            # 默认空间在数据库恢复后的下次启动时幂等补建。
+-            logger.warning("默认知识空间初始化失败，将在下次启动时重试", exc_info=True)
+-        yield
+-        dispose_db()
++            instance_store = SourceInstanceIdStore(settings.data_dir)
++            instance_store.ensure()
++            coordinator = ImportCoordinator(
++                wait_seconds=settings.import_lock_wait_seconds
++            )
++            identity = SourceIdentityService(
++                get_session_factory(), settings.data_dir, instance_store
++            )
++            # 启动即过 Journal 恢复门；数据库暂不可达时保持 503，导入入口会再次恢复。
++            try:
++                identity.recover_if_needed()
++            except SQLAlchemyError:
++                logger.warning("启动时数据库不可达，身份 Journal 恢复延后")
++            markdown_service = MarkdownService(
++                get_session_factory(), coordinator, identity, instance_store
++            )
++            application.state.process_lock = lock
++            application.state.import_coordinator = coordinator
++            application.state.source_identity = identity
++            application.state.source_instance_store = instance_store
++            application.state.markdown_service = markdown_service
++            try:
++                with session_scope() as session:
++                    ensure_default_space(session)
++            except Exception:
++                # 数据库暂不可达时不阻断启动；/api/health 会如实报告 degraded，
++                # 默认空间在数据库恢复后的下次启动时幂等补建。
++                logger.warning("默认知识空间初始化失败，将在下次启动时重试", exc_info=True)
++            yield
++        finally:
++            dispose_db()
++            lock.release()
+ 
+     application = FastAPI(
+         title=settings.app_name,
+@@ -61,6 +122,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
+     application.include_router(conversations_router, prefix="/api")
+     # A1-03（R11）：links 静态字面路径须先于 knowledge 的 {item_id} 动态段注册。
+     application.include_router(links_router, prefix="/api")
++    # A1-04：/knowledge/import、/knowledge/export 静态段亦须先于 {item_id}。
++    application.include_router(import_export_router, prefix="/api")
+     application.include_router(knowledge_router, prefix="/api")
+     application.include_router(governance_router, prefix="/api")
+     application.include_router(search_router, prefix="/api")
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+index 7330ac2..9bc9a11 100644
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@ -30,6 +30,7 @@ from knowledge_core.model_adapter import (
+ def settings(tmp_path: Path) -> Settings:
+     return Settings(
+         database_url=f"sqlite:///{tmp_path / 'test.db'}",
++        data_dir=tmp_path / "data",
+         model_provider=None,
+         model_base_url=None,
+         model_api_key=None,
+diff --git a/backend/tests/test_health.py b/backend/tests/test_health.py
+index 7e2ca6a..5478890 100644
+--- a/backend/tests/test_health.py
++++ b/backend/tests/test_health.py
+@@ -21,10 +21,11 @@ def test_health_ok(client: TestClient):
+     assert body["timestamp"]
+ 
+ 
+-def test_health_degraded_when_db_unreachable():
++def test_health_degraded_when_db_unreachable(tmp_path):
+     # 指向一个必然拒绝连接的地址（无需真实 PostgreSQL 服务器）
+     settings = Settings(
+         database_url="postgresql+psycopg://u:p@127.0.0.1:1/nodb?connect_timeout=1",
++        data_dir=tmp_path / "data",
+         _env_file=None,
+     )
+     app = create_app(settings)
+@@ -71,10 +72,11 @@ def test_health_timeout_returns_stable_code(client: TestClient):
+     assert "timed out" not in client.get("/api/health").text
+ 
+ 
+-def test_health_unavailable_returns_stable_code():
++def test_health_unavailable_returns_stable_code(tmp_path):
+     """M0-02：数据库不可用 → 稳定错误码 database_unavailable（非 str(exc)）。"""
+     settings = Settings(
+         database_url="postgresql+psycopg://u:p@127.0.0.1:1/nodb?connect_timeout=1",
++        data_dir=tmp_path / "data",
+         _env_file=None,
+     )
+     app = create_app(settings)
+@@ -84,13 +86,14 @@ def test_health_unavailable_returns_stable_code():
+     assert body["database"]["error"] == "database_unavailable"
+ 
+ 
+-def test_health_error_does_not_leak_sensitive_details():
++def test_health_error_does_not_leak_sensitive_details(tmp_path):
+     """M0-02：响应不得包含主机、端口、密码、用户名或底层异常文本。"""
+     settings = Settings(
+         database_url=(
+             "postgresql+psycopg://secretuser:SuperSecret123@127.0.0.1:1/nodb"
+             "?connect_timeout=1"
+         ),
++        data_dir=tmp_path / "data",
+         _env_file=None,
+     )
+     app = create_app(settings)

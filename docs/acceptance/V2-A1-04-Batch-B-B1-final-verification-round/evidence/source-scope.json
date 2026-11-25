@@ -1,0 +1,11 @@
+{
+  "exact": 133,
+  "newline_only": 43,
+  "expected_test_overlays": {
+    "backend/tests/test_attachment_pg.py": "3707567bed3b9b764fee70334ebd7f5b903efd52ab89ef6434ceac541580c14b",
+    "backend/tests/test_attachment_storage.py": "d8ebef6a5402e04dd5b166d8c38336ff3f849650bbbc81509fb5806a1224bf81",
+    "backend/tests/test_attachment_windows.py": "8ed8863e3e5806f527cffabd87dd16d6c48720d0b6e8b676c4225de072877d30",
+    "backend/tests/test_storage_lock_pg.py": "f11afce311fe1404cad066604228c1ec80d350826acd1316cabb5f4b47132059"
+  },
+  "unexpected": []
+}

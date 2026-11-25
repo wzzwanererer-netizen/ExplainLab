@@ -1,0 +1,50 @@
+"""Run in-process pytest on a Windows host that blocks socketpair creation.
+
+Keep the Proactor and its IOCP operations. Use a short polling timer to wake
+the event loop for callbacks submitted by other threads. Apply this only
+for this process, without replacing application, DB, or filesystem I/O.
+"""
+
+import asyncio
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+
+def wakeup_tick():
+    pass
+
+
+class PollingProactorEventLoop(asyncio.ProactorEventLoop):
+    def _make_self_pipe(self):
+        self._ssock = None
+        # The main-thread Proactor disables the signal wake-up descriptor.
+        self._csock = SimpleNamespace(fileno=lambda: -1)
+
+    def _close_self_pipe(self):
+        pass
+
+    def _loop_self_reading(self, future=None):
+        pass
+
+    def _write_to_self(self):
+        pass
+
+    def _run_once(self):
+        tick = self.call_later(0.005, wakeup_tick)
+        try:
+            super()._run_once()
+        finally:
+            tick.cancel()
+
+
+class PollingProactorPolicy(asyncio.WindowsProactorEventLoopPolicy):
+    _loop_factory = PollingProactorEventLoop
+
+
+if __name__ == "__main__":
+    asyncio.set_event_loop_policy(PollingProactorPolicy())
+    print("Windows test host: Proactor thread wake-up uses a 5 ms polling timer")
+    raise SystemExit(pytest.main(sys.argv[1:]))
+

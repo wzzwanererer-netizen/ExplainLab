@@ -1,0 +1,46 @@
+diff --git a/backend/app/main.py b/backend/app/main.py
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -16,6 +16,7 @@
+ from fastapi.middleware.cors import CORSMiddleware
+ from sqlalchemy.exc import SQLAlchemyError
+ 
++from app.api.routes.attachments import router as attachments_router
+ from app.api.routes.conversations import router as conversations_router
+ from app.api.routes.experiments import router as experiments_router
+ from app.api.routes.governance import router as governance_router
+@@ -37,6 +38,7 @@
+ )
+ from app.db.storage_lock import build_storage_lock
+ from app.services.attachment_storage import preflight_storage_roots, validate_storage_roots
++from app.services.attachments import AttachmentService
+ from app.services.import_coordinator import ImportCoordinator
+ from app.services.markdown import MarkdownService
+ from app.services.repositories_v2 import SQLAlchemyGcTaskRepository
+@@ -89,6 +91,18 @@
+             # 方言装配：SQLite 租约锁 / PostgreSQL advisory 锁（不提交业务事务）。
+             storage_key_lock = build_storage_lock(settings)
+             application.state.storage_key_lock = storage_key_lock
++            application.state.attachment_service = AttachmentService(
++                session_factory=get_session_factory(),
++                layout=attachment_storage,
++                storage_lock=storage_key_lock,
++                max_bytes=settings.attachment_max_bytes,
++                mime_allowlist=settings.attachment_mime_allowlist,
++                lock_ttl_seconds=settings.storage_lock_ttl_seconds,
++                lock_wait_seconds=settings.storage_lock_wait_seconds,
++                lock_heartbeat_seconds=settings.storage_lock_heartbeat_seconds,
++                gc_max_attempts=settings.gc_max_attempts,
++                gc_quarantine_seconds=settings.gc_quarantine_seconds,
++            )
+             application.state.gc_task_repository_factory = partial(
+                 SQLAlchemyGcTaskRepository, max_attempts=settings.gc_max_attempts,
+                 quarantine_seconds=settings.gc_quarantine_seconds,
+@@ -148,6 +162,7 @@
+     application.include_router(links_router, prefix="/api")
+     # A1-04：/knowledge/import、/knowledge/export 静态段亦须先于 {item_id}。
+     application.include_router(import_export_router, prefix="/api")
++    application.include_router(attachments_router, prefix="/api")
+     application.include_router(knowledge_router, prefix="/api")
+     application.include_router(governance_router, prefix="/api")
+     application.include_router(search_router, prefix="/api")

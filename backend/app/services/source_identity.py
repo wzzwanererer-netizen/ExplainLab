@@ -609,6 +609,12 @@ class SourceIdentityService:
             self._recover_locked()
             return bool(self._committed_index().get(str(item_id)))
 
+    def has_recovered_materialize(self, item_id: UUID | str) -> bool:
+        """Read after entering identity_guard, without running recovery writes."""
+        if self.journal.read_current() is not None:
+            raise SourceIdentityError(JOURNAL_CORRUPT, "recovery required")
+        return bool(self._committed_index().get(str(item_id)))
+
     def _committed_index(self) -> dict[str, list[dict[str, Any]]]:
         index: dict[str, list[dict[str, Any]]] = {}
         for record in self.journal.committed_materialize_records():

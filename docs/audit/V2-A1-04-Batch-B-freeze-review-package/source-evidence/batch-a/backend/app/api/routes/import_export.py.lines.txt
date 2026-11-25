@@ -1,0 +1,208 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: b9538591e8b92795d78d70ef11712484a536f237
+Source: backend/app/api/routes/import_export.py
+
+  43: def _http_error(exc: Exception) -> HTTPException:
+  44:     if isinstance(exc, MarkdownServiceError):
+  45:         return HTTPException(status_code=exc.status_code, detail=exc.code)
+  46:     if isinstance(exc, SourceIdentityError):
+  47:         return HTTPException(status_code=409, detail=exc.code)
+  48:     if isinstance(exc, ExporterMetadataError):
+  49:         return HTTPException(status_code=409, detail=exc.code)
+  50:     return HTTPException(status_code=500, detail="IMPORT_FAILED")
+  51: 
+  52: 
+  53: def _to_document(
+  54:     *,
+  55:     content: str,
+  56:     filename: str | None,
+  57:     target_item_id: UUID | None,
+  58:     frontmatter_resolution: str | None,
+  59:     attachments_requested: bool = False,
+  60: ) -> MarkdownImportDocument:
+  61:     return MarkdownImportDocument(
+  62:         content=content,
+  63:         filename=filename,
+  64:         target_item_id=target_item_id,
+  65:         frontmatter_resolution=frontmatter_resolution,
+  66:         attachments_requested=attachments_requested,
+  67:     )
+  68: 
+  69: 
+  70: def _from_archive(encoded: str) -> tuple[list[MarkdownImportDocument], dict[str, Any] | None]:
+  71:     try:
+  72:         payload = base64.b64decode(encoded, validate=True)
+  73:     except (binascii.Error, ValueError) as exc:
+  74:         raise MarkdownServiceError("IMPORT_ARCHIVE_INVALID", "ZIP base64 非法") from exc
+  75:     documents: list[MarkdownImportDocument] = []
+  76:     manifest: dict[str, Any] | None = None
+  77:     try:
+  78:         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+  79:             for info in archive.infolist():
+  80:                 if info.is_dir():
+  81:                     continue
+  82:                 name = info.filename.replace("\\", "/").split("/")[-1]
+  83:                 if not name:
+  84:                     continue
+  85:                 data = archive.read(info)
+  86:                 if name == "manifest.json":
+  87:                     try:
+  88:                         loaded = json.loads(data.decode("utf-8"))
+  89:                     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+  90:                         raise MarkdownServiceError(
+  91:                             "IMPORT_ARCHIVE_INVALID", "manifest.json 非法"
+  92:                         ) from exc
+  93:                     if not isinstance(loaded, dict):
+  94:                         raise MarkdownServiceError(
+  95:                             "IMPORT_ARCHIVE_INVALID", "manifest.json 非对象"
+  96:                         )
+  97:                     manifest = loaded
+  98:                     continue
+  99:                 if not name.lower().endswith((".md", ".markdown")):
+ 100:                     continue
+ 101:                 try:
+ 102:                     text = data.decode("utf-8")
+ 103:                 except UnicodeDecodeError as exc:
+ 104:                     raise MarkdownServiceError(
+ 105:                         "IMPORT_ARCHIVE_INVALID", "ZIP 内 Markdown 非 UTF-8"
+ 106:                     ) from exc
+ 107:                 documents.append(
+ 108:                     _to_document(
+ 109:                         content=text,
+ 110:                         filename=name,
+ 111:                         target_item_id=None,
+ 112:                         frontmatter_resolution=None,
+ 113:                     )
+ 114:                 )
+ 115:     except zipfile.BadZipFile as exc:
+ 116:         raise MarkdownServiceError("IMPORT_ARCHIVE_INVALID", "ZIP 结构非法") from exc
+ 117:     return documents, manifest
+ 118: 
+ 119: 
+ 120: def _collect_documents(
+ 121:     body: MarkdownImportIn,
+ 122: ) -> tuple[list[MarkdownImportDocument], dict[str, Any] | None]:
+ 123:     manifest = body.manifest
+ 124:     documents: list[MarkdownImportDocument] = []
+ 125:     if body.archive_base64:
+ 126:         documents, archive_manifest = _from_archive(body.archive_base64)
+ 127:         if archive_manifest is not None:
+ 128:             manifest = archive_manifest
+ 129:     elif body.documents is not None:
+ 130:         documents = [
+ 131:             _to_document(
+ 132:                 content=doc.content,
+ 133:                 filename=doc.filename,
+ 134:                 target_item_id=doc.target_item_id,
+ 135:                 frontmatter_resolution=doc.frontmatter_resolution,
+ 136:                 attachments_requested=bool(doc.attachments),
+ 137:             )
+ 138:             for doc in body.documents
+ 139:         ]
+ 140:     elif body.content is not None:
+ 141:         documents = [
+ 142:             _to_document(
+ 143:                 content=body.content,
+ 144:                 filename=body.filename,
+ 145:                 target_item_id=body.target_item_id,
+ 146:                 frontmatter_resolution=body.frontmatter_resolution,
+ 147:                 attachments_requested=bool(body.attachments),
+ 148:             )
+ 149:         ]
+ 150:     if not documents:
+ 151:         raise MarkdownServiceError("IMPORT_EMPTY", "no documents")
+ 152:     return documents, manifest
+ 153: 
+ 154: 
+ 155: def _sync_indexes(session_factory, index_ids: list[UUID], embedder: Embedder | None) -> str:
+ 156:     if not index_ids:
+ 157:         return "ok"
+ 158:     session: Session = session_factory()
+ 159:     try:
+ 160:         asyncio.run(sync_index(session, embedder, index_ids=index_ids))
+ 161:         session.commit()
+ 162:         return "ok"
+ 163:     except Exception as exc:  # noqa: BLE001 - 提交后同步失败只告警，不回滚业务数据
+ 164:         session.rollback()
+ 165:         logger.warning("导入后索引同步失败: %s", type(exc).__name__)
+ 166:         return "failed"
+ 167:     finally:
+ 168:         session.close()
+ 169: 
+ 170: 
+ 171: def _import_response(
+ 172:     service: MarkdownService,
+ 173:     documents: list[MarkdownImportDocument],
+ 174:     *,
+ 175:     space_id: str | None,
+ 176:     manifest: dict[str, Any] | None,
+ 177:     batch_id: str | None,
+ 178:     embedder: Embedder | None,
+ 179:     reject_attachments: bool,
+ 180:     response: Response,
+ 181:     single: bool,
+ 182: ) -> dict[str, Any]:
+ 183:     try:
+ 184:         outcome = service.import_documents(
+ 185:             documents,
+ 186:             space_id=space_id,
+ 187:             manifest=manifest,
+ 188:             batch_id=batch_id,
+ 189:             reject_attachments=reject_attachments,
+ 190:         )
+ 191:     except (MarkdownServiceError, SourceIdentityError, ExporterMetadataError) as exc:
+ 192:         raise _http_error(exc) from exc
+ 193:     index_state = _sync_indexes(service.session_factory, outcome.index_ids, embedder)
+ 194:     body = outcome.report.model_dump(mode="json")
+ 195:     body["index_sync"] = index_state
+ 196:     if single and outcome.report.items:
+ 197:         first = outcome.report.items[0]
+ 198:         if first.status.value == "error" and IMPORT_LOCK_TIMEOUT in first.errors:
+ 199:             raise HTTPException(status_code=409, detail=IMPORT_LOCK_TIMEOUT)
+ 200:         if first.status.value == "pending_review":
+ 201:             response.status_code = 202
+ 202:         elif first.status.value == "created":
+ 203:             response.status_code = 201
+ 204:     return body
+ 205: 
+ 206: 
+ 207: @router.post("/knowledge/import")
+ 208: def import_markdown(
+ 209:     body: MarkdownImportIn,
+ 210:     response: Response,
+ 211:     service: Annotated[MarkdownService, Depends(get_markdown_service)],
+ 212:     embedder: Annotated[Embedder | None, Depends(get_embedder)],
+ 213: ) -> dict[str, Any]:
+ 214:     documents, manifest = _collect_documents(body)
+ 215:     return _import_response(
+ 216:         service,
+ 217:         documents,
+ 218:         space_id=body.space_id,
+ 219:         manifest=manifest,
+ 220:         batch_id=body.batch_id,
+ 221:         embedder=embedder,
+ 222:         reject_attachments=True,
+ 223:         response=response,
+ 224:         single=True,
+ 225:     )
+ 226: 
+ 227: 
+ 228: @router.post("/knowledge/import/batch")
+ 229: def import_markdown_batch(
+ 230:     body: MarkdownImportIn,
+ 231:     response: Response,
+ 232:     service: Annotated[MarkdownService, Depends(get_markdown_service)],
+ 233:     embedder: Annotated[Embedder | None, Depends(get_embedder)],
+ 234: ) -> dict[str, Any]:
+ 235:     documents, manifest = _collect_documents(body)
+ 236:     return _import_response(
+ 237:         service,
+ 238:         documents,
+ 239:         space_id=body.space_id,
+ 240:         manifest=manifest,
+ 241:         batch_id=body.batch_id,
+ 242:         embedder=embedder,
+ 243:         reject_attachments=False,
+ 244:         response=response,
+ 245:         single=False,
+ 246:     )

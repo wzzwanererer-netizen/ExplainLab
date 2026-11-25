@@ -1,0 +1,246 @@
+--- a/backend/app/services/attachment_staging.py
++++ b/backend/app/services/attachment_staging.py
+@@ -1179,7 +1179,9 @@
+                 except Exception:
+                     return None
+                 if envelope is None:
+-                    continue
++                    # An explicit reserved key with a null value is malformed.
++                    # Only reviews without the reserved key are ordinary reviews.
++                    return None
+                 if not envelope.attachments:
+                     continue
+                 try:
+--- a/backend/app/services/markdown.py
++++ b/backend/app/services/markdown.py
+@@ -24,6 +24,15 @@
+ 
+ from sqlalchemy.orm import Session, sessionmaker
+ 
++from app.db.storage_lock import (
++    STORAGE_LOCK_UNAVAILABLE,
++    LockGuard,
++    PostgresStorageKeyLock,
++    SQLiteStorageKeyLock,
++    StorageLockError,
++    StorageLockTransient,
++    new_owner,
++)
+ from app.models import KnowledgeSpace, ReviewRequestORM
+ from app.services.attachment_staging import (
+     ATTACHMENT_MANIFEST_CORRUPTED,
+@@ -36,6 +45,7 @@
+     coerce_manifest_items,
+     logical_manifest_set,
+ )
++from app.services.attachments import release_storage_guard
+ from app.services.governance import SQLAlchemyReviewRepository, build_review_service
+ from app.services.import_coordinator import (
+     IMPORT_LOCK_TIMEOUT,
+@@ -259,12 +269,14 @@
+         instance_store: SourceInstanceIdStore,
+         *,
+         codec: StdlibMarkdownCodec | None = None,
++        storage_lock: SQLiteStorageKeyLock | PostgresStorageKeyLock | None = None,
+     ) -> None:
+         self._factory = session_factory
+         self._coordinator = coordinator
+         self._identity = identity
+         self._instance_store = instance_store
+         self._codec = codec or StdlibMarkdownCodec()
++        self._storage_lock = storage_lock
+ 
+     @property
+     def exporter_instance_id(self) -> str:
+@@ -857,7 +869,6 @@
+                 # keeps it for ORP when the commit outcome is ambiguous.
+                 with stage_context as lease:
+                     staged = lease.staged if lease is not None else None
+-                    commit_attempted = False
+                     try:
+                         result, needs_index = self._apply_import(
+                             session,
+@@ -869,17 +880,16 @@
+                             attachment_staging=attachment_staging,
+                             staged=staged,
+                         )
+-                        commit_attempted = True
++                        if lease is not None:
++                            # Preserve before commit. Rollback can also fail after
++                            # a disconnect and must not remove a committed review's files.
++                            lease.keep_for_orp = True
+                         session.commit()
+                         if lease is not None:
+                             lease.committed = True
+                         return result, needs_index
+                     except Exception:
+                         session.rollback()
+-                        if lease is not None and commit_attempted:
+-                            # The commit result is unknown; a committed review
+-                            # may reference this staging.  Preserve it for ORP.
+-                            lease.keep_for_orp = True
+                         raise
+             finally:
+                 session.close()
+@@ -968,18 +978,40 @@
+         staging: AttachmentStagingService,
+     ) -> bool:
+         assert item.attachment_source is not None
+-        refs = {
+-            attachment.storage_key
+-            for attachment in SQLAlchemyAttachmentRepository(session).list_attachments(
+-                item_id
+-            )
+-        }
+-        for entry in item.attachment_source.attachments:
+-            if entry.storage_key not in refs:
++        entries = item.attachment_source.attachments
++        # The SQLite read snapshot must end before the lock manager writes its
++        # lease. The checked references must come from a fresh snapshot.
++        session.close()
++        with self._attachment_keys([entry.storage_key for entry in entries]) as guard:
++            with self._factory() as snapshot:
++                refs = {
++                    attachment.storage_key
++                    for attachment in SQLAlchemyAttachmentRepository(snapshot).list_attachments(item_id)
++                }
++            if not all(entry.storage_key in refs for entry in entries):
+                 return False
+-        for entry in item.attachment_source.attachments:
+-            staging.verify_published(entry.storage_key, len(entry.data))
+-        return True
++            for entry in entries:
++                guard.verify_all()
++                staging.verify_published(entry.storage_key, len(entry.data))
++            guard.verify_all()
++            return True
++
++    @contextlib.contextmanager
++    def _attachment_keys(self, keys: list[str]):
++        if self._storage_lock is None:
++            raise MarkdownServiceError(STORAGE_LOCK_UNAVAILABLE, status_code=503)
++        guard: LockGuard | None = None
++        try:
++            guard = self._storage_lock.acquire_many(keys, new_owner())
++            if guard is None:
++                raise MarkdownServiceError("STORAGE_LOCK_TIMEOUT", status_code=409)
++            yield guard
++        except StorageLockError as exc:
++            raise MarkdownServiceError(exc.code, status_code=503) from None
++        except StorageLockTransient:
++            raise MarkdownServiceError(STORAGE_LOCK_UNAVAILABLE, status_code=503) from None
++        finally:
++            release_storage_guard(guard)
+ 
+     def _skipped_result(
+         self,
+--- a/backend/tests/test_attachment_staging.py
++++ b/backend/tests/test_attachment_staging.py
+@@ -679,7 +679,7 @@
+         assert _staging_dirs(client) == []
+ 
+     def test_already_applied_same_hash_with_satisfied_attachment_is_skipped(
+-        self, client, settings
++        self, client, settings, monkeypatch
+     ):
+         text = _markdown("已应用", "已应用正文").decode("utf-8")
+         first = client.post(
+@@ -705,6 +705,22 @@
+             },
+         )
+         assert upload.status_code in {200, 201}, upload.text
++        manager = client.app.state.storage_key_lock
++        key = upload.json()["storage_key"]
++        guard = manager.acquire_many([key], "b3-replay-contender", heartbeat_seconds=0)
++        assert guard is not None
++        try:
++            with monkeypatch.context() as contention:
++                contention.setattr(manager, "wait_seconds", 0.1)
++                blocked = _import_zip(
++                    client,
++                    _zip([("doc.md", text.encode()), ("attachments/design.png", PNG)]),
++                    target=item_id,
++                )
++            assert blocked.status_code == 409, blocked.text
++            assert blocked.json()["detail"] == "STORAGE_LOCK_TIMEOUT"
++        finally:
++            assert guard.release()
+         response = _import_zip(
+             client,
+             _zip([("doc.md", text.encode()), ("attachments/design.png", PNG)]),
+@@ -993,8 +1009,9 @@
+         assert _attachment_count() == 0
+         assert all(not lock.locked() for lock in service._guards.values())
+ 
++    @pytest.mark.parametrize("rollback_fails", [False, True])
+     def test_ambiguous_commit_keeps_staging_for_orp(
+-        self, client, settings, monkeypatch
++        self, client, settings, monkeypatch, rollback_fails
+     ):
+         item_id = _item(client, content="旧正文")
+         service = _staging(client, settings)
+@@ -1015,13 +1032,22 @@
+             def commit(self):
+                 super().commit()
+                 if self.info.pop("b3_pending_commit", False):
++                    if rollback_fails:
++                        self.info["b3_fail_rollback"] = True
+                     raise RuntimeError("simulated ambiguous commit outcome")
++
++            def rollback(self):
++                super().rollback()
++                if self.info.pop("b3_fail_rollback", False):
++                    raise RuntimeError("simulated rollback disconnect")
+ 
+         event.listen(base_session, "before_flush", mark_pending)
+         monkeypatch.setattr(factory, "class_", ObservedSession)
+         try:
+             with pytest.raises(
+-                RuntimeError, match="simulated ambiguous commit outcome"
++                RuntimeError,
++                match=("simulated rollback disconnect" if rollback_fails
++                       else "simulated ambiguous commit outcome"),
+             ):
+                 _import_zip(
+                     client, _attachment_zip(body="新正文"), target=item_id
+@@ -1147,6 +1173,28 @@
+ 
+ 
+ class TestPendingFailClosed:
++    def test_null_import_envelope_prevents_staging_cleanup(self, client, settings):
++        item_id = _item(client, content="旧正文")
++        service = _staging(client, settings)
++        client.app.state.attachment_staging_service = service
++        response = _import_zip(client, _attachment_zip(body="新正文"), target=item_id)
++        assert response.status_code == 202, response.text
++        staging_dir, = _staging_dirs(client)
++        with get_session_factory()() as session:
++            review = session.scalar(select(ReviewRequestORM))
++            assert review is not None and review.status == "pending"
++            payload = json.loads(review.payload)
++            payload["__a1_import"] = None
++            review.payload = json.dumps(payload)
++            session.commit()
++
++        assert service.pending_staging_ids() is None
++        assert not service.discard_rejected(staging_dir.name)
++        decision = service.sweep_candidate(staging_dir.name)
++        assert not decision.candidate
++        assert decision.reason == "pending_manifest_malformed"
++        assert (staging_dir / ".complete").is_file()
++
+     def test_missing_session_factory_discard_fails_closed(self, client):
+         service = AttachmentStagingService(
+             client.app.state.attachment_storage,
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -124,7 +124,8 @@
+             except SQLAlchemyError:
+                 logger.warning("启动时数据库不可达，身份 Journal 恢复延后")
+             markdown_service = MarkdownService(
+-                get_session_factory(), coordinator, identity, instance_store
++                get_session_factory(), coordinator, identity, instance_store,
++                storage_lock=storage_key_lock,
+             )
+             application.state.process_lock = lock
+             application.state.import_coordinator = coordinator

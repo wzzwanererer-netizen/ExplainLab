@@ -10,22 +10,26 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-import io
-import json
 import logging
-import zipfile
 from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.schemas import MarkdownExportIn, MarkdownImportIn
 from app.dependencies import get_embedder, get_markdown_service
+from app.services.attachment_staging import (
+    ATTACHMENT_STORAGE_UNAVAILABLE,
+    AttachmentStagingError,
+    AttachmentStagingService,
+    ParsedImportZip,
+)
 from app.services.import_coordinator import IMPORT_LOCK_TIMEOUT
 from app.services.markdown import (
     ATTACHMENT_EXPORT_UNSUPPORTED,
+    ATTACHMENT_IMPORT_UNSUPPORTED,
     MarkdownImportDocument,
     MarkdownService,
     MarkdownServiceError,
@@ -43,11 +47,26 @@ router = APIRouter(tags=["import-export"])
 def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, MarkdownServiceError):
         return HTTPException(status_code=exc.status_code, detail=exc.code)
+    if isinstance(exc, AttachmentStagingError):
+        return HTTPException(status_code=exc.status_code, detail=exc.code)
     if isinstance(exc, SourceIdentityError):
         return HTTPException(status_code=409, detail=exc.code)
     if isinstance(exc, ExporterMetadataError):
         return HTTPException(status_code=409, detail=exc.code)
     return HTTPException(status_code=500, detail="IMPORT_FAILED")
+
+
+def _staging_service(request: Request) -> AttachmentStagingService:
+    service = getattr(request.app.state, "attachment_staging_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail=ATTACHMENT_STORAGE_UNAVAILABLE)
+    return service
+
+
+def _json_attachments_requested(body: MarkdownImportIn) -> bool:
+    if body.attachments:
+        return True
+    return any(doc.attachments for doc in (body.documents or []))
 
 
 def _to_document(
@@ -57,6 +76,7 @@ def _to_document(
     target_item_id: UUID | None,
     frontmatter_resolution: str | None,
     attachments_requested: bool = False,
+    attachment_source: ParsedImportZip | None = None,
 ) -> MarkdownImportDocument:
     return MarkdownImportDocument(
         content=content,
@@ -64,66 +84,66 @@ def _to_document(
         target_item_id=target_item_id,
         frontmatter_resolution=frontmatter_resolution,
         attachments_requested=attachments_requested,
+        attachment_source=attachment_source,
     )
 
 
-def _from_archive(encoded: str) -> tuple[list[MarkdownImportDocument], dict[str, Any] | None]:
+def _from_archive(
+    encoded: str,
+    *,
+    staging: AttachmentStagingService,
+    markdown_service: MarkdownService,
+    target_item_id: UUID | None,
+) -> tuple[list[MarkdownImportDocument], dict[str, Any] | None]:
     try:
         payload = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise MarkdownServiceError("IMPORT_ARCHIVE_INVALID", "ZIP base64 非法") from exc
+    parsed = staging.inspect_zip(payload)
     documents: list[MarkdownImportDocument] = []
-    manifest: dict[str, Any] | None = None
-    try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            for info in archive.infolist():
-                if info.is_dir():
-                    continue
-                name = info.filename.replace("\\", "/").split("/")[-1]
-                if not name:
-                    continue
-                data = archive.read(info)
-                if name == "manifest.json":
-                    try:
-                        loaded = json.loads(data.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                        raise MarkdownServiceError(
-                            "IMPORT_ARCHIVE_INVALID", "manifest.json 非法"
-                        ) from exc
-                    if not isinstance(loaded, dict):
-                        raise MarkdownServiceError(
-                            "IMPORT_ARCHIVE_INVALID", "manifest.json 非对象"
-                        )
-                    manifest = loaded
-                    continue
-                if not name.lower().endswith((".md", ".markdown")):
-                    continue
-                try:
-                    text = data.decode("utf-8")
-                except UnicodeDecodeError as exc:
-                    raise MarkdownServiceError(
-                        "IMPORT_ARCHIVE_INVALID", "ZIP 内 Markdown 非 UTF-8"
-                    ) from exc
-                documents.append(
-                    _to_document(
-                        content=text,
-                        filename=name,
-                        target_item_id=None,
-                        frontmatter_resolution=None,
-                    )
-                )
-    except zipfile.BadZipFile as exc:
-        raise MarkdownServiceError("IMPORT_ARCHIVE_INVALID", "ZIP 结构非法") from exc
-    return documents, manifest
+    for entry in parsed.documents:
+        try:
+            text = entry.data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise MarkdownServiceError(
+                "IMPORT_ARCHIVE_INVALID", "ZIP 内 Markdown 非 UTF-8"
+            ) from exc
+        documents.append(
+            _to_document(
+                content=text,
+                filename=entry.filename,
+                target_item_id=None,
+                frontmatter_resolution=None,
+                attachments_requested=parsed.has_attachments,
+                attachment_source=parsed if parsed.has_attachments else None,
+            )
+        )
+    if parsed.has_attachments:
+        if len(documents) != 1:
+            if not documents:
+                code = markdown_service.attachment_only_error_code(target_item_id)
+            else:
+                code = ATTACHMENT_IMPORT_UNSUPPORTED
+            raise MarkdownServiceError(code, "含附件 ZIP 无法唯一归属", status_code=400)
+        documents[0].target_item_id = target_item_id
+    return documents, parsed.manifest
 
 
 def _collect_documents(
     body: MarkdownImportIn,
+    *,
+    staging: AttachmentStagingService,
+    markdown_service: MarkdownService,
 ) -> tuple[list[MarkdownImportDocument], dict[str, Any] | None]:
     manifest = body.manifest
     documents: list[MarkdownImportDocument] = []
     if body.archive_base64:
-        documents, archive_manifest = _from_archive(body.archive_base64)
+        documents, archive_manifest = _from_archive(
+            body.archive_base64,
+            staging=staging,
+            markdown_service=markdown_service,
+            target_item_id=body.target_item_id,
+        )
         if archive_manifest is not None:
             manifest = archive_manifest
     elif body.documents is not None:
@@ -133,7 +153,7 @@ def _collect_documents(
                 filename=doc.filename,
                 target_item_id=doc.target_item_id,
                 frontmatter_resolution=doc.frontmatter_resolution,
-                attachments_requested=bool(doc.attachments),
+                attachments_requested=bool(doc.attachments) or bool(body.attachments),
             )
             for doc in body.documents
         ]
@@ -179,6 +199,7 @@ def _import_response(
     reject_attachments: bool,
     response: Response,
     single: bool,
+    staging: AttachmentStagingService,
 ) -> dict[str, Any]:
     try:
         outcome = service.import_documents(
@@ -187,8 +208,14 @@ def _import_response(
             manifest=manifest,
             batch_id=batch_id,
             reject_attachments=reject_attachments,
+            attachment_staging=staging,
         )
-    except (MarkdownServiceError, SourceIdentityError, ExporterMetadataError) as exc:
+    except (
+        MarkdownServiceError,
+        AttachmentStagingError,
+        SourceIdentityError,
+        ExporterMetadataError,
+    ) as exc:
         raise _http_error(exc) from exc
     index_state = _sync_indexes(service.session_factory, outcome.index_ids, embedder)
     body = outcome.report.model_dump(mode="json")
@@ -208,10 +235,19 @@ def _import_response(
 def import_markdown(
     body: MarkdownImportIn,
     response: Response,
+    request: Request,
     service: Annotated[MarkdownService, Depends(get_markdown_service)],
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> dict[str, Any]:
-    documents, manifest = _collect_documents(body)
+    staging = _staging_service(request)
+    if _json_attachments_requested(body):
+        raise HTTPException(status_code=400, detail=ATTACHMENT_IMPORT_UNSUPPORTED)
+    try:
+        documents, manifest = _collect_documents(
+            body, staging=staging, markdown_service=service
+        )
+    except (MarkdownServiceError, AttachmentStagingError) as exc:
+        raise _http_error(exc) from exc
     return _import_response(
         service,
         documents,
@@ -222,6 +258,7 @@ def import_markdown(
         reject_attachments=True,
         response=response,
         single=True,
+        staging=staging,
     )
 
 
@@ -229,10 +266,19 @@ def import_markdown(
 def import_markdown_batch(
     body: MarkdownImportIn,
     response: Response,
+    request: Request,
     service: Annotated[MarkdownService, Depends(get_markdown_service)],
     embedder: Annotated[Embedder | None, Depends(get_embedder)],
 ) -> dict[str, Any]:
-    documents, manifest = _collect_documents(body)
+    staging = _staging_service(request)
+    if body.archive_base64 and _json_attachments_requested(body):
+        raise HTTPException(status_code=400, detail=ATTACHMENT_IMPORT_UNSUPPORTED)
+    try:
+        documents, manifest = _collect_documents(
+            body, staging=staging, markdown_service=service
+        )
+    except (MarkdownServiceError, AttachmentStagingError) as exc:
+        raise _http_error(exc) from exc
     return _import_response(
         service,
         documents,
@@ -243,6 +289,7 @@ def import_markdown_batch(
         reject_attachments=False,
         response=response,
         single=False,
+        staging=staging,
     )
 
 

@@ -45,3 +45,10 @@ tmp/
 
 # --- 审计交接构建产物（ZIP/bundle/log，体积大，不入库） ---
 release/
+
+# --- 开源发布忽略的大包/备份/临时视频工程 ---
+*.zip
+*.sha256
+*.bak*
+video-studio/
+frontend/dist-qoder-sites/

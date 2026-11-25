@@ -1,0 +1,118 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 12cf6036fbee2e76f1b367ed3b4945b6f4c5feaa
+Source: knowledge-core/src/knowledge_core/review/__init__.py
+
+  30: class ReviewPolicy:
+  31:     """重要变更判定矩阵。
+  32: 
+  33:     草稿为 scratch，改/删/回滚直接应用；生效知识的改/删/回滚与任何合并重复
+  34:     属重要变更，须审核。draft→active 发布不视为重要变更。
+  35:     """
+  36: 
+  37:     @staticmethod
+  38:     def is_important(action: ReviewAction, status: KnowledgeStatus) -> bool:
+  39:         if action == ReviewAction.MERGE_DUPLICATE:
+  40:             return True
+  41:         if action in (
+  42:             ReviewAction.UPDATE_ITEM,
+  43:             ReviewAction.DELETE_ITEM,
+  44:             ReviewAction.RESTORE_VERSION,
+  45:         ):
+  46:             return status == KnowledgeStatus.ACTIVE
+  47:         return False
+  48: 
+  49: 
+  50: class ReviewService:
+  51:     """审核单提交与应用编排。"""
+  52: 
+  53:     def __init__(
+  54:         self,
+  55:         items: KnowledgeRepository,
+  56:         reviews: ReviewRepository,
+  57:         versions: VersionService,
+  58:         relations: RelationRepository,
+  59:     ) -> None:
+  60:         self._items = items
+  61:         self._reviews = reviews
+  62:         self._versions = versions
+  63:         self._relations = relations
+  64: 
+  65:     async def submit(
+  66:         self,
+  67:         item_id: UUID,
+  68:         action: ReviewAction,
+  69:         payload: dict | None = None,
+  70:         reason: str | None = None,
+  71:     ) -> ReviewRequest | None:
+  72:         """提交变更。重要变更返回 pending 审核单（不应用）；否则直接应用返回 None。"""
+  73:         item = self._items.get(item_id)
+  74:         if item is None:
+  75:             raise ValueError(f"知识条目不存在: {item_id}")
+  76:         payload = payload or {}
+  77:         if ReviewPolicy.is_important(action, item.status):
+  78:             review = ReviewRequest(
+  79:                 item_id=item_id, action=action, payload=payload, reason=reason
+  80:             )
+  81:             return self._reviews.save_review(review)
+  82:         await self._apply_action(item_id, action, payload)
+  83:         return None
+  84: 
+  85:     async def approve(
+  86:         self, review_id: UUID, note: str | None = None
+  87:     ) -> ReviewRequest:
+  88:         review = self._pending(review_id)
+  89:         review.status = ReviewStatus.APPROVED
+  90:         review.resolved_at = utcnow()
+  91:         review.resolution_note = note
+  92:         # 先记录决议再应用：删除动作会级联清理审核单本身（外键 CASCADE），
+  93:         # 若先应用再更新审核单，行已不存在会失败。同一事务内，应用失败则整体回滚。
+  94:         updated = self._reviews.update_review(review)
+  95:         await self._apply_action(review.item_id, review.action, review.payload)
+  96:         return updated
+  97: 
+  98:     async def reject(
+  99:         self, review_id: UUID, note: str | None = None
+ 100:     ) -> ReviewRequest:
+ 101:         review = self._pending(review_id)
+ 102:         review.status = ReviewStatus.REJECTED
+ 103:         review.resolved_at = utcnow()
+ 104:         review.resolution_note = note
+ 105:         return self._reviews.update_review(review)
+ 106: 
+ 107:     def _pending(self, review_id: UUID) -> ReviewRequest:
+ 108:         review = self._reviews.get_review(review_id)
+ 109:         if review is None:
+ 110:             raise ValueError(f"审核单不存在: {review_id}")
+ 111:         if review.status != ReviewStatus.PENDING:
+ 112:             raise ValueError(f"审核单已处理: {review_id} ({review.status})")
+ 113:         return review
+ 114: 
+ 115:     async def _apply_action(
+ 116:         self, item_id: UUID, action: ReviewAction, payload: dict
+ 117:     ) -> None:
+ 118:         if action == ReviewAction.UPDATE_ITEM:
+ 119:             await self._apply_update(item_id, payload)
+ 120:         elif action == ReviewAction.DELETE_ITEM:
+ 121:             self._items.delete(item_id)
+ 122:         elif action == ReviewAction.MERGE_DUPLICATE:
+ 123:             await self._apply_merge(item_id, payload)
+ 124:         elif action == ReviewAction.RESTORE_VERSION:
+ 125:             await self._versions.restore(item_id, int(payload["version"]))
+ 126:         else:  # pragma: no cover - 枚举已穷尽
+ 127:             raise ValueError(f"未知审核动作: {action}")
+ 128: 
+ 129:     async def _apply_update(self, item_id: UUID, payload: dict) -> None:
+ 130:         item = self._items.get(item_id)
+ 131:         if item is None:
+ 132:             raise ValueError(f"知识条目不存在: {item_id}")
+ 133:         await self._versions.create_version(item, change_summary="编辑前快照")
+ 134:         if "title" in payload:
+ 135:             item.title = payload["title"]
+ 136:         if "content" in payload:
+ 137:             item.content = payload["content"]
+ 138:         if "status" in payload:
+ 139:             item.status = KnowledgeStatus(payload["status"])
+ 140:         if "space_id" in payload:
+ 141:             item.space_id = payload["space_id"]
+ 142:         item.updated_at = utcnow()
+ 143:         self._items.update(item)

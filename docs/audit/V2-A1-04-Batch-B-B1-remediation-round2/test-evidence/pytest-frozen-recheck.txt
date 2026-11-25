@@ -1,0 +1,185 @@
+# Command: .venv/Scripts/python.exe -u docs/audit/V2-A1-04-Batch-B-B1-remediation-round2/test-evidence/pytest-windows-event-loop.py.txt -o addopts=--import-mode=importlib -o faulthandler_timeout=40 -ra -p no:cacheprovider knowledge-core/tests/test_markdown_canonical.py knowledge-core/tests/test_markdown_codec.py knowledge-core/tests/test_markdown_frontmatter.py knowledge-core/tests/test_markdown_service.py knowledge-core/tests/test_markdown_links.py knowledge-core/tests/test_markdown_link_service.py knowledge-core/tests/test_interfaces.py backend/tests/test_links.py backend/tests/test_links_http.py backend/tests/test_governance.py backend/tests/test_governance_links.py backend/tests/test_knowledge.py backend/tests/test_markdown_batch_a_identity.py backend/tests/test_markdown_batch_a_import_conflict.py backend/tests/test_markdown_batch_a_import_export.py backend/tests/test_batch_a_fault_injection.py
+Windows test host: Proactor thread wake-up uses a 5 ms polling timer
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 712 items
+
+knowledge-core\tests\test_markdown_canonical.py ........................ [  3%]
+..................................................                       [ 10%]
+knowledge-core\tests\test_markdown_codec.py ............................ [ 14%]
+...................................................................      [ 23%]
+knowledge-core\tests\test_markdown_frontmatter.py ...................... [ 26%]
+........................................................................ [ 36%]
+............................                                             [ 40%]
+knowledge-core\tests\test_markdown_service.py .......................... [ 44%]
+..                                                                       [ 44%]
+knowledge-core\tests\test_markdown_links.py ............................ [ 48%]
+.............                                                            [ 50%]
+knowledge-core\tests\test_markdown_link_service.py ..................... [ 53%]
+.................................................................        [ 62%]
+knowledge-core\tests\test_interfaces.py ..............                   [ 64%]
+backend\tests\test_links.py ............................................ [ 70%]
+...............................................                          [ 77%]
+backend\tests\test_links_http.py ...................                     [ 80%]
+backend\tests\test_governance.py .............                           [ 81%]
+backend\tests\test_governance_links.py ............                      [ 83%]
+backend\tests\test_knowledge.py ..........                               [ 84%]
+backend\tests\test_markdown_batch_a_identity.py ........................ [ 88%]
+.....................                                                    [ 91%]
+backend\tests\test_markdown_batch_a_import_conflict.py .....F.           [ 92%]
+backend\tests\test_markdown_batch_a_import_export.py ................... [ 94%]
+.........FFFF                                                            [ 96%]
+backend\tests\test_batch_a_fault_injection.py .......................    [100%]
+
+================================== FAILURES ===================================
+_ TestImportCannotCreateMaterializeConflict.test_approve_rejects_when_target_materialized_after_review _
+
+self = <backend.tests.test_markdown_batch_a_import_conflict.TestImportCannotCreateMaterializeConflict object at 0x0000025FDF73E9D0>
+client = <starlette.testclient.TestClient object at 0x0000025FDFAA4910>
+
+    def test_approve_rejects_when_target_materialized_after_review(
+        self, client: TestClient
+    ):
+        created = client.post(
+            "/api/knowledge", json={"title": "瀹℃壒绔炴€?, "content": "鍒濈増"}
+        ).json()
+        item_id = created["id"]
+        patched = client.patch(f"/api/knowledge/{item_id}", json={"status": "active"})
+        assert patched.status_code == 200
+    
+        outcome = _service(client).import_documents(
+            [
+                MarkdownImportDocument(
+                    content="---\ntitle: 瀹℃壒绔炴€乗n---\n瀹℃牳鍚庢柊姝ｆ枃",
+                    filename="pending.md",
+                    target_item_id=UUID(item_id),
+                )
+            ]
+        )
+        result = outcome.report.items[0]
+>       assert result.status.value == "pending_review"
+E       AssertionError: assert 'error' == 'pending_review'
+E         
+E         - pending_review
+E         + error
+
+backend\tests\test_markdown_batch_a_import_conflict.py:281: AssertionError
+_ TestActiveReviewFlow.test_active_content_change_creates_review_then_approve_applies_hook _
+
+self = <backend.tests.test_markdown_batch_a_import_export.TestActiveReviewFlow object at 0x0000025FDF77FED0>
+client = <starlette.testclient.TestClient object at 0x0000025FDFD0F290>
+
+    def test_active_content_change_creates_review_then_approve_applies_hook(
+        self, client: TestClient
+    ):
+        item_id = self._prepare_active_import(client)
+        changed = _identity_doc(
+            INSTANCE_X,
+            DOC_X,
+            "鏂扮増 [[鐩爣]]",
+            tags="[鏂癩",
+            custom="鍊?,
+        )
+        client.post("/api/knowledge", json={"title": "鐩爣", "content": "t"})
+        outcome = _import(client, changed)
+        result = outcome.report.items[0]
+>       assert result.status.value == "pending_review"
+E       AssertionError: assert 'error' == 'pending_review'
+E         
+E         - pending_review
+E         + error
+
+backend\tests\test_markdown_batch_a_import_export.py:654: AssertionError
+____ TestActiveReviewFlow.test_pending_same_reused_and_different_rejected _____
+
+self = <backend.tests.test_markdown_batch_a_import_export.TestActiveReviewFlow object at 0x0000025FDF780850>
+client = <starlette.testclient.TestClient object at 0x0000025FE1D31A50>
+
+    def test_pending_same_reused_and_different_rejected(self, client: TestClient):
+        item_id = self._prepare_active_import(client)
+        changed = _identity_doc(INSTANCE_X, DOC_X, "寰呭鐗堟湰")
+        first = _import(client, changed)
+>       assert first.report.pending_review == 1
+E       AssertionError: assert 0 == 1
+E        +  where 0 = ImportReport(total=1, created=0, updated=0, skipped=0, pending_review=0, reused_pending=0, duplicates=0, errors=1, uns...id=None, errors=['IMPORT_FAILED'], warnings=[], conflicts=[], status_changes=[], unsupported=[], unresolved_links=[])]).pending_review
+E        +    where ImportReport(total=1, created=0, updated=0, skipped=0, pending_review=0, reused_pending=0, duplicates=0, errors=1, uns...id=None, errors=['IMPORT_FAILED'], warnings=[], conflicts=[], status_changes=[], unsupported=[], unresolved_links=[])]) = ImportOutcome(report=ImportReport(total=1, created=0, updated=0, skipped=0, pending_review=0, reused_pending=0, duplic...=['IMPORT_FAILED'], warnings=[], conflicts=[], status_changes=[], unsupported=[], unresolved_links=[])]), index_ids=[]).report
+
+backend\tests\test_markdown_batch_a_import_export.py:677: AssertionError
+______ TestActiveReviewFlow.test_reject_leaves_item_and_origin_unchanged ______
+
+self = <backend.tests.test_markdown_batch_a_import_export.TestActiveReviewFlow object at 0x0000025FDF77F910>
+client = <starlette.testclient.TestClient object at 0x0000025FE1F7AF90>
+
+    def test_reject_leaves_item_and_origin_unchanged(self, client: TestClient):
+        item_id = self._prepare_active_import(client)
+        changed = _identity_doc(INSTANCE_X, DOC_X, "鎷掔粷鐗堟湰", tags="[鎷掔粷]")
+        outcome = _import(client, changed)
+        review_id = outcome.report.items[0].review_id
+        session = get_session_factory()()
+        try:
+            before_origins = session.execute(
+                text("select count(*) from import_origin")
+            ).scalar_one()
+        finally:
+            session.close()
+        rejected = client.post(f"/api/reviews/{review_id}/reject", json={"note": "涓嶈"})
+>       assert rejected.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+backend\tests\test_markdown_batch_a_import_export.py:699: AssertionError
+__ TestActiveReviewFlow.test_approve_hook_failure_rolls_back_review_and_item __
+
+self = <backend.tests.test_markdown_batch_a_import_export.TestActiveReviewFlow object at 0x0000025FDF77E450>
+client = <starlette.testclient.TestClient object at 0x0000025FE18912D0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000025FE07AA190>
+
+    def test_approve_hook_failure_rolls_back_review_and_item(
+        self, client: TestClient, monkeypatch
+    ):
+        item_id = self._prepare_active_import(client)
+        changed = _identity_doc(INSTANCE_X, DOC_X, "鍥炴粴鐗堟湰")
+        outcome = _import(client, changed)
+        review_id = outcome.report.items[0].review_id
+    
+        from app.services import import_review_hook
+        from app.services.markdown import MarkdownServiceError
+    
+        def boom(self, review, envelope):
+            raise MarkdownServiceError("IMPORT_FAILED", "injected", status_code=409)
+    
+        monkeypatch.setattr(import_review_hook.ImportReviewHook, "apply_approved", boom)
+        response = client.post(f"/api/reviews/{review_id}/approve", json={})
+>       assert response.status_code == 409
+E       assert 422 == 409
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+backend\tests\test_markdown_batch_a_import_export.py:727: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+backend/tests/test_markdown_batch_a_import_conflict.py::TestImportCannotCreateMaterializeConflict::test_approve_rejects_when_target_materialized_after_review
+backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_active_content_change_creates_review_then_approve_applies_hook
+backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_pending_same_reused_and_different_rejected
+backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_reject_leaves_item_and_origin_unchanged
+backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_approve_hook_failure_rolls_back_review_and_item
+  D:\ExplainLab\backend\app\services\markdown.py:319: RuntimeWarning: coroutine 'ReviewService.submit' was never awaited
+    result = ImportItemResult(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_markdown_batch_a_import_conflict.py::TestImportCannotCreateMaterializeConflict::test_approve_rejects_when_target_materialized_after_review
+FAILED backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_active_content_change_creates_review_then_approve_applies_hook
+FAILED backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_pending_same_reused_and_different_rejected
+FAILED backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_reject_leaves_item_and_origin_unchanged
+FAILED backend/tests/test_markdown_batch_a_import_export.py::TestActiveReviewFlow::test_approve_hook_failure_rolls_back_review_and_item
+============ 5 failed, 707 passed, 6 warnings in 200.36s (0:03:20) ============
+exit_code=1

@@ -1,0 +1,19 @@
+import platform
+import socket
+import sqlite3
+import sys
+from importlib.metadata import version
+from os import environ
+from shutil import which
+
+print("platform", platform.platform())
+print("python", sys.version.split()[0], "sqlite", sqlite3.sqlite_version)
+print("sqlalchemy", version("sqlalchemy"), "psycopg", version("psycopg"))
+print("EXPLAINLAB_PG_TEST_URL set", bool(environ.get("EXPLAINLAB_PG_TEST_URL")))
+for program in ("psql", "pg_ctl", "docker", "wsl"):
+    print(program, bool(which(program)))
+try:
+    with socket.create_connection(("127.0.0.1", 5432), timeout=.35):
+        print("localhost 5432 open")
+except OSError as exc:
+    print("localhost 5432 probe", type(exc).__name__)

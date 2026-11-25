@@ -1,0 +1,60 @@
+# B2 取证命令（在仓库根目录执行，Windows Git Bash / Python 3.11.9）
+# 原始输出见同目录 *.log；EXIT 写在每个日志末尾。
+
+## 1. B2 API 专项（真实 SQLite 文件库 + tmp_path 真实文件系统）
+uv run pytest backend/tests/test_attachment_api.py -o addopts="--import-mode=importlib" -q
+# → b2-api.log: 22 passed, EXIT=0
+
+## 2. B1 定点回归（附件存储/Windows/锁/GC + B2 API，共 5 文件）
+uv run pytest backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_sqlite.py backend/tests/test_attachment_gc.py backend/tests/test_attachment_api.py -o addopts="--import-mode=importlib" -q
+# → b1-targeted-regression.log（原始）: 184 passed, 3 skipped, EXIT=0
+# → b1-targeted-regression-verification.log（复跑）: 184 passed, 3 skipped, EXIT=0
+
+## 3. B1-only 复跑（去掉 B2 API，4 文件，带跳过原因）
+uv run pytest backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_sqlite.py backend/tests/test_attachment_gc.py -o addopts="--import-mode=importlib" -q -rs
+# → b1-only-regression-scope.log: 162 passed, 3 skipped, EXIT=0
+# 162 + 22 = 184，与定点回归总数一致
+
+## 4. 全仓 backend + core
+uv run pytest -o addopts="--import-mode=importlib" -q
+# → full-suite.log: 1394 passed, 208 skipped, EXIT=0
+
+## 5. 跳过明细（PG 门控 + 平台门控）
+uv run pytest backend/tests/test_attachment_pg.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_retrieval_pg.py backend/tests/test_attachment_storage.py -o addopts="--import-mode=importlib" -q -rs
+# → skip-summary.log: 122 passed, 46 skipped（44 PG + 2 平台）
+
+## 6. Lint（只 check，不 format）
+uv run ruff check backend knowledge-core
+# → ruff-backend-core.log: All checks passed, EXIT=0
+
+## 7. Git 与哈希取证
+git status --short                         # → git-status.txt
+git diff --stat                            # → git-diff-stat.txt
+git diff HEAD                              # → working-tree-tracked-vs-HEAD-970c0d8.patch（含 B1-final + B2）
+sha256sum MILESTONES.md backend/app/api/schemas.py backend/app/dependencies.py backend/app/main.py backend/app/services/attachments.py backend/app/services/attachment_validation.py backend/app/api/routes/attachments.py backend/tests/test_attachment_api.py backend/tests/test_attachment_validation.py
+                                           # → b2-files-sha256.txt（历史）；code-review/B2-files.sha256（当前）
+sha256sum backend/tests/test_attachment_storage.py backend/tests/test_attachment_windows.py backend/tests/test_storage_lock_sqlite.py backend/tests/test_storage_lock_pg.py backend/tests/test_storage_lock_pg_faults.py backend/tests/test_attachment_gc.py backend/tests/test_attachment_pg.py backend/app/core/config.py backend/app/db/session.py backend/app/db/storage_lock.py backend/app/services/attachment_storage.py backend/app/services/repositories_v2.py
+                                           # → code-review/B1-boundary-files.sha256
+
+## 8. B2-only 差异生成
+# 8.1 从当前 main.py 删除且仅删除四处 B2 装配，得到 B1-final 重建基线
+#     基线 SHA-256 = 2c5ceccd2f20185298d7e6edb3518e9bf5b439c5fe7067f39e5990e2b2ffec06
+#     与 docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/SHA256SUMS 中 main.py 一致
+# 8.2 生成 main-b2-only.patch
+diff -u docs/audit/V2-A1-04-Batch-B-B2/code-review/baselines/main-b1-final-reconstructed.py backend/app/main.py
+# 8.3 新文件全文 diff
+git diff --no-index -- /dev/null backend/app/services/attachment_validation.py
+git diff --no-index -- /dev/null backend/app/services/attachments.py
+git diff --no-index -- /dev/null backend/app/api/routes/attachments.py
+git diff --no-index -- /dev/null backend/tests/test_attachment_validation.py
+git diff --no-index -- /dev/null backend/tests/test_attachment_api.py
+# 8.4 schemas/dependencies 的 B2 hunk
+git diff -- backend/app/api/schemas.py backend/app/dependencies.py
+# 8.5 将 b2-production.diff 应用到重建基线，逐文件 cmp 当前工作树
+#     → b2-diff-apply-verification.log: EXIT=0 ALL_PRODUCTION_FILES_MATCH_CURRENT
+
+## 9. 环境
+python --version        # Python 3.11.9
+uv --version
+sqlite3 --version       # 3.45.1（如可用）
+# PostgreSQL HTTP 端到端未执行：EXPLAINLAB_PG_TEST_URL 未设置，本机无真实 PG 实例

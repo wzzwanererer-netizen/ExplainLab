@@ -1,0 +1,1069 @@
+diff --git a/MILESTONES.md b/MILESTONES.md
+index 9522c0f..d7deecd 100644
+--- a/MILESTONES.md
++++ b/MILESTONES.md
+@@ -155,6 +155,26 @@ M5 回归项（全部完成并真实验证）：
+ 
+ 七大核心能力全部落地：① 对话自动提取知识 ② 个人总知识库 + 项目空间 ③ 自动去重 / 关系推断 ④ 重要变更审核 ⑤ 跨会话混合检索 ⑥ 动态知识地图 ⑦ 交互式知识实验。Knowledge Core 独立可复用于 Nesti。
+ 
++## V2 · A1-04 Batch B
++
++### B1 · 存储、锁与仓储基础 ✅ 正式 PASS
++
++2026-11-24，ChatGPT 独立复审正式批准。B1-T01、T02、T03、T04 和 LCK-07 均为 `PASS`，B1 总体 `PASS`。Batch A 基线为 `970c0d8ec05f0b8c68286839a56b14c74ea230c6`。
++
++- 批准依据为 [ExplainLab-B1-Final-Verification-Round.zip](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/ExplainLab-B1-Final-Verification-Round.zip)，SHA-256 为 `80386f36621b766b42903120cf1e89a90290050e717601b34078d58b0b42b672`。
++- [历史 BLOCKED 记录](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification/README.md)与[定点验收 CONDITIONAL 建议](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/README.md)按原阶段保留。本条为后续正式裁决。
++- SQLite GC 历史回归项 `test_gc_save_get_defaults_and_list_filters` 假设列表按插入顺序。当 `created_at` 相同时，仓储以 `id` 作为第二排序键；真实 SQLite 探针已证实结果可逆转插入顺序。原失败未采集时间戳，默认临时目录下的复跑通过。后续若复现，应先核对时间戳和排序键，避免把测试的顺序假设当作业务回归。[历史诊断](docs/acceptance/V2-A1-04-Batch-B-B1-final-verification-round/evidence/gc-order-diagnostic.log)
++
++### B2 · 附件 API 🚧 已实现 · 待独立审核
++
++B2 已获开发准入，按冻结的[实施路线图](docs/plans/V2-A1-04-Batch-B/implementation-roadmap.md)和[验收计划](docs/plans/V2-A1-04-Batch-B/acceptance-plan.md)依任务和验收条件推进。HTTP 附件操作为 B2-T02。
++
++- B2-T01 实现完成，66 项纯函数专项通过。全仓 Ruff 的历史取证文件问题见 [B2-T01 验收记录](docs/acceptance/V2-A1-04-Batch-B-B2-T01.md)。
++- B2-T02 已实现四路由（上传/列表/下载/删除）、服务编排、schema、依赖装配与 router 注册；附件服务与 Repository 只 flush，路由外层唯一提交；存储锁在 commit 后释放。复用 B1 存储/锁/仓储，未改冻结契约、Core、迁移或依赖。
++- B2 自测：`backend/tests/test_attachment_api.py` 22 项通过（真实 SQLite + tmp 文件系统）；B1 附件/锁/GC 定点回归 184 通过、3 跳过；全仓 `1394 passed, 208 skipped`；`ruff check backend knowledge-core` 通过。证据与 ATT-01…13 映射见 [B2 独立审核包](docs/audit/V2-A1-04-Batch-B-B2/README.md)。
++- 未验证：本机未配置真实 PostgreSQL 实例，B2 的 PG HTTP 路径（行锁归档保护/advisory 锁端到端）未执行，不以 SQLite 结果替代。ATT-11 的 24h ORP 收敛属 B5，未提前实现。SQLite GC 历史排序问题仍按 B1 记录保留。
++- 本条只记录“已实现、待独立审核”，不表示 B2 已正式通过；不进入 B3。
++
+ ## 长期架构约束（所有里程碑必须遵守）
+ 
+ 1. Knowledge Core 独立于 ExplainLab 前端，未来复用于 Nesti。
+diff --git a/backend/app/api/schemas.py b/backend/app/api/schemas.py
+index 9c7719d..24cd26a 100644
+--- a/backend/app/api/schemas.py
++++ b/backend/app/api/schemas.py
+@@ -109,6 +109,29 @@ class KnowledgeUpdate(BaseModel):
+     space_id: str | None = None
+ 
+ 
++class AttachmentUploadIn(BaseModel):
++    """JSON Base64 上传体；只接受三个字段，不使用 multipart。"""
++
++    model_config = ConfigDict(extra="forbid")
++
++    filename: str
++    mime: str
++    content_base64: str
++
++
++class AttachmentOut(BaseModel):
++    model_config = ConfigDict(from_attributes=True)
++
++    id: UUID
++    item_id: UUID
++    filename: str
++    mime: str
++    size: int
++    storage_key: str
++    content_hash: str
++    created_at: datetime
++
++
+ class ExtractRequest(BaseModel):
+     space_id: str | None = None
+ 
+diff --git a/backend/app/core/config.py b/backend/app/core/config.py
+index 9270d5e..6a9d9e1 100644
+--- a/backend/app/core/config.py
++++ b/backend/app/core/config.py
+@@ -10,7 +10,7 @@ from __future__ import annotations
+ from functools import lru_cache
+ from pathlib import Path
+ 
+-from pydantic import SecretStr, field_validator
++from pydantic import SecretStr, field_validator, model_validator
+ from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+ # config.py 位于 backend/app/core/config.py，parents[2] 即 backend 目录。
+@@ -29,6 +29,20 @@ _OPTIONAL_MODEL_FIELDS = (
+     "embed_model",
+ )
+ 
++# V2 A1-04 Batch B D-08：白色名单固定八类；SVG 永不进入白名单。
++DEFAULT_ATTACHMENT_MIME_ALLOWLIST = (
++    "image/png",
++    "image/jpeg",
++    "image/gif",
++    "image/webp",
++    "application/pdf",
++    "text/plain",
++    "text/markdown",
++    "text/csv",
++)
++
++_MIB = 1024 * 1024
++
+ 
+ class Settings(BaseSettings):
+     model_config = SettingsConfigDict(
+@@ -42,9 +56,31 @@ class Settings(BaseSettings):
+     environment: str = "development"
+ 
+     database_url: str = DEFAULT_DATABASE_URL
+-    # V2 A1-04：本机数据根（进程锁 / source-instance-id / Journal）。
++    # V2 A1-04 Batch B：本机数据根（进程锁 / source-instance-id / Journal）。
+     # 默认与 SQLite 数据文件同目录；测试注入临时目录以隔离。
+     data_dir: Path = BACKEND_DIR / "data"
++
++    # V2 A1-04 Batch B 冻结配置（architecture §5）。根路径留空时按 data_dir 派生；
++    # 显式相对路径相对 data_dir 解析，禁止 ``..`` 逃逸，且必须位于 data_dir 内。
++    attachment_storage_root: Path | None = None
++    attachment_staging_root: Path | None = None
++    attachment_quarantine_dir: Path | None = None
++    attachment_max_bytes: int = 10 * _MIB
++    attachment_mime_allowlist: list[str] = list(DEFAULT_ATTACHMENT_MIME_ALLOWLIST)
++    attachment_import_max_count: int = 100
++    attachment_import_max_total_bytes: int = 100 * _MIB
++    staging_grace_seconds: int = 86400
++
++    storage_lock_ttl_seconds: float = 60.0
++    storage_lock_heartbeat_seconds: float = 15.0
++    storage_lock_wait_seconds: float = 10.0
++
++    gc_max_attempts: int = 8
++    gc_retry_base_seconds: int = 60
++    gc_retry_max_seconds: int = 21600
++    gc_quarantine_seconds: int = 86400
++    orphan_scan_interval_seconds: int = 300
++
+     # 同步导入身份锁有界等待（秒）；超时返回 IMPORT_LOCK_TIMEOUT。
+     import_lock_wait_seconds: float = 10.0
+     cors_origins: list[str] = [
+@@ -87,11 +123,112 @@ class Settings(BaseSettings):
+         prefix = "sqlite:///"
+         if url.startswith(prefix) and ":memory:" not in url:
+             path_part = url[len(prefix) :]
+-            if not path_part.startswith("/") and not Path(path_part).is_absolute():
+-                anchored = (BACKEND_DIR / path_part).resolve()
++            if not path_part.startswith(("/", "file:")) and not Path(path_part).is_absolute():
++                anchored = BACKEND_DIR / path_part
+                 return f"{prefix}{anchored.as_posix()}"
+         return url
+ 
++    @field_validator(
++        "attachment_storage_root",
++        "attachment_staging_root",
++        "attachment_quarantine_dir",
++        mode="before",
++    )
++    @classmethod
++    def _empty_path_to_none(cls, value: object) -> object:
++        if value is None:
++            return None
++        if isinstance(value, str) and not value.strip():
++            return None
++        return value
++
++    @field_validator("data_dir", mode="before")
++    @classmethod
++    def _normalize_data_dir(cls, value: object) -> Path:
++        """data_dir 始终为绝对路径；相对值锚定 backend（与 M0-07 一致）。"""
++        if value is None or (isinstance(value, str) and not value.strip()):
++            return BACKEND_DIR / "data"
++        path = Path(value)
++        if not path.is_absolute():
++            path = BACKEND_DIR / path
++        if ".." in path.parts:
++            raise ValueError("data_dir must not contain '..'")
++        return path
++
++    @model_validator(mode="after")
++    def _resolve_attachment_roots(self) -> Settings:
++        """派生并校验附件根：位于 data_dir 内、互不重叠、quarantine 为直接子目录。
++
++        这里只做**路径层**校验（不触盘）；真实目录身份、链接/重解析点与同卷
++        约束在启动时由 ``attachment_storage.validate_storage_roots`` fail-fast 校验。
++        """
++        data_dir = Path(self.data_dir)
++
++        def resolve_root(
++            value: Path | None, default: Path, *, base: Path, field: str
++        ) -> Path:
++            candidate = value if value is not None else default
++            candidate = Path(candidate)
++            if ".." in candidate.parts:
++                raise ValueError(f"{field} must not contain '..'")
++            if not candidate.is_absolute():
++                candidate = base / candidate
++            try:
++                candidate.relative_to(data_dir)
++            except ValueError as exc:
++                raise ValueError(f"{field} must be inside data_dir") from exc
++            if candidate == data_dir:
++                raise ValueError(f"{field} must not equal data_dir")
++            return candidate
++
++        storage = resolve_root(
++            self.attachment_storage_root,
++            data_dir / "attachments",
++            base=data_dir,
++            field="attachment_storage_root",
++        )
++        staging = resolve_root(
++            self.attachment_staging_root,
++            data_dir / "import-staging",
++            base=data_dir,
++            field="attachment_staging_root",
++        )
++        quarantine = resolve_root(
++            self.attachment_quarantine_dir,
++            storage / "_quarantine",
++            base=data_dir,
++            field="attachment_quarantine_dir",
++        )
++
++        def contains(parent: Path, child: Path) -> bool:
++            if parent == child:
++                return True
++            try:
++                child.relative_to(parent)
++                return True
++            except ValueError:
++                return False
++
++        if contains(storage, staging) or contains(staging, storage):
++            raise ValueError("attachment_storage_root and attachment_staging_root overlap")
++        if quarantine.parent != storage:
++            raise ValueError(
++                "attachment_quarantine_dir must be a direct child of attachment_storage_root"
++            )
++        if contains(quarantine, staging) or contains(staging, quarantine):
++            raise ValueError("attachment_quarantine_dir overlaps attachment_staging_root")
++        if quarantine.name in (".tmp", "staging") or (
++            len(quarantine.name) == 2
++            and all(ch in "0123456789abcdef" for ch in quarantine.name)
++        ):
++            raise ValueError("attachment_quarantine_dir name collides with storage namespace")
++
++        self.data_dir = data_dir
++        self.attachment_storage_root = storage
++        self.attachment_staging_root = staging
++        self.attachment_quarantine_dir = quarantine
++        return self
++
+     @property
+     def is_sqlite(self) -> bool:
+         return self.database_url.startswith("sqlite")
+@@ -99,4 +236,4 @@ class Settings(BaseSettings):
+ 
+ @lru_cache
+ def get_settings() -> Settings:
+-    return Settings()
+\ No newline at end of file
++    return Settings()
+diff --git a/backend/app/db/session.py b/backend/app/db/session.py
+index 78a664f..2bb9af7 100644
+--- a/backend/app/db/session.py
++++ b/backend/app/db/session.py
+@@ -6,25 +6,83 @@
+ 
+ from __future__ import annotations
+ 
+-from collections.abc import Generator, Iterator
+-from contextlib import contextmanager
++import sqlite3
++import threading
++import time
++from collections.abc import Callable, Generator, Iterator
++from concurrent.futures import Future
++from contextlib import contextmanager, suppress
++from contextvars import ContextVar, copy_context
+ from pathlib import Path
++from typing import TypeVar
+ 
++from psycopg import Connection as PsycopgConnection
++from psycopg.errors import _WaitTimeout as PsycopgWaitTimeout
+ from sqlalchemy import Engine, create_engine, event
++from sqlalchemy.engine import make_url
++from sqlalchemy.exc import OperationalError
++from sqlalchemy.exc import TimeoutError as PoolTimeout
+ from sqlalchemy.orm import Session, sessionmaker
++from sqlalchemy.pool import QueuePool
+ 
+ from app.core.config import Settings, get_settings
+ 
++_checkout_deadline: ContextVar[float | None] = ContextVar("db_checkout_deadline", default=None)
++
++
++class _BudgetQueuePool(QueuePool):
++    """Keep SQLAlchemy's checkout algorithm with a per-call queue timeout."""
++
++    @property
++    def _timeout(self):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return self._configured_timeout
++        return min(self._configured_timeout, max(0.0, deadline - time.monotonic()))
++
++    @_timeout.setter
++    def _timeout(self, value):
++        self._configured_timeout = value
++
++
++class _CheckoutPsycopgConnection(PsycopgConnection):
++    def wait(self, gen, interval=0.1, timeout=None):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return super().wait(gen, interval=interval, timeout=timeout)
++        remaining = max(0.0, deadline - time.monotonic())
++        try:
++            return super().wait(
++                gen, interval=interval,
++                timeout=remaining if timeout is None else min(remaining, timeout),
++            )
++        except PsycopgWaitTimeout:
++            self.pgconn.finish()
++            raise
++
++
++@contextmanager
++def checkout_budget(deadline: float):
++    current = _checkout_deadline.get()
++    token = _checkout_deadline.set(min(current, deadline) if current is not None else deadline)
++    try:
++        yield
++    finally:
++        _checkout_deadline.reset(token)
++
+ 
+ def create_engine_from_url(database_url: str) -> Engine:
+     """按方言创建引擎。SQLite 文件库自动创建父目录。"""
+     if database_url.startswith("sqlite"):
+-        if database_url.startswith("sqlite:///") and ":memory:" not in database_url:
+-            db_path = database_url.removeprefix("sqlite:///")
++        url = make_url(database_url)
++        db_path = url.database
++        file_db = bool(db_path and ":memory:" not in db_path and url.query.get("mode") != "memory")
++        if file_db and url.query.get("uri") != "true":
+             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+         engine = create_engine(
+             database_url,
+             connect_args={"check_same_thread": False},
++            **({"poolclass": _BudgetQueuePool} if file_db else {}),
+         )
+ 
+         # SQLite 默认不启用外键约束；显式开启后，模型声明的 ON DELETE CASCADE
+@@ -41,7 +99,24 @@ def create_engine_from_url(database_url: str) -> Engine:
+             cursor.close()
+ 
+         return engine
+-    return create_engine(database_url, pool_pre_ping=True)
++    engine = create_engine(database_url, pool_pre_ping=True, poolclass=_BudgetQueuePool)
++    configure_postgres_checkout(engine)
++    return engine
++
++
++def configure_postgres_checkout(engine: Engine) -> None:
++    if engine.dialect.driver != "psycopg":
++        return
++
++    @event.listens_for(engine, "do_connect")
++    def _connect_postgres(_dialect, _record, args, kwargs):
++        deadline = _checkout_deadline.get()
++        if deadline is None:
++            return _CheckoutPsycopgConnection.connect(*args, **kwargs)
++        return bounded_db_call(
++            lambda: _CheckoutPsycopgConnection.connect(*args, **kwargs), deadline,
++            on_abandon=_close_late_connection,
++        )
+ 
+ 
+ _engine: Engine | None = None
+@@ -115,4 +190,172 @@ def session_scope() -> Iterator[Session]:
+         session.rollback()
+         raise
+     finally:
+-        session.close()
+\ No newline at end of file
++        session.close()
++
++_T = TypeVar("_T")
++
++
++class DatabaseDeadline(TimeoutError):
++    """The database call did not finish within the caller's budget."""
++
++    def __init__(self, *, started: bool = False):
++        self.started = started
++
++
++def bounded_db_call(
++    operation: Callable[[], _T], deadline: float, *, on_abandon=None,
++) -> _T:
++    """Bound the caller's wait. Abandoned work retains resource ownership."""
++    remaining = deadline - time.monotonic()
++    if remaining <= 0:
++        raise DatabaseDeadline()
++    result: Future[_T] = Future()
++    context = copy_context()
++
++    def run():
++        try:
++            result.set_result(context.run(operation))
++        except BaseException as exc:
++            result.set_exception(exc)
++
++    threading.Thread(target=run, name="storage-db-call", daemon=True).start()
++    try:
++        return result.result(timeout=max(0.0, deadline - time.monotonic()))
++    except BaseException as exc:
++        # A timeout raised by the operation itself is kept in its original form.
++        if isinstance(exc, TimeoutError) and result.done() and result.exception() is exc:
++            raise
++        if isinstance(exc, TimeoutError) or not isinstance(exc, Exception):
++            if on_abandon is not None:
++                result.add_done_callback(lambda done: threading.Thread(
++                    target=on_abandon, args=(done,), name="storage-db-cleanup", daemon=True,
++                ).start())
++            if isinstance(exc, TimeoutError):
++                raise DatabaseDeadline(started=True) from exc
++        raise
++
++
++def _close_late_connection(result: Future) -> None:
++    if result.exception() is None:
++        with suppress(Exception):
++            result.result().close()
++
++
++class SQLiteWriteTimeout(TimeoutError):
++    """The caller's write transaction could not complete within its budget."""
++
++
++def is_sqlite_busy(exc: OperationalError) -> bool:
++    code = getattr(exc.orig, "sqlite_errorcode", None)
++    if code is not None:
++        return code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
++    message = str(exc.orig).lower()
++    return "database is locked" in message or "database table is locked" in message
++
++
++def _sqlite_remaining_ms(deadline: float) -> int:
++    remaining = deadline - time.monotonic()
++    if remaining <= 0:
++        raise SQLiteWriteTimeout("SQLite write budget exhausted")
++    return int(remaining * 1000)
++
++
++@contextmanager
++def sqlite_connection_budget(connection, deadline: float):
++    previous_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
++    connection.exec_driver_sql(f"PRAGMA busy_timeout={_sqlite_remaining_ms(deadline)}")
++    try:
++        yield
++    finally:
++        connection.exec_driver_sql(f"PRAGMA busy_timeout={previous_timeout}")
++
++
++@contextmanager
++def _sqlite_checkout(engine, deadline: float):
++    with checkout_budget(deadline):
++        try:
++            if isinstance(engine.pool, QueuePool) and not isinstance(engine.pool, _BudgetQueuePool):
++                connection = bounded_db_call(
++                    engine.connect, deadline, on_abandon=_close_late_connection,
++                )
++            else:
++                connection = engine.connect()
++        except (PoolTimeout, DatabaseDeadline) as exc:
++            raise SQLiteWriteTimeout("SQLite connection checkout budget exhausted") from exc
++        with connection:
++            _sqlite_remaining_ms(deadline)
++            yield connection
++
++
++@contextmanager
++def sqlite_fence_session(factory, session: Session | None, deadline: float):
++    if session is None:
++        with (
++            _sqlite_checkout(factory.kw["bind"], deadline) as connection,
++            factory(bind=connection) as reader,
++            sqlite_connection_budget(connection, deadline),
++        ):
++            yield reader
++        return
++    try:
++        with checkout_budget(deadline), sqlite_connection_budget(session.connection(), deadline):
++            yield session
++    except PoolTimeout as exc:
++        raise SQLiteWriteTimeout("SQLite fencing checkout budget exhausted") from exc
++
++def run_sqlite_write(
++    factory: sessionmaker[Session],
++    operation: Callable[[Session], _T],
++    *,
++    deadline: float,
++    retry_busy: bool = True,
++) -> _T:
++    """Own and retry a short DB-only transaction. The callback must be replayable."""
++    delay = 0.01
++    while True:
++        _sqlite_remaining_ms(deadline)
++        try:
++            with _sqlite_checkout(factory.kw["bind"], deadline) as connection:
++                previous_timeout = connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one()
++                try:
++                    with factory(bind=connection) as session:
++                        try:
++                            session.connection()
++                            wait_ms = _sqlite_remaining_ms(deadline) if retry_busy else 0
++                            connection.exec_driver_sql(f"PRAGMA busy_timeout={wait_ms}")
++                            connection.exec_driver_sql("BEGIN IMMEDIATE")
++                            result = operation(session)
++                            session.flush()
++                            wait_ms = _sqlite_remaining_ms(deadline) if retry_busy else 0
++                            connection.exec_driver_sql(f"PRAGMA busy_timeout={wait_ms}")
++                            # The externally bound connection owns this transaction.
++                            connection.commit()
++                            return result
++                        except BaseException:
++                            session.rollback()
++                            connection.rollback()
++                            raise
++                finally:
++                    connection.exec_driver_sql(f"PRAGMA busy_timeout={previous_timeout}")
++        except OperationalError as exc:
++            if not is_sqlite_busy(exc):
++                raise
++            remaining = deadline - time.monotonic()
++            if not retry_busy or remaining <= 0:
++                raise SQLiteWriteTimeout("SQLite database remained busy") from exc
++            time.sleep(min(delay, remaining))
++            delay = min(delay * 2, 0.1)
++
++
++def run_short_write(
++    factory: sessionmaker[Session],
++    operation: Callable[[Session], _T],
++    *,
++    is_sqlite: bool,
++    deadline: float,
++) -> _T:
++    """Outer transaction entry point for GC database-only work."""
++    if is_sqlite:
++        return run_sqlite_write(factory, operation, deadline=deadline)
++    with factory.begin() as session:
++        return operation(session)
+diff --git a/backend/app/dependencies.py b/backend/app/dependencies.py
+index dfa60c3..c070801 100644
+--- a/backend/app/dependencies.py
++++ b/backend/app/dependencies.py
+@@ -11,6 +11,7 @@ from typing import Annotated
+ from fastapi import Depends, HTTPException, Request
+ 
+ from app.core.config import Settings, get_settings
++from app.services.attachments import AttachmentService
+ from app.services.markdown import MarkdownService
+ from app.services.model import build_embed_adapter, build_model_adapter
+ from app.services.source_identity import SourceIdentityService
+@@ -59,3 +60,10 @@ def get_markdown_service(request: Request) -> MarkdownService:
+     if service is None:
+         raise HTTPException(status_code=503, detail="markdown_service_unavailable")
+     return service
++
++
++def get_attachment_service(request: Request) -> AttachmentService:
++    service = getattr(request.app.state, "attachment_service", None)
++    if service is None:
++        raise HTTPException(status_code=503, detail="ATTACHMENT_STORAGE_UNAVAILABLE")
++    return service
+diff --git a/backend/app/main.py b/backend/app/main.py
+index df042a1..bb3d419 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -10,11 +10,13 @@ import os
+ import sys
+ from collections.abc import AsyncIterator
+ from contextlib import asynccontextmanager
++from functools import partial
+ 
+ from fastapi import FastAPI
+ from fastapi.middleware.cors import CORSMiddleware
+ from sqlalchemy.exc import SQLAlchemyError
+ 
++from app.api.routes.attachments import router as attachments_router
+ from app.api.routes.conversations import router as conversations_router
+ from app.api.routes.experiments import router as experiments_router
+ from app.api.routes.governance import router as governance_router
+@@ -27,9 +29,19 @@ from app.api.routes.search import router as search_router
+ from app.api.routes.spaces import router as spaces_router
+ from app.core.config import Settings, get_settings
+ from app.db.process_lock import ProcessLock
+-from app.db.session import dispose_db, get_session_factory, init_db, session_scope
++from app.db.session import (
++    dispose_db,
++    get_session_factory,
++    init_db,
++    run_short_write,
++    session_scope,
++)
++from app.db.storage_lock import build_storage_lock
++from app.services.attachment_storage import preflight_storage_roots, validate_storage_roots
++from app.services.attachments import AttachmentService
+ from app.services.import_coordinator import ImportCoordinator
+ from app.services.markdown import MarkdownService
++from app.services.repositories_v2 import SQLAlchemyGcTaskRepository
+ from app.services.source_identity import SourceIdentityService
+ from app.services.source_instance_id import SourceInstanceIdStore
+ from app.services.spaces import ensure_default_space
+@@ -66,12 +78,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
+     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+         if _configured_workers() > 1:
+             raise RuntimeError("MULTI_WORKER_UNSUPPORTED")
++        preflight_storage_roots(settings)
+         init_db(settings)
+         settings.data_dir.mkdir(parents=True, exist_ok=True)
+         # 单实例 OS 锁必须先于 source-instance-id 生成与任何导入/身份写操作。
+         lock = ProcessLock(settings.data_dir)
+         lock.acquire()
+         try:
++            # Batch B：附件根必须真实存在、互不重叠、非链接且同卷；失败拒绝启动。
++            attachment_storage = validate_storage_roots(settings)
++            application.state.attachment_storage = attachment_storage
++            # 方言装配：SQLite 租约锁 / PostgreSQL advisory 锁（不提交业务事务）。
++            storage_key_lock = build_storage_lock(settings)
++            application.state.storage_key_lock = storage_key_lock
++            application.state.attachment_service = AttachmentService(
++                session_factory=get_session_factory(),
++                layout=attachment_storage,
++                storage_lock=storage_key_lock,
++                max_bytes=settings.attachment_max_bytes,
++                mime_allowlist=settings.attachment_mime_allowlist,
++                lock_ttl_seconds=settings.storage_lock_ttl_seconds,
++                lock_wait_seconds=settings.storage_lock_wait_seconds,
++                lock_heartbeat_seconds=settings.storage_lock_heartbeat_seconds,
++                gc_max_attempts=settings.gc_max_attempts,
++                gc_quarantine_seconds=settings.gc_quarantine_seconds,
++            )
++            application.state.gc_task_repository_factory = partial(
++                SQLAlchemyGcTaskRepository, max_attempts=settings.gc_max_attempts,
++                quarantine_seconds=settings.gc_quarantine_seconds,
++            )
++            application.state.gc_task_write_transaction = partial(
++                run_short_write, get_session_factory(), is_sqlite=settings.is_sqlite,
++            )
+             instance_store = SourceInstanceIdStore(settings.data_dir)
+             instance_store.ensure()
+             coordinator = ImportCoordinator(
+@@ -124,6 +162,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
+     application.include_router(links_router, prefix="/api")
+     # A1-04：/knowledge/import、/knowledge/export 静态段亦须先于 {item_id}。
+     application.include_router(import_export_router, prefix="/api")
++    application.include_router(attachments_router, prefix="/api")
+     application.include_router(knowledge_router, prefix="/api")
+     application.include_router(governance_router, prefix="/api")
+     application.include_router(search_router, prefix="/api")
+diff --git a/backend/app/services/repositories_v2.py b/backend/app/services/repositories_v2.py
+index dd3d62c..8e6a9e6 100644
+--- a/backend/app/services/repositories_v2.py
++++ b/backend/app/services/repositories_v2.py
+@@ -1,30 +1,45 @@
+-"""V2 端口仓储的 SQLAlchemy 实现（标签 / 标签审计 / 导入来源）。
++"""V2 端口仓储的 SQLAlchemy 实现（标签 / 标签审计 / 导入来源 / 附件 / GC 任务）。
+ 
+ 严格实现 ``knowledge_core.ports`` 协议；只 ``flush`` 不 ``commit``，
+-事务边界由调用方（导入协调器 / 审核钩子）统一控制。
++事务边界由调用方（导入协调器 / 审核钩子 / GC 协调器）统一控制。
+ """
+ 
+ from __future__ import annotations
+ 
+ import json
+ from collections.abc import Sequence
+-from datetime import UTC, datetime
++from datetime import UTC, datetime, timedelta
+ from uuid import UUID, uuid4
+ 
+-from sqlalchemy import delete, select
++from sqlalchemy import delete, func, or_, select, update
+ from sqlalchemy.exc import IntegrityError
+ from sqlalchemy.orm import Session
+ 
+-from app.models import ImportOriginORM, ItemTagORM, TagChangeLogORM, TagORM
+-from knowledge_core.domain.entities import ImportOrigin, TagChangeRecord
++from app.models import (
++    AttachmentORM,
++    GcTaskORM,
++    ImportOriginORM,
++    ItemTagORM,
++    TagChangeLogORM,
++    TagORM,
++)
++from knowledge_core.domain.entities import (
++    Attachment,
++    GcStatus,
++    GcTask,
++    ImportOrigin,
++    TagChangeRecord,
++    utcnow,
++)
+ 
+ __all__ = [
++    "SQLAlchemyAttachmentRepository",
++    "SQLAlchemyGcTaskRepository",
+     "SQLAlchemyImportOriginRepository",
+     "SQLAlchemyTagChangeLogRepository",
+     "SQLAlchemyTagRepository",
+ ]
+ 
+-
+ def _as_uuid(value: str | UUID) -> UUID:
+     return value if isinstance(value, UUID) else UUID(value)
+ 
+@@ -234,4 +249,353 @@ def list_all_import_origins(session: Session) -> list[ImportOrigin]:
+     rows = session.scalars(
+         select(ImportOriginORM).order_by(ImportOriginORM.item_id, ImportOriginORM.id)
+     )
+-    return [SQLAlchemyImportOriginRepository._to_entity(row) for row in rows]
+\ No newline at end of file
++    return [SQLAlchemyImportOriginRepository._to_entity(row) for row in rows]
++
++
++class SQLAlchemyAttachmentRepository:
++    """附件元数据仓储（端口不涉及物理文件；只 flush 不 commit）。"""
++
++    def __init__(self, session: Session) -> None:
++        self.session = session
++
++    @staticmethod
++    def _to_entity(orm: AttachmentORM) -> Attachment:
++        return Attachment(
++            id=UUID(orm.id),
++            item_id=UUID(orm.item_id),
++            filename=orm.filename,
++            mime=orm.mime,
++            size=orm.size,
++            storage_key=orm.storage_key,
++            content_hash=orm.content_hash,
++            created_at=_utc(orm.created_at),
++        )
++
++    def save_attachment(self, attachment: Attachment) -> Attachment:
++        orm = AttachmentORM(
++            id=str(attachment.id),
++            item_id=str(attachment.item_id),
++            filename=attachment.filename,
++            mime=attachment.mime,
++            size=attachment.size,
++            storage_key=attachment.storage_key,
++            content_hash=attachment.content_hash,
++            created_at=attachment.created_at,
++        )
++        self.session.add(orm)
++        self.session.flush()
++        return attachment
++
++    def get_attachment(self, attachment_id: UUID) -> Attachment | None:
++        orm = self.session.get(AttachmentORM, str(attachment_id))
++        return None if orm is None else self._to_entity(orm)
++
++    def list_attachments(self, item_id: UUID) -> list[Attachment]:
++        rows = self.session.scalars(
++            select(AttachmentORM)
++            .where(AttachmentORM.item_id == str(item_id))
++            .order_by(AttachmentORM.created_at, AttachmentORM.id)
++        )
++        return [self._to_entity(row) for row in rows]
++
++    def find_by_hash(self, content_hash: str) -> list[Attachment]:
++        rows = self.session.scalars(
++            select(AttachmentORM)
++            .where(AttachmentORM.content_hash == content_hash)
++            .order_by(AttachmentORM.created_at, AttachmentORM.id)
++        )
++        return [self._to_entity(row) for row in rows]
++
++    def count_references(self, storage_key: str) -> int:
++        """派生引用数（COUNT 为唯一权威，不维护冗余计数列）。"""
++        return int(
++            self.session.scalar(
++                select(func.count())
++                .select_from(AttachmentORM)
++                .where(AttachmentORM.storage_key == storage_key)
++            )
++            or 0
++        )
++
++    def list_storage_keys(self) -> list[str]:
++        rows = self.session.scalars(
++            select(AttachmentORM.storage_key)
++            .distinct()
++            .order_by(AttachmentORM.storage_key)
++        )
++        return list(rows)
++
++    def delete_attachment(self, attachment_id: UUID) -> bool:
++        orm = self.session.get(AttachmentORM, str(attachment_id))
++        if orm is None:
++            return False
++        self.session.delete(orm)
++        self.session.flush()
++        return True
++
++
++def _utc_or_none(value: datetime | None) -> datetime | None:
++    return None if value is None else _utc(value)
++
++
++class SQLAlchemyGcTaskRepository:
++    """GC 任务仓储：原子条件认领 + token fencing；只 flush 不 commit。
++
++    ``claim`` 的写事务必须在调用方提交并关闭后，才可获取 StorageKeyLock
++    （SQLite 单写者互等）。本类不做任何提交。
++    """
++
++    def __init__(
++        self, session: Session, *, max_attempts: int = 8, quarantine_seconds: int = 86400
++    ) -> None:
++        self.session = session
++        self.max_attempts = max_attempts
++        self.quarantine_period = timedelta(seconds=quarantine_seconds)
++
++    @staticmethod
++    def _to_entity(orm: GcTaskORM) -> GcTask:
++        return GcTask(
++            id=UUID(orm.id),
++            storage_key=orm.storage_key,
++            status=GcStatus(orm.status),
++            lease_owner=orm.lease_owner,
++            lease_expires_at=_utc_or_none(orm.lease_expires_at),
++            lease_token=orm.lease_token,
++            attempts=orm.attempts,
++            next_retry_at=_utc_or_none(orm.next_retry_at),
++            quarantine_path=orm.quarantine_path,
++            quarantined_at=_utc_or_none(orm.quarantined_at),
++            created_at=_utc(orm.created_at),
++            updated_at=_utc(orm.updated_at),
++        )
++
++    def _reload(self, task_id: UUID) -> GcTask | None:
++        orm = self.session.execute(
++            select(GcTaskORM)
++            .where(GcTaskORM.id == str(task_id))
++            .execution_options(populate_existing=True)
++        ).scalar_one_or_none()
++        return None if orm is None else self._to_entity(orm)
++
++    def save_task(self, task: GcTask) -> GcTask:
++        orm = GcTaskORM(
++            id=str(task.id),
++            storage_key=task.storage_key,
++            status=task.status.value,
++            lease_owner=task.lease_owner,
++            lease_expires_at=task.lease_expires_at,
++            lease_token=task.lease_token,
++            attempts=task.attempts,
++            next_retry_at=task.next_retry_at,
++            quarantine_path=task.quarantine_path,
++            quarantined_at=task.quarantined_at,
++            created_at=task.created_at,
++            updated_at=task.updated_at,
++        )
++        self.session.add(orm)
++        self.session.flush()
++        return task
++
++    def get_task(self, task_id: UUID) -> GcTask | None:
++        return self._reload(task_id)
++
++    def list_tasks(
++        self,
++        *,
++        status: GcStatus | None = None,
++        storage_key: str | None = None,
++    ) -> list[GcTask]:
++        stmt = select(GcTaskORM)
++        if status is not None:
++            stmt = stmt.where(GcTaskORM.status == status.value)
++        if storage_key is not None:
++            stmt = stmt.where(GcTaskORM.storage_key == storage_key)
++        stmt = stmt.order_by(GcTaskORM.created_at, GcTaskORM.id).execution_options(
++            populate_existing=True
++        )
++        return [self._to_entity(row) for row in self.session.scalars(stmt)]
++
++    def claim(
++        self,
++        task_id: UUID,
++        *,
++        owner: str,
++        lease_ttl_seconds: float,
++        now: datetime | None = None,
++    ) -> GcTask | None:
++        """条件认领：pending 或租约过期的 running → running（token+1, attempts+1）。
++
++        隔离等待（running 且 next_retry_at > now）与预算耗尽的 running 不得被接管；
++        终态、未过期 running、他人持有均返回 None。
++        """
++        if not owner or lease_ttl_seconds <= 0:
++            raise ValueError("claim requires a nonempty owner and a positive TTL")
++        moment = _utc(now) if now is not None else utcnow()
++        expires = moment + timedelta(seconds=lease_ttl_seconds)
++        claimable = or_(
++            GcTaskORM.status == GcStatus.PENDING.value,
++            (
++                (GcTaskORM.status == GcStatus.RUNNING.value)
++                & GcTaskORM.lease_expires_at.is_not(None)
++                & (GcTaskORM.lease_expires_at <= moment)
++            ),
++        )
++        due = or_(
++            GcTaskORM.next_retry_at.is_(None),
++            GcTaskORM.next_retry_at <= moment,
++        )
++        result = self.session.execute(
++            update(GcTaskORM)
++            .where(
++                GcTaskORM.id == str(task_id),
++                claimable,
++                due,
++                GcTaskORM.attempts < self.max_attempts,
++            )
++            .values(
++                status=GcStatus.RUNNING.value,
++                lease_owner=owner,
++                lease_expires_at=expires,
++                lease_token=GcTaskORM.lease_token + 1,
++                attempts=GcTaskORM.attempts + 1,
++                updated_at=moment,
++            )
++            .execution_options(synchronize_session=False)
++        )
++        if result.rowcount != 1:
++            return None
++        self.session.flush()
++        return self._reload(task_id)
++
++    def _db_now(self):
++        if self.session.get_bind().dialect.name == "postgresql":
++            return func.clock_timestamp()
++        # SQLite stores UTC ORM timestamps as text with six fractional digits.
++        # Pad SQLite's millisecond clock to the same sortable representation.
++        return func.strftime("%Y-%m-%d %H:%M:%f000", "now")
++
++    def _transition(self, task_id: UUID, *conditions, **values) -> GcTask | None:
++        result = self.session.execute(
++            update(GcTaskORM)
++            .where(GcTaskORM.id == str(task_id), *conditions)
++            .values(**values)
++            .execution_options(synchronize_session=False)
++        )
++        if result.rowcount != 1:
++            return None
++        self.session.flush()
++        return self._reload(task_id)
++
++    def update_task(self, task: GcTask, *, expected_lease_token: int) -> GcTask | None:
++        """Worker-only writeback from a currently held running lease."""
++        now = utcnow()
++        if not task.lease_owner or task.lease_token != expected_lease_token:
++            return None
++        conditions = [
++            GcTaskORM.status == GcStatus.RUNNING.value,
++            GcTaskORM.lease_owner == task.lease_owner,
++            GcTaskORM.lease_token == expected_lease_token,
++            GcTaskORM.lease_expires_at > self._db_now(),
++        ]
++        values = {
++            "status": task.status.value,
++            "lease_owner": None,
++            "lease_expires_at": None,
++            "next_retry_at": None,
++            "updated_at": now,
++        }
++        if task.status == GcStatus.RUNNING:
++            # Only the quarantine wait can leave a worker writeback in running.
++            if (
++                not task.quarantine_path
++                or task.quarantined_at is None
++                or task.next_retry_at is None
++                or _utc(task.quarantined_at) > now
++                or _utc(task.next_retry_at) < _utc(task.quarantined_at) + self.quarantine_period
++                or _utc(task.next_retry_at) <= now
++            ):
++                return None
++            values.update(
++                lease_owner=task.lease_owner, lease_expires_at=now,
++                quarantine_path=task.quarantine_path, quarantined_at=task.quarantined_at,
++                next_retry_at=task.next_retry_at,
++            )
++        elif task.status == GcStatus.FAILED_RETRYABLE:
++            if task.next_retry_at is None or _utc(task.next_retry_at) <= now:
++                return None
++            conditions.append(GcTaskORM.attempts < self.max_attempts)
++            values["next_retry_at"] = task.next_retry_at
++        elif task.status not in {
++            GcStatus.DONE, GcStatus.CANCELLED, GcStatus.FAILED_PERMANENT, GcStatus.NEEDS_MANUAL,
++        }:
++            return None
++        return self._transition(task.id, *conditions, **values)
++
++    def renew_task(
++        self, task_id: UUID, *, owner: str, lease_token: int, lease_ttl_seconds: float
++    ) -> GcTask | None:
++        if not owner or lease_ttl_seconds <= 0:
++            raise ValueError("renewal requires a nonempty owner and a positive TTL")
++        now = utcnow()
++        return self._transition(
++            task_id,
++            GcTaskORM.status == GcStatus.RUNNING.value,
++            GcTaskORM.lease_owner == owner,
++            GcTaskORM.lease_token == lease_token,
++            GcTaskORM.lease_expires_at > self._db_now(),
++            lease_expires_at=now + timedelta(seconds=lease_ttl_seconds), updated_at=now,
++        )
++
++    def requeue_due(self, task_id: UUID, *, expected_lease_token: int) -> GcTask | None:
++        """Scheduler-only transition for a due retry with remaining attempts."""
++        now = utcnow()
++        return self._transition(
++            task_id,
++            GcTaskORM.status == GcStatus.FAILED_RETRYABLE.value,
++            GcTaskORM.lease_token == expected_lease_token,
++            GcTaskORM.next_retry_at <= self._db_now(),
++            GcTaskORM.attempts < self.max_attempts,
++            status=GcStatus.PENDING.value, next_retry_at=None, updated_at=now,
++        )
++
++    def fail_unretryable(
++        self, task_id: UUID, *, expected_lease_token: int, non_retryable: bool = False
++    ) -> GcTask | None:
++        """Scheduler finalizes exhausted jobs or a classified permanent retry failure."""
++        now = utcnow()
++        retry_failure = GcTaskORM.status == GcStatus.FAILED_RETRYABLE.value
++        if not non_retryable:
++            retry_failure &= GcTaskORM.attempts >= self.max_attempts
++        expired_exhausted = (
++            (GcTaskORM.status == GcStatus.RUNNING.value)
++            & (GcTaskORM.lease_expires_at <= self._db_now())
++            & (GcTaskORM.attempts >= self.max_attempts)
++            & or_(GcTaskORM.next_retry_at.is_(None), GcTaskORM.next_retry_at <= self._db_now())
++        )
++        return self._transition(
++            task_id,
++            GcTaskORM.lease_token == expected_lease_token,
++            or_(retry_failure, expired_exhausted),
++            status=GcStatus.FAILED_PERMANENT.value, next_retry_at=None,
++            lease_owner=None, lease_expires_at=None, updated_at=now,
++        )
++
++    def operator_transition(
++        self, task_id: UUID, *, source: GcStatus, target: GcStatus, expected_lease_token: int
++    ) -> GcTask | None:
++        """Internal operator entry point, separate from worker and scheduler writes."""
++        if (source, target) not in {
++            (GcStatus.FAILED_PERMANENT, GcStatus.NEEDS_MANUAL),
++            (GcStatus.NEEDS_MANUAL, GcStatus.PENDING),
++            (GcStatus.NEEDS_MANUAL, GcStatus.CANCELLED),
++            (GcStatus.PENDING, GcStatus.CANCELLED),
++        }:
++            return None
++        changes = {"attempts": 0} if target == GcStatus.PENDING else {}
++        return self._transition(
++            task_id,
++            GcTaskORM.status == source.value,
++            GcTaskORM.lease_token == expected_lease_token,
++            status=target.value, next_retry_at=None, lease_owner=None,
++            lease_expires_at=None, updated_at=utcnow(), **changes,
++        )

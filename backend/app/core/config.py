@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # config.py 位于 backend/app/core/config.py，parents[2] 即 backend 目录。
@@ -29,6 +29,20 @@ _OPTIONAL_MODEL_FIELDS = (
     "embed_model",
 )
 
+# V2 A1-04 Batch B D-08：白色名单固定八类；SVG 永不进入白名单。
+DEFAULT_ATTACHMENT_MIME_ALLOWLIST = (
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+)
+
+_MIB = 1024 * 1024
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -42,9 +56,31 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_url: str = DEFAULT_DATABASE_URL
-    # V2 A1-04：本机数据根（进程锁 / source-instance-id / Journal）。
+    # V2 A1-04 Batch B：本机数据根（进程锁 / source-instance-id / Journal）。
     # 默认与 SQLite 数据文件同目录；测试注入临时目录以隔离。
     data_dir: Path = BACKEND_DIR / "data"
+
+    # V2 A1-04 Batch B 冻结配置（architecture §5）。根路径留空时按 data_dir 派生；
+    # 显式相对路径相对 data_dir 解析，禁止 ``..`` 逃逸，且必须位于 data_dir 内。
+    attachment_storage_root: Path | None = None
+    attachment_staging_root: Path | None = None
+    attachment_quarantine_dir: Path | None = None
+    attachment_max_bytes: int = 10 * _MIB
+    attachment_mime_allowlist: list[str] = list(DEFAULT_ATTACHMENT_MIME_ALLOWLIST)
+    attachment_import_max_count: int = 100
+    attachment_import_max_total_bytes: int = 100 * _MIB
+    staging_grace_seconds: int = 86400
+
+    storage_lock_ttl_seconds: float = 60.0
+    storage_lock_heartbeat_seconds: float = 15.0
+    storage_lock_wait_seconds: float = 10.0
+
+    gc_max_attempts: int = 8
+    gc_retry_base_seconds: int = 60
+    gc_retry_max_seconds: int = 21600
+    gc_quarantine_seconds: int = 86400
+    orphan_scan_interval_seconds: int = 300
+
     # 同步导入身份锁有界等待（秒）；超时返回 IMPORT_LOCK_TIMEOUT。
     import_lock_wait_seconds: float = 10.0
     cors_origins: list[str] = [
@@ -87,10 +123,111 @@ class Settings(BaseSettings):
         prefix = "sqlite:///"
         if url.startswith(prefix) and ":memory:" not in url:
             path_part = url[len(prefix) :]
-            if not path_part.startswith("/") and not Path(path_part).is_absolute():
-                anchored = (BACKEND_DIR / path_part).resolve()
+            if not path_part.startswith(("/", "file:")) and not Path(path_part).is_absolute():
+                anchored = BACKEND_DIR / path_part
                 return f"{prefix}{anchored.as_posix()}"
         return url
+
+    @field_validator(
+        "attachment_storage_root",
+        "attachment_staging_root",
+        "attachment_quarantine_dir",
+        mode="before",
+    )
+    @classmethod
+    def _empty_path_to_none(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("data_dir", mode="before")
+    @classmethod
+    def _normalize_data_dir(cls, value: object) -> Path:
+        """data_dir 始终为绝对路径；相对值锚定 backend（与 M0-07 一致）。"""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return BACKEND_DIR / "data"
+        path = Path(value)
+        if not path.is_absolute():
+            path = BACKEND_DIR / path
+        if ".." in path.parts:
+            raise ValueError("data_dir must not contain '..'")
+        return path
+
+    @model_validator(mode="after")
+    def _resolve_attachment_roots(self) -> Settings:
+        """派生并校验附件根：位于 data_dir 内、互不重叠、quarantine 为直接子目录。
+
+        这里只做**路径层**校验（不触盘）；真实目录身份、链接/重解析点与同卷
+        约束在启动时由 ``attachment_storage.validate_storage_roots`` fail-fast 校验。
+        """
+        data_dir = Path(self.data_dir)
+
+        def resolve_root(
+            value: Path | None, default: Path, *, base: Path, field: str
+        ) -> Path:
+            candidate = value if value is not None else default
+            candidate = Path(candidate)
+            if ".." in candidate.parts:
+                raise ValueError(f"{field} must not contain '..'")
+            if not candidate.is_absolute():
+                candidate = base / candidate
+            try:
+                candidate.relative_to(data_dir)
+            except ValueError as exc:
+                raise ValueError(f"{field} must be inside data_dir") from exc
+            if candidate == data_dir:
+                raise ValueError(f"{field} must not equal data_dir")
+            return candidate
+
+        storage = resolve_root(
+            self.attachment_storage_root,
+            data_dir / "attachments",
+            base=data_dir,
+            field="attachment_storage_root",
+        )
+        staging = resolve_root(
+            self.attachment_staging_root,
+            data_dir / "import-staging",
+            base=data_dir,
+            field="attachment_staging_root",
+        )
+        quarantine = resolve_root(
+            self.attachment_quarantine_dir,
+            storage / "_quarantine",
+            base=data_dir,
+            field="attachment_quarantine_dir",
+        )
+
+        def contains(parent: Path, child: Path) -> bool:
+            if parent == child:
+                return True
+            try:
+                child.relative_to(parent)
+                return True
+            except ValueError:
+                return False
+
+        if contains(storage, staging) or contains(staging, storage):
+            raise ValueError("attachment_storage_root and attachment_staging_root overlap")
+        if quarantine.parent != storage:
+            raise ValueError(
+                "attachment_quarantine_dir must be a direct child of attachment_storage_root"
+            )
+        if contains(quarantine, staging) or contains(staging, quarantine):
+            raise ValueError("attachment_quarantine_dir overlaps attachment_staging_root")
+        if quarantine.name in (".tmp", "staging") or (
+            len(quarantine.name) == 2
+            and all(ch in "0123456789abcdef" for ch in quarantine.name)
+        ):
+            raise ValueError("attachment_quarantine_dir name collides with storage namespace")
+
+        self.data_dir = data_dir
+        self.attachment_storage_root = storage
+        self.attachment_staging_root = staging
+        self.attachment_quarantine_dir = quarantine
+        return self
 
     @property
     def is_sqlite(self) -> bool:

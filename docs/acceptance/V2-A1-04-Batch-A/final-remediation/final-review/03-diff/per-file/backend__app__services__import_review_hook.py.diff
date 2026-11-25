@@ -1,0 +1,39 @@
+diff --git a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__import_review_hook.py b/backend/app/services/import_review_hook.py
+index af96220..00c0eeb 100644
+--- a/docs/acceptance/V2-A1-04-Batch-A/final-remediation/before/backend__app__services__import_review_hook.py
++++ b/backend/app/services/import_review_hook.py
+@@ -31,6 +31,7 @@ from app.services.repositories_v2 import (
+     SQLAlchemyTagChangeLogRepository,
+     SQLAlchemyTagRepository,
+ )
++from app.services.source_identity import SourceIdentityService
+ from knowledge_core.domain.entities import (
+     ImportOrigin,
+     KnowledgeItem,
+@@ -69,8 +70,9 @@ def envelope_from_review(review: ReviewRequest) -> ImportEnvelope | None:
+ class ImportReviewHook:
+     """在同一事务内补齐导入审核的非 Core 字段。"""
+ 
+-    def __init__(self, session: Session) -> None:
++    def __init__(self, session: Session, identity: SourceIdentityService) -> None:
+         self._session = session
++        self._identity = identity
+         self._items = MarkdownItemRepository(session)
+         self._tags = SQLAlchemyTagRepository(session)
+         self._origins = SQLAlchemyImportOriginRepository(session)
+@@ -104,6 +106,15 @@ class ImportReviewHook:
+             raise MarkdownServiceError(
+                 "IMPORT_FAILED", "审核条目不存在", status_code=409
+             )
++        if self._identity.has_committed_materialize(record.id):
++            # §22.2：审核批准时条目已被物化 → 追加 ImportOrigin 会造成冲突态。
++            # 在写任何导入字段前 fail-closed；路由回滚整个审核事务。
++            raise MarkdownServiceError(
++                "SOURCE_IDENTITY_CONFLICT",
++                "目标条目已物化，导入审核不得追加来源身份",
++                status_code=409,
++            )
++
+         # 来源身份：仅当 envelope 提供完整合法身份时认领；不覆盖其他身份。
+         if envelope.source_instance_id and envelope.source_document_id:
+             pairs = {

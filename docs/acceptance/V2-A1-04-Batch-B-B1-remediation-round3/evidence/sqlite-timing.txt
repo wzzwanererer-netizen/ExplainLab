@@ -1,0 +1,6 @@
+# Command: .venv/Scripts/python.exe -B -u docs/acceptance/V2-A1-04-Batch-B-B1-remediation-round3/evidence/sqlite-timing-probe.py.txt
+exclusive fence: StorageLeaseLost, elapsed=0.156s
+saturated checkout: no guard, elapsed=0.156s
+first lease exhausted in batch: no guard, elapsed=0.157s
+retry after expiry: token=2
+exit_code=0

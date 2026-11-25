@@ -1,0 +1,67 @@
+add tslib 2.9.1
+add lightningcss-win32-arm64-msvc 1.33.0
+add lightningcss-linux-x64-musl 1.33.0
+add lightningcss-linux-x64-gnu 1.33.0
+add lightningcss-linux-arm64-musl 1.33.0
+add lightningcss-linux-arm64-gnu 1.33.0
+add lightningcss-linux-arm-gnueabihf 1.33.0
+add lightningcss-freebsd-x64 1.33.0
+add lightningcss-darwin-x64 1.33.0
+add lightningcss-darwin-arm64 1.33.0
+add lightningcss-android-arm64 1.33.0
+add fsevents 2.3.3
+add @typescript/typescript-win32-arm64 7.0.2
+add @typescript/typescript-sunos-x64 7.0.2
+add @typescript/typescript-openbsd-x64 7.0.2
+add @typescript/typescript-openbsd-arm64 7.0.2
+add @typescript/typescript-netbsd-x64 7.0.2
+add @typescript/typescript-netbsd-arm64 7.0.2
+add @typescript/typescript-linux-x64 7.0.2
+add @typescript/typescript-linux-s390x 7.0.2
+add @typescript/typescript-linux-riscv64 7.0.2
+add @typescript/typescript-linux-ppc64 7.0.2
+add @typescript/typescript-linux-mips64el 7.0.2
+add @typescript/typescript-linux-loong64 7.0.2
+add @typescript/typescript-linux-arm64 7.0.2
+add @typescript/typescript-linux-arm 7.0.2
+add @typescript/typescript-freebsd-x64 7.0.2
+add @typescript/typescript-freebsd-arm64 7.0.2
+add @typescript/typescript-darwin-x64 7.0.2
+add @typescript/typescript-darwin-arm64 7.0.2
+add @typescript/typescript-aix-ppc64 7.0.2
+add @tybys/wasm-util 0.10.4
+add @tailwindcss/oxide-win32-arm64-msvc 4.3.5
+add @tailwindcss/oxide-linux-x64-musl 4.3.5
+add @tailwindcss/oxide-linux-x64-gnu 4.3.5
+add @tailwindcss/oxide-linux-arm64-musl 4.3.5
+add @tailwindcss/oxide-linux-arm64-gnu 4.3.5
+add @tailwindcss/oxide-linux-arm-gnueabihf 4.3.5
+add @tailwindcss/oxide-freebsd-x64 4.3.5
+add @tailwindcss/oxide-darwin-x64 4.3.5
+add @tailwindcss/oxide-darwin-arm64 4.3.5
+add @tailwindcss/oxide-android-arm64 4.3.5
+add @rolldown/binding-win32-arm64-msvc 1.2.19
+add @rolldown/binding-wasm32-wasi 1.2.19
+add @rolldown/binding-openharmony-arm64 1.2.19
+add @rolldown/binding-linux-x64-musl 1.2.19
+add @rolldown/binding-linux-x64-gnu 1.2.19
+add @rolldown/binding-linux-s390x-gnu 1.2.19
+add @rolldown/binding-linux-ppc64-gnu 1.2.19
+add @rolldown/binding-linux-arm64-musl 1.2.19
+add @rolldown/binding-linux-arm64-gnu 1.2.19
+add @rolldown/binding-linux-arm-gnueabihf 1.2.19
+add @rolldown/binding-freebsd-x64 1.2.19
+add @rolldown/binding-darwin-x64 1.2.19
+add @rolldown/binding-darwin-arm64 1.2.19
+add @rolldown/binding-android-arm64 1.2.19
+add @rolldown/binding-android-arm-eabi 1.2.19
+add @napi-rs/wasm-runtime 1.2.6
+add @emnapi/wasi-threads 2.2.0
+add @emnapi/runtime 2.0.0-beta.2
+add @emnapi/core 2.0.0-beta.2
+
+added 61 packages in 1s
+
+34 packages are looking for funding
+  run `npm fund` for details
+EXIT_CODE=0

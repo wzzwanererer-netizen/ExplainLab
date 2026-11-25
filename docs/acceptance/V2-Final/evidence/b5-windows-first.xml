@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="10" time="13.204" timestamp="2026-11-24T19:12:42.891449+08:00" hostname="DESKTOP-HISORNQ"><testcase classname="backend.tests.test_attachment_maintenance" name="test_shared_references_then_gc_quarantine_and_purge" time="1.767"><failure message="TypeError: replace() should be called on dataclass instances">client = &lt;starlette.testclient.TestClient object at 0x0000028F64BEB350&gt;
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F64F733D0&gt;
+
+    def test_shared_references_then_gc_quarantine_and_purge(client, maintenance):
+        gc = maintenance.gc
+        item_a, item_b = _item(client), _item(client)
+        first, second = _upload(client, item_a), _upload(client, item_b)
+        blob = gc.layout.final_path(KEY)
+        _delete(client, item_a, first)
+        assert _tasks() == []
+        assert blob.read_bytes() == DATA
+        _delete(client, item_b, second)
+        assert _tasks()[0].status == GcStatus.PENDING
+        assert blob.read_bytes() == DATA
+&gt;       gc.run_due()
+
+backend\tests\test_attachment_maintenance.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:237: in _run_task
+    self._process(task, fenced, referenced)
+backend\app\services\attachment_maintenance.py:322: in _process
+    self._wait_quarantine(task, slot, now, now + self.quarantine_period)
+backend\app\services\attachment_maintenance.py:363: in _wait_quarantine
+    change = replace(task, quarantine_path=slot.name, quarantined_at=quarantined_at,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('52cdfcc5-8df3-4b69-b010-e0cf6df09f92'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 44, 589273, tzinfo=datetime.timezone.utc))
+changes = {'quarantine_path': 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.52cdfcc5-8df3-4b69-b010-e0cf6df0...time.timezone.utc), 'next_retry_at': datetime.datetime(2026, 11, 25, 11, 12, 44, 687685, tzinfo=datetime.timezone.utc)}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_old_slot_purge_leaves_republished_formal_for_successor" time="1.179"><failure message="TypeError: replace() should be called on dataclass instances">client = &lt;starlette.testclient.TestClient object at 0x0000028F64D94090&gt;
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F65121410&gt;
+
+    def test_old_slot_purge_leaves_republished_formal_for_successor(client, maintenance):
+        gc = maintenance.gc
+        item = _item(client)
+        _delete(client, item, _upload(client, item))
+&gt;       gc.run_due()
+
+backend\tests\test_attachment_maintenance.py:120: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:237: in _run_task
+    self._process(task, fenced, referenced)
+backend\app\services\attachment_maintenance.py:322: in _process
+    self._wait_quarantine(task, slot, now, now + self.quarantine_period)
+backend\app\services\attachment_maintenance.py:363: in _wait_quarantine
+    change = replace(task, quarantine_path=slot.name, quarantined_at=quarantined_at,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('26265600-ce27-4aad-8178-9c31cc8c69e5'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...fo=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 46, 74280, tzinfo=datetime.timezone.utc))
+changes = {'quarantine_path': 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.26265600-ce27-4aad-8178-9c31cc8c...time.timezone.utc), 'next_retry_at': datetime.datetime(2026, 11, 25, 11, 12, 46, 164571, tzinfo=datetime.timezone.utc)}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_two_workers_only_claim_one_slot" time="1.240"><failure message="TypeError: replace() should be called on dataclass instances">client = &lt;starlette.testclient.TestClient object at 0x0000028F650FF650&gt;
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F65249650&gt;
+settings = Settings(app_name='ExplainLab', version='0.1.0', environment='development', database_url='sqlite:///C:\\Users\\wzz\\Ap...e, model_base_url=None, model_api_key=None, model_name=None, embed_base_url=None, embed_api_key=None, embed_model=None)
+
+    def test_two_workers_only_claim_one_slot(client, maintenance, settings):
+        first = maintenance.gc
+        second = GcWorker(get_session_factory(), first.layout, first.storage_lock, settings)
+        item = _item(client)
+        _delete(client, item, _upload(client, item))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            jobs = [pool.submit(worker.run_due) for worker in (first, second)]
+            for job in jobs:
+&gt;               job.result(timeout=25)
+
+backend\tests\test_attachment_maintenance.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+D:\Dev\Python\Python311\Lib\concurrent\futures\_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+D:\Dev\Python\Python311\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+D:\Dev\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:237: in _run_task
+    self._process(task, fenced, referenced)
+backend\app\services\attachment_maintenance.py:322: in _process
+    self._wait_quarantine(task, slot, now, now + self.quarantine_period)
+backend\app\services\attachment_maintenance.py:363: in _wait_quarantine
+    change = replace(task, quarantine_path=slot.name, quarantined_at=quarantined_at,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('64606ccf-7967-4c51-a57f-10a902a70cc1'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 47, 322875, tzinfo=datetime.timezone.utc))
+changes = {'quarantine_path': 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.64606ccf-7967-4c51-a57f-10a902a7...time.timezone.utc), 'next_retry_at': datetime.datetime(2026, 11, 25, 11, 12, 47, 420847, tzinfo=datetime.timezone.utc)}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_wrong_task_token_cannot_mutate_formal_path" time="1.220" /><testcase classname="backend.tests.test_attachment_maintenance" name="test_orphan_scan_enqueues_aged_formal_blob_and_preserves_temp" time="1.256"><failure message="TypeError: replace() should be called on dataclass instances">client = &lt;starlette.testclient.TestClient object at 0x0000028F651F6290&gt;
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F651B3550&gt;
+
+    def test_orphan_scan_enqueues_aged_formal_blob_and_preserves_temp(client, maintenance):
+        gc = maintenance.gc
+        item = _item(client)
+        attachment = _upload(client, item)
+        blob = gc.layout.final_path(KEY)
+        with get_session_factory()() as session:
+            session.execute(delete(AttachmentORM).where(AttachmentORM.id == attachment))
+            session.commit()
+        residual = gc.layout.temp_dir / "temporary"
+        residual.write_bytes(b"temp")
+        first = maintenance.recovery.scan_once()
+        assert first["counts"]["orphan_blobs"] == 1
+        assert first["temp_residual"]["count"] == 1
+        assert _tasks() == []
+        _mark_expired(blob)
+        maintenance.recovery.scan_once()
+        assert _tasks()[0].status == GcStatus.PENDING
+        assert blob.is_file()
+&gt;       gc.run_due()
+
+backend\tests\test_attachment_maintenance.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:237: in _run_task
+    self._process(task, fenced, referenced)
+backend\app\services\attachment_maintenance.py:322: in _process
+    self._wait_quarantine(task, slot, now, now + self.quarantine_period)
+backend\app\services\attachment_maintenance.py:363: in _wait_quarantine
+    change = replace(task, quarantine_path=slot.name, quarantined_at=quarantined_at,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('fcf441d1-e72b-4b40-a0d0-5d6efeac526f'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 49, 842407, tzinfo=datetime.timezone.utc))
+changes = {'quarantine_path': 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.fcf441d1-e72b-4b40-a0d0-5d6efeac...time.timezone.utc), 'next_retry_at': datetime.datetime(2026, 11, 25, 11, 12, 49, 933720, tzinfo=datetime.timezone.utc)}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_orp_restores_referenced_blob_from_unknown_quarantine_slot" time="1.185" /><testcase classname="backend.tests.test_attachment_maintenance" name="test_staging_sweep_leaves_pending_and_restores_isolated_pending" time="1.180" /><testcase classname="backend.tests.test_attachment_maintenance" name="test_corrupt_quarantine_is_preserved_for_manual_action" time="0.538"><failure message="TypeError: replace() should be called on dataclass instances">self = &lt;app.services.attachment_maintenance.GcWorker object at 0x0000028F65333590&gt;
+scheduled = GcTask(id=UUID('b8cdeb78-ba11-45a9-b8be-55f3e7993992'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 52, 803888, tzinfo=datetime.timezone.utc))
+
+    def _run_task(self, scheduled: GcTask) -&gt; None:
+        now = utcnow()
+        if scheduled.next_retry_at is not None and scheduled.next_retry_at &gt; now:
+            return
+        if scheduled.status == GcStatus.RUNNING and (
+            scheduled.lease_expires_at is None or scheduled.lease_expires_at &gt; now
+        ):
+            return
+        task = self._claim(scheduled)
+        if task is None:
+            return
+        stop, abort = threading.Event(), threading.Event()
+        heartbeat = threading.Thread(
+            target=self._heartbeat, args=(task, stop, abort), daemon=True,
+            name="attachment-gc-heartbeat",
+        )
+        heartbeat.start()
+        guard = None
+        try:
+            if not is_valid_storage_key(task.storage_key):
+                self._finish(task, GcStatus.NEEDS_MANUAL, "invalid_key")
+                return
+            try:
+                guard = self.storage_lock.acquire_many([task.storage_key], new_owner())
+            except (StorageLockError, StorageLockTransient) as exc:
+                self._retry(task, type(exc).__name__)
+                return
+            if guard is None:
+                self._retry(task, "storage_lock_timeout")
+                return
+            referenced = self._observe(task, abort)
+            fenced = _TaskStorageGuard(guard, lambda: self._require_refs(task, abort, referenced))
+            try:
+&gt;               self._process(task, fenced, referenced)
+
+backend\app\services\attachment_maintenance.py:237: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:313: in _process
+    self._process_slot(task, guard, slot, final, referenced)
+backend\app\services\attachment_maintenance.py:328: in _process_slot
+    info = _slot_stat(self.layout, slot, task.storage_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+layout = StorageLayout(data_dir=WindowsPath('C:/Users/wzz/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{2994d...39, 3377699720604215), (2499681939, 3096224743893727), (2499681939, 5348024557578995), (2499681939, 3659174697315060)))
+path = WindowsPath('C:/Users/wzz/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0/AC/#!sandbox.{2994d7b2-70c1-410c-9887-6169...nts/_quarantine/b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.b8cdeb78-ba11-45a9-b8be-55f3e7993992')
+key = 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3'
+
+    def _slot_stat(layout: StorageLayout, path: Path, key: str):
+        with _open_regular(path, on_volume=layout.storage_root) as source:
+            if sha256_stream(source) != key:
+&gt;               raise _UnsafeAttachment("quarantine hash mismatch")
+E               app.services.attachment_maintenance._UnsafeAttachment: quarantine hash mismatch
+
+backend\app\services\attachment_maintenance.py:113: _UnsafeAttachment
+
+During handling of the above exception, another exception occurred:
+
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F653339D0&gt;
+
+    def test_corrupt_quarantine_is_preserved_for_manual_action(maintenance):
+        gc = maintenance.gc
+        task = GcTask(storage_key=KEY, status=GcStatus.PENDING)
+        with get_session_factory()() as session:
+            SQLAlchemyGcTaskRepository(session).save_task(task)
+            session.commit()
+        slot = _slot(gc.layout, task)
+        slot.write_bytes(b"wrong content")
+&gt;       gc.run_due()
+
+backend\tests\test_attachment_maintenance.py:264: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:250: in _run_task
+    self._finish(task, GcStatus.NEEDS_MANUAL, "unsafe_physical_state")
+backend\app\services\attachment_maintenance.py:382: in _finish
+    self._writeback(task, replace(task, status=status), reason, successor=successor)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('b8cdeb78-ba11-45a9-b8be-55f3e7993992'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 52, 816752, tzinfo=datetime.timezone.utc))
+changes = {'status': &lt;GcStatus.NEEDS_MANUAL: 'needs_manual'&gt;}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_worker_process_death_after_move_is_reclaimed" time="1.915"><failure message="TypeError: replace() should be called on dataclass instances">client = &lt;starlette.testclient.TestClient object at 0x0000028F655188D0&gt;
+maintenance = &lt;app.services.attachment_maintenance.AttachmentMaintenance object at 0x0000028F655213D0&gt;
+settings = Settings(app_name='ExplainLab', version='0.1.0', environment='development', database_url='sqlite:///C:\\Users\\wzz\\Ap...e, model_base_url=None, model_api_key=None, model_name=None, embed_base_url=None, embed_api_key=None, embed_model=None)
+
+    def test_worker_process_death_after_move_is_reclaimed(client, maintenance, settings):
+        gc = maintenance.gc
+        item = _item(client)
+        _delete(client, item, _upload(client, item))
+        task = _tasks()[0]
+        root = Path(__file__).resolve().parents[2]
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(map(str, (root / "backend", root / "knowledge-core/src"))),
+        }
+        program = """
+    import os
+    import sys
+    from pathlib import Path
+    from app.core.config import Settings
+    from app.db.session import get_session_factory, init_db
+    from app.db.storage_lock import build_storage_lock
+    from app.services.attachment_maintenance import GcWorker
+    from app.services.attachment_storage import validate_storage_roots
+    
+    class ExitingWorker(GcWorker):
+        def _wait_quarantine(self, *args):
+            os._exit(23)
+    
+    settings = Settings(database_url=sys.argv[1], data_dir=Path(sys.argv[2]), _env_file=None)
+    init_db(settings)
+    worker = ExitingWorker(get_session_factory(), validate_storage_roots(settings),
+                           build_storage_lock(settings), settings)
+    worker.run_due()
+    """
+        process = subprocess.run(
+            [sys.executable, "-B", "-c", program, settings.database_url, str(settings.data_dir)],
+            cwd=root, env=env, capture_output=True, timeout=30, check=False,
+        )
+        assert process.returncode == 23, process.stderr.decode(errors="replace")
+        slot = _slot(gc.layout, task)
+        assert slot.read_bytes() == DATA
+        assert not gc.layout.final_path(KEY).exists()
+        with get_session_factory()() as session:
+            row = session.get(GcTaskORM, str(task.id))
+            assert row.status == "running"
+            assert row.quarantined_at is None
+            row.lease_expires_at = utcnow() - timedelta(seconds=1)
+            session.commit()
+        # The dead process also held the SQLite storage lease. Use its real DB row
+        # to make the lease eligible for takeover without waiting sixty seconds.
+        from app.models import StorageLockORM
+    
+        with get_session_factory()() as session:
+            session.scalar(select(StorageLockORM).where(
+                StorageLockORM.storage_key == KEY,
+            )).lease_expires_at = utcnow() - timedelta(seconds=1)
+            session.commit()
+&gt;       gc.run_due()
+
+backend\tests\test_attachment_maintenance.py:322: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+backend\app\services\attachment_maintenance.py:177: in run_due
+    self._run_task(scheduled)
+backend\app\services\attachment_maintenance.py:237: in _run_task
+    self._process(task, fenced, referenced)
+backend\app\services\attachment_maintenance.py:313: in _process
+    self._process_slot(task, guard, slot, final, referenced)
+backend\app\services\attachment_maintenance.py:339: in _process_slot
+    self._wait_quarantine(task, slot, quarantined_at, safe_at)
+backend\app\services\attachment_maintenance.py:363: in _wait_quarantine
+    change = replace(task, quarantine_path=slot.name, quarantined_at=quarantined_at,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+obj = GcTask(id=UUID('b83ef96f-41be-4ac8-8464-9db37fa32a79'), storage_key='b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a5...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 11, 24, 11, 12, 54, 765453, tzinfo=datetime.timezone.utc))
+changes = {'quarantine_path': 'b6c3e453327b0d1f8c29be32e70699db45b72ff57fa2216a526610e23585c3b3.b83ef96f-41be-4ac8-8464-9db37fa3...time.timezone.utc), 'next_retry_at': datetime.datetime(2026, 11, 25, 11, 12, 54, 803659, tzinfo=datetime.timezone.utc)}
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+&gt;           raise TypeError("replace() should be called on dataclass instances")
+E           TypeError: replace() should be called on dataclass instances
+
+D:\Dev\Python\Python311\Lib\dataclasses.py:1474: TypeError</failure></testcase><testcase classname="backend.tests.test_attachment_maintenance" name="test_consistency_reports_are_redacted_and_retained" time="1.169" /></testsuite></testsuites>

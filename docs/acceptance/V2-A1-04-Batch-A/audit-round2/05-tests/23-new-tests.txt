@@ -1,0 +1,45 @@
+# Fresh run at 2026-11-22T03:56:32+08:00
+# Command: uv run pytest -o addopts="--import-mode=importlib" -vv backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict backend/tests/test_batch_a_file_write.py
+
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.2.0, pluggy-1.7.0 -- D:\ExplainLab\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\ExplainLab
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 23 items
+
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_single_materialize_plus_single_complete_origin PASSED [  4%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_single_materialize_plus_multiple_complete_origins PASSED [  8%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_materialize_plus_incomplete_origin PASSED [ 13%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_materialize_plus_duplicate_origin PASSED [ 17%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_materialize_plus_multiple_legal_identity_pairs PASSED [ 21%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_materialize_and_origin_same_instance_id PASSED [ 26%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_materialize_and_origin_different_instance_id PASSED [ 30%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_multiple_materialize_records_plus_origin_still_conflict PASSED [ 34%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_control_normal_import_without_materialize_is_state_1 PASSED [ 39%]
+backend/tests/test_markdown_batch_a_identity.py::TestMaterializeOriginConflict::test_control_local_materialize_without_origin_is_state_2b PASSED [ 43%]
+backend/tests/test_batch_a_file_write.py::TestWriteAll::test_partial_then_complete PASSED [ 47%]
+backend/tests/test_batch_a_file_write.py::TestWriteAll::test_many_one_byte_writes PASSED [ 52%]
+backend/tests/test_batch_a_file_write.py::TestWriteAll::test_zero_write_fails PASSED [ 56%]
+backend/tests/test_batch_a_file_write.py::TestWriteAll::test_exception_propagates_without_remaining_write PASSED [ 60%]
+backend/tests/test_batch_a_file_write.py::TestWriteAll::test_empty_payload_is_noop PASSED [ 65%]
+backend/tests/test_batch_a_file_write.py::TestJournalWriteFailure::test_current_write_failure_publishes_nothing PASSED [ 69%]
+backend/tests/test_batch_a_file_write.py::TestJournalWriteFailure::test_current_half_write_is_not_renamed_into_place PASSED [ 73%]
+backend/tests/test_batch_a_file_write.py::TestJournalWriteFailure::test_archive_write_failure_keeps_committed_current_then_recovers PASSED [ 78%]
+backend/tests/test_batch_a_file_write.py::TestInstanceIdWriteFailure::test_create_write_failure_publishes_no_id PASSED [ 82%]
+backend/tests/test_batch_a_file_write.py::TestInstanceIdWriteFailure::test_create_half_write_is_not_linked_into_place PASSED [ 86%]
+backend/tests/test_batch_a_file_write.py::TestInstanceIdWriteFailure::test_create_fallback_half_write_removes_partial_formal_file PASSED [ 91%]
+backend/tests/test_batch_a_file_write.py::TestInstanceIdWriteFailure::test_replace_write_failure_preserves_old_id PASSED [ 95%]
+backend/tests/test_batch_a_file_write.py::TestInstanceIdWriteFailure::test_replace_half_write_preserves_old_id PASSED [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\ExplainLab\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 23 passed, 1 warning in 5.19s ========================
+
+EXIT_CODE=0

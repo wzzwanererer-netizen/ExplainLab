@@ -1,0 +1,535 @@
+Git commit: 970c0d8ec05f0b8c68286839a56b14c74ea230c6
+Git blob: 3e5aa8fe917a284ede859e24fd48e412206df075
+Source: backend/app/services/markdown.py
+
+  89:     "ATTACHMENT_IMPORT_UNSUPPORTED",
+  90:     "ATTACHMENT_REVIEW_UNSUPPORTED",
+  91:     "IMPORT_ENVELOPE_INVALID",
+  92:     "IMPORT_FAILED",
+  93:     "MarkdownImportDocument",
+  94:     "MarkdownService",
+  95:     "MarkdownServiceError",
+  96:     "SOURCE_CHANGED_DURING_WAIT",
+  97:     "SOURCE_HAS_PENDING_IMPORT",
+  98:     "SOURCE_IDENTITY_AMBIGUOUS",
+  99:     "SOURCE_IDENTITY_CONFLICT",
+ 100: ]
+ 101: 
+ 102: ATTACHMENT_IMPORT_UNSUPPORTED = "ATTACHMENT_IMPORT_UNSUPPORTED"
+ 103: ATTACHMENT_EXPORT_UNSUPPORTED = "ATTACHMENT_EXPORT_UNSUPPORTED"
+ 104: ATTACHMENT_REVIEW_UNSUPPORTED = "ATTACHMENT_REVIEW_UNSUPPORTED"
+ 105: SOURCE_CHANGED_DURING_WAIT = "SOURCE_CHANGED_DURING_WAIT"
+ 106: SOURCE_HAS_PENDING_IMPORT = "SOURCE_HAS_PENDING_IMPORT"
+ 107: SOURCE_IDENTITY_AMBIGUOUS = "SOURCE_IDENTITY_AMBIGUOUS"
+ 108: SOURCE_IDENTITY_CONFLICT = "SOURCE_IDENTITY_CONFLICT"
+ 109: IMPORT_ENVELOPE_INVALID = "IMPORT_ENVELOPE_INVALID"
+ 110: IMPORT_FAILED = "IMPORT_FAILED"
+ 111: 
+ 112: _UUID_RE = re.compile(
+ 113:     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+ 114: )
+ 115: _UNSAFE_FILENAME = re.compile(r'[\x00-\x1f<>:"/\\|?*]+')
+ 116: 
+ 117: 
+ 118: class MarkdownServiceError(RuntimeError):
+ 119:     def __init__(self, code: str, message: str = "", *, status_code: int = 400) -> None:
+ 120:         self.code = code
+ 121:         self.status_code = status_code
+ 122:         super().__init__(f"{code}: {message}" if message else code)
+ 123: 
+ 124: 
+ 125: @dataclass
+ 126: class MarkdownImportDocument:
+ 127:     content: str
+ 128:     filename: str | None = None
+ 129:     target_item_id: UUID | None = None
+ 130:     frontmatter_resolution: str | None = None
+ 131:     attachments_requested: bool = False
+ 132: 
+ 133: 
+ 134: @dataclass
+ 135: class ImportOutcome:
+ 136:     report: ImportReport
+
+ 237:     def import_documents(
+ 238:         self,
+ 239:         documents: list[MarkdownImportDocument],
+ 240:         *,
+ 241:         space_id: str | None = None,
+ 242:         manifest: dict[str, Any] | None = None,
+ 243:         batch_id: str | None = None,
+ 244:         reject_attachments: bool = False,
+ 245:     ) -> ImportOutcome:
+ 246:         if not documents:
+ 247:             raise MarkdownServiceError("IMPORT_EMPTY", "no documents")
+ 248:         # D23 恢复门：恢复完成前禁止分类/身份写入/新操作（含导入）。
+ 249:         self._identity.recover_if_needed()
+ 250:         prepared = self._preflight(documents, manifest)
+ 251:         if reject_attachments:
+ 252:             for item in prepared:
+ 253:                 if ATTACHMENT_IMPORT_UNSUPPORTED in item.unsupported:
+ 254:                     # 单篇入口：附件请求显式拒绝，零写入（含 item/tags/origin）。
+ 255:                     raise MarkdownServiceError(
+ 256:                         ATTACHMENT_IMPORT_UNSUPPORTED,
+ 257:                         "Batch A 不支持附件导入",
+ 258:                     )
+ 259:         report = ImportReport()
+ 260:         index_ids: list[UUID] = []
+ 261:         for item in prepared:
+ 262:             if item.conflict:
+ 263:                 # D-06：frontmatter 冲突篇跳过，记录 conflicts；不写任何业务字段。
+ 264:                 report.add(
+ 265:                     ImportItemResult(
+ 266:                         filename=item.filename,
+ 267:                         status=ImportItemStatus.SKIPPED,
+ 268:                         source_content_hash=item.content_hash,
+ 269:                         source_payload_hash=item.payload_hash,
+ 270:                         conflicts=["frontmatter_conflict_requires_resolution"],
+ 271:                         warnings=item.warnings,
+ 272:                     )
+ 273:                 )
+ 274:                 continue
+ 275:             if item.unsupported:
+ 276:                 # 批量含附件：该篇 unsupported（零附件写入），其余篇继续。
+ 277:                 report.add(
+ 278:                     ImportItemResult(
+ 279:                         filename=item.filename,
+ 280:                         status=ImportItemStatus.UNSUPPORTED,
+ 281:                         source_content_hash=item.content_hash,
+ 282:                         source_payload_hash=item.payload_hash,
+ 283:                         errors=list(item.unsupported),
+ 284:                         unsupported=list(item.unsupported),
+ 285:                         warnings=item.warnings,
+ 286:                     )
+ 287:                 )
+ 288:                 continue
+ 289:             needs_index = False
+ 290:             try:
+ 291:                 result, needs_index = self._import_one(
+ 292:                     item,
+ 293:                     default_space_id=space_id,
+ 294:                     batch_id=batch_id,
+ 295:                 )
+ 296:             except MarkdownServiceError as exc:
+ 297:                 result = ImportItemResult(
+ 298:                     filename=item.filename,
+ 299:                     status=ImportItemStatus.ERROR,
+ 300:                     errors=[exc.code],
+ 301:                     source_content_hash=item.content_hash,
+ 302:                     source_payload_hash=item.payload_hash,
+ 303:                 )
+ 304:             except SourceIdentityError as exc:
+ 305:                 result = ImportItemResult(
+ 306:                     filename=item.filename,
+ 307:                     status=ImportItemStatus.ERROR,
+ 308:                     errors=[exc.code],
+ 309:                 )
+ 310:             except ImportLockTimeout:
+ 311:                 result = ImportItemResult(
+ 312:                     filename=item.filename,
+ 313:                     status=ImportItemStatus.ERROR,
+ 314:                     errors=[IMPORT_LOCK_TIMEOUT],
+ 315:                     source_content_hash=item.content_hash,
+ 316:                     source_payload_hash=item.payload_hash,
+ 317:                 )
+ 318:             except Exception:  # noqa: BLE001 - 单篇隔离，不外泄异常文本
+ 319:                 result = ImportItemResult(
+ 320:                     filename=item.filename,
+ 321:                     status=ImportItemStatus.ERROR,
+ 322:                     errors=[IMPORT_FAILED],
+ 323:                 )
+ 324:             report.add(result)
+ 325:             if item.legacy and result.status not in (
+ 326:                 ImportItemStatus.ERROR,
+ 327:                 ImportItemStatus.UNSUPPORTED,
+ 328:             ):
+ 329:                 report.legacy += 1
+ 330:             if result.status != ImportItemStatus.ERROR and needs_index and result.item_id:
+ 331:                 index_ids.append(result.item_id)
+ 332:         return ImportOutcome(report, index_ids)
+ 333: 
+ 334:     # -- D22 预检（任何 DB 写之前） ----------------------------------------
+ 335:     def _preflight(
+
+ 548:         pending_same: tuple[UUID, UUID] | None = None
+ 549:         pending_other: str | None = None
+ 550:         pending_signature: list[tuple[str, str]] = []
+ 551:         for review in SQLAlchemyReviewRepository(session).list_reviews(_pending()):
+ 552:             envelope = self._envelope_or_error(review.payload)
+ 553:             if envelope is None:
+ 554:                 continue
+ 555:             if not self._envelope_matches(envelope, item, review.item_id, target):
+ 556:                 continue
+ 557:             pending_signature.append((str(review.id), envelope.source_payload_hash))
+ 558:             if envelope.source_payload_hash == item.payload_hash:
+ 559:                 if pending_same is None:
+ 560:                     pending_same = (review.id, review.item_id)
+ 561:             else:
+ 562:                 pending_other = envelope.source_payload_hash
+ 563:         signature = (
+ 564:             tuple(
+ 565:                 sorted(
+ 566:                     (
+ 567:                         item_id,
+ 568:                         record.source_payload_hash,
+ 569:                         record.source_content_hash,
+ 570:                         record.source_instance_id,
+ 571:                         record.title,
+ 572:                         record.content,
+ 573:                     )
+ 574:                     for item_id, record in {**item_records, **anonymous_records}.items()
+ 575:                 )
+ 576:             ),
+ 577:             tuple(sorted(pending_signature)),
+ 578:         )
+ 579:         applied_hashes: set[str] = set()
+ 580:         for record in item_records.values():
+ 581:             if record.source_payload_hash:
+ 582:                 applied_hashes.add(record.source_payload_hash)
+ 583:         for record in anonymous_records.values():
+ 584:             if record.source_payload_hash:
+ 585:                 applied_hashes.add(record.source_payload_hash)
+ 586:         for origin in origins:
+ 587:             if origin.source_payload_hash:
+ 588:                 applied_hashes.add(origin.source_payload_hash)
+ 589:         applied = frozenset(applied_hashes)
+ 590:         return _State(
+ 591:             signature,
+ 592:             item_ids,
+ 593:             tuple(sorted(anonymous_records)),
+ 594:             applied,
+ 595:             pending_same,
+ 596:             pending_other,
+
+ 630:     def _import_one(
+ 631:         self,
+ 632:         item: PreparedDocument,
+ 633:         *,
+ 634:         default_space_id: str | None,
+ 635:         batch_id: str | None,
+ 636:     ) -> tuple[ImportItemResult, bool]:
+ 637:         target = item.target_item_id
+ 638:         target = item.document.id if target is None and item.document.id else target
+ 639:         # target 仅作为候选；来源身份存在时先按身份查条目。
+ 640:         lock_key = self._lock_key(item, target)
+ 641:         s0_session = self._factory()
+ 642:         try:
+ 643:             s0 = self._read_state(s0_session, item, target)
+ 644:         finally:
+ 645:             s0_session.close()
+ 646:         # P1-02：身份分类校验、导入 DB 写入与 commit 必须与 MATERIALIZE/ROTATE
+ 647:         # 串行（同一 Journal 锁），避免并发导出物化后导入追加 ImportOrigin。
+ 648:         with self._coordinator.keyed(lock_key), self._identity.identity_guard():
+ 649:             session = self._factory()
+ 650:             try:
+ 651:                 s1 = self._read_state(session, item, target)
+ 652:                 if len(s1.item_ids) > 1:
+ 653:                     raise MarkdownServiceError(
+ 654:                         SOURCE_IDENTITY_AMBIGUOUS,
+ 655:                         "同一来源身份对应多个条目",
+ 656:                         status_code=409,
+ 657:                     )
+ 658:                 decision_same = item.payload_hash in s1.applied_hashes
+ 659:                 if s0.signature != s1.signature:
+ 660:                     if decision_same:
+ 661:                         matched = s1.item_ids or s1.anonymous_ids
+ 662:                         return (
+ 663:                             ImportItemResult(
+ 664:                                 filename=item.filename,
+ 665:                                 item_id=UUID(matched[0]) if matched else None,
+ 666:                                 status=ImportItemStatus.SKIPPED,
+ 667:                                 source_payload_hash=item.payload_hash,
+ 668:                                 source_content_hash=item.content_hash,
+ 669:                                 warnings=item.warnings,
+ 670:                             ),
+ 671:                             False,
+ 672:                         )
+ 673:                     if s1.pending_same:
+ 674:                         return (
+ 675:                             ImportItemResult(
+ 676:                                 filename=item.filename,
+ 677:                                 status=ImportItemStatus.REUSED_PENDING,
+ 678:                                 review_id=s1.pending_same[0],
+ 679:                                 item_id=s1.pending_same[1],
+ 680:                                 source_payload_hash=item.payload_hash,
+ 681:                                 source_content_hash=item.content_hash,
+ 682:                                 warnings=item.warnings,
+ 683:                             ),
+ 684:                             False,
+ 685:                         )
+ 686:                     raise MarkdownServiceError(
+ 687:                         SOURCE_CHANGED_DURING_WAIT,
+ 688:                         "来源在等待锁期间已变化，请重新发起",
+ 689:                         status_code=409,
+ 690:                     )
+ 691:                 if decision_same:
+ 692:                     matched = s1.item_ids or s1.anonymous_ids
+ 693:                     item_id = UUID(matched[0]) if matched else None
+ 694:                     return (
+ 695:                         ImportItemResult(
+ 696:                             filename=item.filename,
+ 697:                             item_id=item_id,
+ 698:                             status=ImportItemStatus.SKIPPED,
+ 699:                             source_payload_hash=item.payload_hash,
+ 700:                             source_content_hash=item.content_hash,
+ 701:                             warnings=item.warnings,
+ 702:                             unsupported=item.unsupported,
+ 703:                         ),
+ 704:                         False,
+ 705:                     )
+ 706:                 if s1.pending_same:
+ 707:                     return (
+ 708:                         ImportItemResult(
+ 709:                             filename=item.filename,
+ 710:                             status=ImportItemStatus.REUSED_PENDING,
+ 711:                             review_id=s1.pending_same[0],
+ 712:                             item_id=s1.pending_same[1],
+ 713:                             source_payload_hash=item.payload_hash,
+ 714:                             source_content_hash=item.content_hash,
+ 715:                             warnings=item.warnings,
+ 716:                             unsupported=item.unsupported,
+ 717:                         ),
+ 718:                         False,
+ 719:                     )
+ 720:                 if s1.pending_other:
+ 721:                     raise MarkdownServiceError(
+ 722:                         SOURCE_HAS_PENDING_IMPORT,
+ 723:                         "同身份已有不同版本的待审导入",
+ 724:                         status_code=409,
+ 725:                     )
+ 726:                 result, needs_index = self._apply_import(
+ 727:                     session,
+ 728:                     item,
+ 729:                     target=target,
+ 730:                     existing_ids=s1.item_ids,
+ 731:                     default_space_id=default_space_id,
+ 732:                     batch_id=batch_id,
+ 733:                 )
+ 734:                 session.commit()
+ 735:                 return result, needs_index
+ 736:             except Exception:
+ 737:                 session.rollback()
+ 738:                 raise
+ 739:             finally:
+ 740:                 session.close()
+
+ 758:         items = MarkdownItemRepository(session)
+ 759:         tags = SQLAlchemyTagRepository(session)
+ 760:         origins = SQLAlchemyImportOriginRepository(session)
+ 761:         logs = SQLAlchemyTagChangeLogRepository(session)
+ 762:         doc = item.document
+ 763:         desired_space = self._resolve_space(
+ 764:             session, doc.space_id if doc.space_id is not None else default_space_id
+ 765:         )
+ 766:         warnings = list(item.warnings)
+ 767:         if doc.space_id is not None and desired_space is None:
+ 768:             warnings.append("space_not_found_personal_fallback")
+ 769: 
+ 770:         existing: MarkdownItemRecord | None = None
+ 771:         if existing_ids:
+ 772:             existing = items.get(existing_ids[0])
+ 773:         elif target is not None:
+ 774:             existing = items.get(target)
+ 775:         if existing is not None and self._identity.has_committed_materialize(
+ 776:             existing.id
+ 777:         ):
+ 778:             # §22.2：ImportOrigin 与 COMMITTED MATERIALIZE 并存即冲突态。
+ 779:             # 已物化本地文档不得经导入追加来源身份或重写实例字段（2b 冻结）。
+ 780:             raise MarkdownServiceError(
+ 781:                 SOURCE_IDENTITY_CONFLICT,
+ 782:                 "目标条目为已物化本地文档，导入不得追加来源身份",
+ 783:                 status_code=409,
+ 784:             )
+ 785:         # 既有条目来源身份不同 → 冲突，零写入（不覆盖来源身份）。
+ 786:         if existing is not None and item.source_instance_id and item.source_document_id:
+ 787:             existing_origins = origins.list_for_item(existing.id)
+ 788:             if existing_origins:
+ 789:                 pairs = {
+ 790:                     (origin.source_instance_id, str(origin.source_document_id))
+ 791:                     for origin in existing_origins
+ 792:                 }
+ 793:                 if pairs != {(item.source_instance_id, item.source_document_id)}:
+ 794:                     raise MarkdownServiceError(
+ 795:                         SOURCE_IDENTITY_CONFLICT,
+ 796:                         "目标条目来源身份与入站不一致",
+ 797:                         status_code=409,
+ 798:                     )
+ 799: 
+ 800:         # 无身份/无来源记录的新文档：content_hash 查重，只报告不覆盖。
+ 801:         if existing is None and not existing_ids:
+ 802:             duplicates = self._content_duplicates(items, item.content_hash)
+ 803:             if duplicates:
+ 804:                 return (
+ 805:                     ImportItemResult(
+ 806:                         filename=item.filename,
+ 807:                         status=ImportItemStatus.DUPLICATE,
+ 808:                         source_payload_hash=item.payload_hash,
+ 809:                         source_content_hash=item.content_hash,
+ 810:                         duplicates=duplicates,
+ 811:                         warnings=warnings,
+ 812:                         unsupported=item.unsupported,
+ 813:                     ),
+ 814:                     False,
+ 815:                 )
+ 816: 
+ 817:         title = (doc.title or "").strip()
+ 818:         if not title:
+ 819:             title = item.filename.rsplit(".", 1)[0] or "未命名文档"
+ 820:             warnings.append("title_from_filename")
+ 821:         status_changes: list[str] = []
+ 822:         if existing is None:
+ 823:             new_status = KnowledgeStatus.DRAFT
+ 824:             if doc.status is not None and doc.status != KnowledgeStatus.DRAFT:
+ 825:                 status_changes.append(f"{doc.status.value}->draft")
+ 826:             record = items.create(
+ 827:                 title=title,
+ 828:                 content=doc.content,
+ 829:                 status=new_status.value,
+ 830:                 space_id=desired_space,
+ 831:                 extra_metadata=doc.extra_metadata,
+ 832:                 source_payload_hash=item.payload_hash if not item.legacy else None,
+ 833:                 source_content_hash=item.content_hash,
+ 834:                 source_instance_id=item.source_instance_id if not item.legacy else None,
+ 835:             )
+ 836:             old_tags: list[str] = []
+ 837:             new_tags = tags.set_item_tags(record.id, doc.tags)
+ 838:             self._log_tags(logs, record, old_tags, new_tags, batch_id)
+ 839:             unresolved_links = self._restore_links(session, record, doc, warnings)
+ 840:             if item.source_instance_id and item.source_document_id and not item.legacy:
+ 841:                 origins.save_origin(self._origin(record, item, batch_id))
+ 842:             return (
+ 843:                 ImportItemResult(
+ 844:                     filename=item.filename,
+ 845:                     item_id=record.id,
+ 846:                     status=ImportItemStatus.CREATED,
+ 847:                     source_content_hash=item.content_hash,
+ 848:                     source_payload_hash=item.payload_hash,
+ 849:                     canonicalization_version=CANONICALIZATION_VERSION,
+ 850:                     warnings=warnings,
+ 851:                     unsupported=item.unsupported,
+ 852:                     unresolved_links=unresolved_links,
+ 853:                     status_changes=status_changes,
+ 854:                 ),
+ 855:                 True,
+ 856:             )
+ 857: 
+ 858:         # 既有条目：变化分类
+ 859:         old_tags = tags.list_item_tags(existing.id)
+ 860:         current_links = [
+ 861:             {
+ 862:                 "target_title": link.target_title,
+ 863:                 "alias": link.alias,
+ 864:                 "target_id": str(link.target_id) if link.target_id else None,
+ 865:                 "resolution": link.resolution.value,
+ 866:             }
+ 867:             for link in SQLAlchemyLinkRepository(session).list_links(existing.id)
+ 868:         ]
+ 869:         changes: ChangeSet = classify_changes(
+ 870:             current_title=existing.title,
+ 871:             current_content=existing.content,
+ 872:             current_status=existing.status,
+ 873:             current_space_id=existing.space_id,
+ 874:             current_tags=old_tags,
+ 875:             current_extra_metadata=existing.extra_metadata,
+ 876:             current_links=current_links,
+ 877:             current_attachments=[],
+ 878:             incoming=doc,
+ 879:         )
+ 880:         is_active = existing.status == KnowledgeStatus.ACTIVE
+ 881:         if is_active and changes.has_content_change:
+ 882:             envelope = self._envelope(
+ 883:                 item,
+ 884:                 target=existing.id,
+ 885:                 desired_space=desired_space,
+ 886:                 new_status=KnowledgeStatus.DRAFT,
+ 887:             )
+ 888:             payload = envelope.review_payload(self._core_changes(item, desired_space))
+ 889:             review = asyncio.run(
+ 890:                 build_review_service(session).submit(
+ 891:                     existing.id,
+ 892:                     ReviewAction.UPDATE_ITEM,
+ 893:                     payload,
+ 894:                     "Markdown 导入（Active 内容变更）",
+ 895:                 )
+ 896:             )
+ 897:             if review is None:
+ 898:                 raise MarkdownServiceError(IMPORT_FAILED, "active 未生成审核单", status_code=409)
+ 899:             return (
+ 900:                 ImportItemResult(
+ 901:                     filename=item.filename,
+ 902:                     item_id=existing.id,
+ 903:                     status=ImportItemStatus.PENDING_REVIEW,
+ 904:                     review_id=review.id,
+ 905:                     source_content_hash=item.content_hash,
+ 906:                     source_payload_hash=item.payload_hash,
+ 907:                     canonicalization_version=CANONICALIZATION_VERSION,
+ 908:                     warnings=warnings,
+ 909:                     unsupported=item.unsupported,
+ 910:                     status_changes=["active->draft(pending review)"],
+ 911:                 ),
+ 912:                 False,
+ 913:             )
+ 914: 
+ 915:         if is_active:
+ 916:             new_status = KnowledgeStatus.ACTIVE
+ 917:         else:
+ 918:             new_status = KnowledgeStatus.DRAFT
+ 919:             if doc.status is not None and doc.status != KnowledgeStatus.DRAFT:
+ 920:                 status_changes.append(f"{doc.status.value}->draft")
+ 921:         record = items.update_fields(
+ 922:             existing.id,
+ 923:             title=title,
+ 924:             content=doc.content,
+ 925:             status=new_status.value,
+ 926:             space_id=desired_space,
+ 927:             extra_metadata=doc.extra_metadata,
+ 928:             source_payload_hash=item.payload_hash if not item.legacy else None,
+ 929:             source_content_hash=item.content_hash,
+ 930:             source_instance_id=item.source_instance_id if not item.legacy else None,
+ 931:         )
+ 932:         new_tags = tags.set_item_tags(record.id, doc.tags)
+ 933:         if old_tags != new_tags:
+ 934:             self._log_tags(logs, record, old_tags, new_tags, batch_id)
+ 935:         unresolved_links = self._restore_links(session, record, doc, warnings)
+ 936:         if item.source_instance_id and item.source_document_id and not item.legacy:
+ 937:             existing_versions = {
+ 938:                 origin.source_payload_hash for origin in origins.list_for_item(record.id)
+ 939:             }
+ 940:             if item.payload_hash not in existing_versions:
+ 941:                 origins.save_origin(self._origin(record, item, batch_id))
+
+ 973:     def _core_changes(
+ 974:         self, item: PreparedDocument, desired_space: str | None
+ 975:     ) -> dict[str, Any]:
+ 976:         doc = item.document
+ 977:         return {
+ 978:             "title": (doc.title or "").strip() or item.filename.rsplit(".", 1)[0],
+ 979:             "content": doc.content,
+ 980:             "status": KnowledgeStatus.DRAFT.value,
+ 981:             "space_id": desired_space,
+ 982:         }
+ 983: 
+ 984:     def _envelope(
+ 985:         self,
+ 986:         item: PreparedDocument,
+ 987:         *,
+ 988:         target: UUID | None,
+ 989:         desired_space: str | None,
+ 990:         new_status: KnowledgeStatus,
+ 991:     ) -> ImportEnvelope:
+ 992:         doc = item.document
+ 993:         return ImportEnvelope(
+ 994:             target_item_id=str(target) if target else None,
+ 995:             filename=item.filename,
+ 996:             source_instance_id=item.source_instance_id,
+ 997:             source_document_id=item.source_document_id,
+ 998:             source_payload_hash=item.payload_hash,
+ 999:             source_content_hash=item.content_hash,
+1000:             canonicalization_version=CANONICALIZATION_VERSION,
+1001:             space_id=desired_space,
+1002:             status=new_status.value,
+1003:             tags=list(doc.tags),
+1004:             extra_metadata=dict(doc.extra_metadata),
+1005:             links=list(doc.links),
+1006:             attachments=[],
+1007:         ).with_digest()
