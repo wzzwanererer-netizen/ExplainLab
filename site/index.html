@@ -6,7 +6,7 @@
   <title>Nesti (ExplainLab V3) — Claude 封号了，你的脑子还在</title>
   <meta
     name="description"
-    content="给 Claude Code、Cursor、Codex、Trae、大肥鱼等 22 款 AI 助手装上同一个本地「罐中脑」。账号被封、切换工具也能 1 秒无缝接力。100% 本地隐私，MIT 开源，支持 Windows / macOS / Linux。"
+    content="Local-first open-source MCP 'Brain in a Vat' for 22+ AI agents (Claude Code, Cursor, Codex, Trae, bots). Never lose context when banned or switching tools. MIT License, Windows / macOS / Linux."
   />
   <link rel="icon" href="./nesti-logo.png" type="image/png" />
   <style>
@@ -64,7 +64,6 @@
     a { color: inherit; text-decoration: none; }
     button { font-family: inherit; cursor: pointer; }
 
-    /* Architectural 1px Frame */
     .frame {
       max-width: 1180px;
       margin: 0 auto;
@@ -73,7 +72,6 @@
       background: var(--paper);
     }
 
-    /* Top Bar */
     .topbar {
       position: sticky;
       top: 0;
@@ -106,13 +104,13 @@
     .nav {
       display: flex;
       align-items: center;
-      gap: 22px;
+      gap: 20px;
       font-family: var(--mono);
       font-size: 11.5px;
       color: var(--ink-2);
     }
     .nav a:hover { color: var(--signal); }
-    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
     .mode-btn {
       font-family: var(--mono);
       font-size: 11px;
@@ -123,7 +121,6 @@
     }
     .mode-btn:hover { background: var(--ink); color: var(--paper); }
 
-    /* Section Header Band */
     .band-head {
       display: flex;
       flex-wrap: wrap;
@@ -141,7 +138,6 @@
     }
     .band-head strong { color: var(--signal); }
 
-    /* Hero 2-Col Split */
     .hero {
       display: grid;
       grid-template-columns: 1.05fr 1fr;
@@ -184,11 +180,7 @@
     }
     .hero-sub strong { color: var(--ink); font-weight: 600; }
 
-    .cta-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
+    .cta-group { display: flex; flex-wrap: wrap; gap: 10px; }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -203,15 +195,8 @@
       transition: background 0.14s ease, color 0.14s ease;
     }
     .btn:hover { background: var(--ink); color: var(--paper); }
-    .btn.primary {
-      background: var(--ink);
-      color: var(--paper);
-    }
-    .btn.primary:hover {
-      background: var(--signal);
-      border-color: var(--signal);
-      color: #ffffff;
-    }
+    .btn.primary { background: var(--ink); color: var(--paper); }
+    .btn.primary:hover { background: var(--signal); border-color: var(--signal); color: #ffffff; }
 
     .proof-strip {
       display: grid;
@@ -223,14 +208,8 @@
       font-size: 11px;
       color: var(--muted);
     }
-    .proof-strip b {
-      display: block;
-      font-size: 16px;
-      color: var(--ink);
-      margin-bottom: 2px;
-    }
+    .proof-strip b { display: block; font-size: 16px; color: var(--ink); margin-bottom: 2px; }
 
-    /* Interactive Handoff Simulator (Hero Right) */
     .hero-right {
       padding: 28px;
       background: var(--paper-2);
@@ -266,18 +245,9 @@
     }
     .sim-tab:last-child { border-right: none; }
     .sim-tab span { display: block; font-size: 10px; opacity: 0.7; }
-    .sim-tab.active {
-      background: var(--ink);
-      color: var(--paper);
-    }
-    .sim-tab.active.danger {
-      background: var(--signal);
-      color: #ffffff;
-    }
-    .sim-tab.active.ok {
-      background: var(--ok);
-      color: #ffffff;
-    }
+    .sim-tab.active { background: var(--ink); color: var(--paper); }
+    .sim-tab.active.danger { background: var(--signal); color: #ffffff; }
+    .sim-tab.active.ok { background: var(--ok); color: #ffffff; }
 
     .terminal {
       flex: 1;
@@ -313,6 +283,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       font-size: 11px;
       color: #b7b2a6;
     }
@@ -323,10 +294,10 @@
       padding: 4px 10px;
       font-family: var(--mono);
       font-size: 11px;
+      flex-shrink: 0;
     }
     .term-next:hover { background: #fff; color: #111; }
 
-    /* Section 01: Brain in a Vat SVG Topology */
     .topo-grid {
       display: grid;
       grid-template-columns: 0.9fr 1.3fr;
@@ -340,31 +311,11 @@
       justify-content: center;
       gap: 14px;
     }
-    .topo-copy h2 {
-      font-family: var(--serif);
-      font-size: 28px;
-      line-height: 1.24;
-    }
+    .topo-copy h2 { font-family: var(--serif); font-size: 28px; line-height: 1.24; }
     .topo-copy p { font-size: 14px; color: var(--ink-2); }
-    .topo-points {
-      list-style: none;
-      margin-top: 6px;
-      display: grid;
-      gap: 8px;
-      font-size: 13px;
-    }
-    .topo-points li {
-      padding-left: 16px;
-      position: relative;
-      color: var(--ink);
-    }
-    .topo-points li::before {
-      content: "→";
-      position: absolute;
-      left: 0;
-      color: var(--signal);
-      font-family: var(--mono);
-    }
+    .topo-points { list-style: none; margin-top: 6px; display: grid; gap: 8px; font-size: 13px; }
+    .topo-points li { padding-left: 16px; position: relative; color: var(--ink); }
+    .topo-points li::before { content: "→"; position: absolute; left: 0; color: var(--signal); font-family: var(--mono); }
     .topo-canvas {
       padding: 24px;
       background: var(--card);
@@ -373,15 +324,9 @@
       justify-content: center;
     }
     .topo-svg { width: 100%; max-width: 620px; height: auto; }
-    .flow-line {
-      stroke-dasharray: 5 5;
-      animation: flowDash 1.4s linear infinite;
-    }
-    @keyframes flowDash {
-      to { stroke-dashoffset: -20; }
-    }
+    .flow-line { stroke-dasharray: 5 5; animation: flowDash 1.4s linear infinite; }
+    @keyframes flowDash { to { stroke-dashoffset: -20; } }
 
-    /* Section 02: Interactive Feature Ledger */
     .feat-grid {
       display: grid;
       grid-template-columns: 1fr 1.15fr;
@@ -403,16 +348,8 @@
     }
     .feat-row:last-child { border-bottom: none; }
     .feat-row:hover { background: var(--paper-2); }
-    .feat-row.active {
-      background: var(--ink);
-      color: var(--paper);
-    }
-    .feat-row .num {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--signal);
-      padding-top: 3px;
-    }
+    .feat-row.active { background: var(--ink); color: var(--paper); }
+    .feat-row .num { font-family: var(--mono); font-size: 11px; color: var(--signal); padding-top: 3px; }
     .feat-row.active .num { color: #f4c668; }
     .feat-row h3 { font-size: 15.5px; margin-bottom: 4px; }
     .feat-row p { font-size: 12.5px; color: var(--ink-2); }
@@ -450,6 +387,7 @@
       border-bottom: 1px dashed var(--line);
       font-family: var(--mono);
       font-size: 12px;
+      gap: 8px;
     }
     .mock-kv:last-child { border-bottom: none; }
     .mock-badge {
@@ -459,9 +397,9 @@
       padding: 2px 7px;
       border: 1px solid var(--line-strong);
       background: var(--paper);
+      white-space: nowrap;
     }
 
-    /* Section 03: Multi-OS Download Matrix */
     .dl-wrap {
       padding: 36px 28px;
       border-bottom: 1px solid var(--line);
@@ -475,15 +413,8 @@
       gap: 16px;
       margin-bottom: 22px;
     }
-    .dl-header h2 {
-      font-family: var(--serif);
-      font-size: 28px;
-      line-height: 1.2;
-    }
-    .os-tabs {
-      display: inline-flex;
-      border: 1px solid var(--ink);
-    }
+    .dl-header h2 { font-family: var(--serif); font-size: 28px; line-height: 1.2; }
+    .os-tabs { display: inline-flex; border: 1px solid var(--ink); }
     .os-tab {
       border: none;
       border-right: 1px solid var(--ink);
@@ -495,10 +426,7 @@
       font-weight: 600;
     }
     .os-tab:last-child { border-right: none; }
-    .os-tab.active {
-      background: var(--ink);
-      color: var(--paper);
-    }
+    .os-tab.active { background: var(--ink); color: var(--paper); }
 
     .os-panel {
       border: 1px solid var(--line-strong);
@@ -519,11 +447,7 @@
       color: var(--ok);
       background: var(--ok-soft);
     }
-    .os-status.beta {
-      border-color: var(--signal);
-      color: var(--signal);
-      background: var(--signal-soft);
-    }
+    .os-status.beta { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
     .os-panel h3 { font-size: 19px; margin-bottom: 8px; }
     .os-panel p { font-size: 13.5px; color: var(--ink-2); margin-bottom: 16px; }
 
@@ -550,7 +474,6 @@
     }
     .copy-btn:hover { background: #fff; color: #111; }
 
-    /* Section 04: Hardware-Style Spec Table */
     .spec-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -566,15 +489,9 @@
       font-size: 13px;
     }
     .spec-cell:nth-child(2n) { border-right: none; }
-    .spec-cell span.k {
-      font-family: var(--mono);
-      font-size: 11.5px;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
+    .spec-cell span.k { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-transform: uppercase; }
     .spec-cell span.v { font-weight: 600; text-align: right; }
 
-    /* Footer */
     footer {
       padding: 24px;
       display: flex;
@@ -588,7 +505,6 @@
     }
     footer a:hover { color: var(--signal); text-decoration: underline; }
 
-    /* Post-download Star Gratitude Modal */
     .star-backdrop {
       position: fixed;
       inset: 0;
@@ -617,24 +533,9 @@
       color: var(--ok);
       margin-bottom: 8px;
     }
-    .star-modal h3 {
-      font-family: var(--serif);
-      font-size: 22px;
-      line-height: 1.25;
-      margin-bottom: 10px;
-    }
-    .star-modal p {
-      font-size: 13.5px;
-      color: var(--ink-2);
-      line-height: 1.68;
-      margin-bottom: 18px;
-    }
-    .star-modal .m-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
+    .star-modal h3 { font-family: var(--serif); font-size: 22px; line-height: 1.25; margin-bottom: 10px; }
+    .star-modal p { font-size: 13.5px; color: var(--ink-2); line-height: 1.68; margin-bottom: 18px; }
+    .star-modal .m-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     .star-modal .m-close {
       border: 1px solid var(--line-strong);
       background: transparent;
@@ -646,12 +547,8 @@
     .star-modal .m-close:hover { color: var(--ink); border-color: var(--ink); }
 
     @media (max-width: 900px) {
-      .hero, .topo-grid, .feat-grid, .os-panel, .spec-grid {
-        grid-template-columns: 1fr;
-      }
-      .hero-left, .topo-copy, .feat-list, .spec-cell {
-        border-right: none;
-      }
+      .hero, .topo-grid, .feat-grid, .os-panel, .spec-grid { grid-template-columns: 1fr; }
+      .hero-left, .topo-copy, .feat-list, .spec-cell { border-right: none; }
       .hero-left { border-bottom: 1px solid var(--line); }
       .nav { display: none; }
     }
@@ -659,7 +556,6 @@
 </head>
 <body>
   <div class="frame">
-    <!-- Topbar -->
     <header class="topbar">
       <a class="brand" href="#">
         <img src="./nesti-logo.png" alt="Nesti" />
@@ -667,10 +563,10 @@
         <span class="ver">v3.0.0 · MIT</span>
       </a>
       <nav class="nav">
-        <a href="#handoff">01 封号接力</a>
-        <a href="#brain">02 罐中脑拓扑</a>
-        <a href="#features">03 实景功能</a>
-        <a href="#download">04 全平台下载</a>
+        <a href="#handoff" data-i18n="nav1">01 封号接力</a>
+        <a href="#brain" data-i18n="nav2">02 罐中脑拓扑</a>
+        <a href="#features" data-i18n="nav3">03 实景功能</a>
+        <a href="#download" data-i18n="nav4">04 全平台下载</a>
       </nav>
       <div class="top-actions">
         <a
@@ -679,96 +575,63 @@
           rel="noreferrer"
           class="mode-btn"
           style="display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:var(--paper);border-color:var(--ink)"
-          title="点 Star 追踪 V3 更新与社区皮肤插件"
         >
           <span>★ STAR ON GITHUB</span>
         </a>
-        <button type="button" class="mode-btn" id="modeToggle">墨黑 / 纸白</button>
+        <button type="button" class="mode-btn" id="langToggle">EN</button>
+        <button type="button" class="mode-btn" id="modeToggle" data-i18n="modeBtn">墨黑 / 纸白</button>
       </div>
     </header>
 
-    <!-- 00 HERO + INTERACTIVE HANDOFF SIMULATOR -->
+    <!-- 00 HERO -->
     <section class="hero" id="handoff">
       <div class="hero-left">
         <div>
-          <div class="kicker">00 // LOCAL-FIRST AI MEMORY LEDGER</div>
-          <h1>
-            Claude 封号了，<br />
-            <span class="strike">上下文全丢</span><br />
-            你的脑子还在。
-          </h1>
-          <p class="hero-sub">
-            把 <strong>Claude Code、Cursor、Codex、Trae、大肥鱼</strong> 的记忆从云端抽出来，锁进你硬盘里的同一个本地<strong>「罐中脑」</strong>。换账号、换模型、换工具，<strong>1 秒恢复全部进度与踩坑记录</strong>。
-          </p>
+          <div class="kicker" data-i18n="heroKicker">00 // LOCAL-FIRST AI MEMORY LEDGER</div>
+          <h1 id="heroTitle"></h1>
+          <p class="hero-sub" id="heroSub"></p>
         </div>
 
         <div class="cta-group">
-          <a class="btn primary" href="#download">↓ 全平台下载 / 安装 (Win · Mac · Linux)</a>
-          <a
-            class="btn"
-            href="https://github.com/wzzwanererer-netizen/ExplainLab"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a class="btn primary" href="#download" data-i18n="heroCta1">↓ 全平台下载 / 安装 (Win · Mac · Linux)</a>
+          <a class="btn" href="https://github.com/wzzwanererer-netizen/ExplainLab" target="_blank" rel="noreferrer" data-i18n="heroCta2">
             GitHub 源码 ↗
           </a>
         </div>
 
-        <div class="proof-strip">
-          <div><b>22+ 款</b>主流 AI 助手兼容</div>
-          <div><b>100% 本地</b>零云端账号 / SQLite</div>
-          <div><b>MIT 免费</b>可离线接 Ollama</div>
-        </div>
+        <div class="proof-strip" id="proofStrip"></div>
       </div>
 
       <div class="hero-right">
         <div class="sim-title">
-          <span>INTERACTIVE DEMO // 点击下方三步体验「封号 1 秒接力」</span>
+          <span data-i18n="simTitle">INTERACTIVE DEMO // 点击下方三步体验「封号 1 秒接力」</span>
           <span id="simStepBadge">STEP 1/3</span>
         </div>
 
         <div class="sim-tabs" role="tablist">
-          <button type="button" class="sim-tab active" data-sim="0">
-            <span>STEP 01</span>
-            Claude 干活中
-          </button>
-          <button type="button" class="sim-tab danger" data-sim="1">
-            <span>STEP 02</span>
-            💥 模拟封号/限流
-          </button>
-          <button type="button" class="sim-tab ok" data-sim="2">
-            <span>STEP 03</span>
-            ⚡ 新 AI 1 秒接力
-          </button>
+          <button type="button" class="sim-tab active" data-sim="0" id="simTab0"></button>
+          <button type="button" class="sim-tab danger" data-sim="1" id="simTab1"></button>
+          <button type="button" class="sim-tab ok" data-sim="2" id="simTab2"></button>
         </div>
 
-        <div class="terminal" id="simTerminal">
-          <!-- 动态渲染 -->
-        </div>
+        <div class="terminal" id="simTerminal"></div>
       </div>
     </section>
 
-    <!-- 01 MULTI-AGENT BRAIN IN A VAT TOPOLOGY -->
+    <!-- 01 TOPOLOGY -->
     <div class="band-head" id="brain">
-      <span><strong>01 //</strong> MULTI-AGENT BRAIN IN A VAT · 多 AGENT 罐中脑架构</span>
-      <span>MCP (JSON-RPC 2.0) · 独立副库隔离 · 只读接力零污染</span>
+      <span id="band1L"></span>
+      <span data-i18n="band1R">MCP (JSON-RPC 2.0) · 独立副库隔离 · 只读接力零污染</span>
     </div>
     <section class="topo-grid">
       <div class="topo-copy">
-        <h2>治好所有 AI 助手和「大肥鱼」的三天失忆症</h2>
-        <p>
-          普通 AI 助手把记忆绑在各自的云端账号里，过几天就忘、换工具就清零。Nesti 在你本机架起一颗共享海马体：
-        </p>
-        <ul class="topo-points">
-          <li><strong>独立副库防串台</strong>：每个接入的 Agent（Claude / Cursor / Codex / 大肥鱼）自动分配专属副库，互不污染。</li>
-          <li><strong>跨工具只读接力</strong>：新助手通过 MCP 只读原会话，不往主知识库灌垃圾日志。</li>
-          <li><strong>本地混合检索</strong>：SQLite FTS5 全文 + 向量 RRF 融合排序，毫秒级精准召回。</li>
-        </ul>
+        <h2 data-i18n="topoH2"></h2>
+        <p data-i18n="topoP"></p>
+        <ul class="topo-points" id="topoPoints"></ul>
       </div>
 
       <div class="topo-canvas">
-        <svg class="topo-svg" viewBox="0 0 600 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="多 Agent 罐中脑架构图">
-          <!-- Left Agent Nodes -->
+        <svg class="topo-svg" viewBox="0 0 600 280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Multi-Agent Brain in a Vat Diagram">
           <g font-family="Cascadia Code, Consolas, monospace" font-size="11" fill="currentColor">
             <rect x="12" y="18" width="142" height="32" stroke="currentColor" stroke-opacity="0.45" fill="var(--paper)" />
             <text x="24" y="38">Claude Code</text>
@@ -783,10 +646,9 @@
             <text x="24" y="176">Antigravity / Qoder</text>
 
             <rect x="12" y="202" width="142" height="32" stroke="var(--signal)" stroke-width="1.4" fill="var(--signal-soft)" />
-            <text x="24" y="222" fill="var(--signal)" font-weight="700">大肥鱼 / MCP Bot</text>
+            <text x="24" y="222" fill="var(--signal)" font-weight="700" id="svgBotLabel">大肥鱼 / MCP Bot</text>
           </g>
 
-          <!-- Flow lines Left -> Center -->
           <g stroke="currentColor" stroke-opacity="0.55" stroke-width="1.3">
             <path class="flow-line" d="M154 34 C205 34, 200 124, 240 124" />
             <path class="flow-line" d="M154 80 C198 80, 202 128, 240 128" />
@@ -795,137 +657,72 @@
             <path class="flow-line" d="M154 218 C205 218, 200 144, 240 144" stroke="var(--signal)" />
           </g>
 
-          <!-- Center Brain in a Vat -->
           <rect x="240" y="66" width="154" height="136" stroke="currentColor" stroke-width="2" fill="var(--paper-2)" />
           <rect x="246" y="72" width="142" height="124" stroke="currentColor" stroke-opacity="0.25" stroke-dasharray="3 3" fill="none" />
           <g font-family="Cascadia Code, Consolas, monospace" text-anchor="middle" fill="currentColor">
             <text x="317" y="102" font-size="10" fill="var(--signal)" font-weight="700">LOCAL BRAIN</text>
-            <text x="317" y="126" font-size="14" font-weight="700">Nesti 罐中脑</text>
+            <text x="317" y="126" font-size="13.5" font-weight="700" id="svgBrainTitle">Nesti 罐中脑</text>
             <text x="317" y="148" font-size="10" opacity="0.72">explainlab.db</text>
             <text x="317" y="166" font-size="9.5" opacity="0.72">FTS5 + Vector RRF</text>
-            <text x="317" y="184" font-size="9.5" fill="var(--ok)">100% 本地硬盘</text>
+            <text x="317" y="184" font-size="9.5" fill="var(--ok)" id="svgLocalLabel">100% 本地硬盘</text>
           </g>
 
-          <!-- Flow lines Center -> Right -->
           <g stroke="currentColor" stroke-opacity="0.55" stroke-width="1.3">
             <path class="flow-line" d="M394 114 C425 114, 425 68, 452 68" />
             <path class="flow-line" d="M394 134 L452 134" />
             <path class="flow-line" d="M394 154 C425 154, 425 200, 452 200" />
           </g>
 
-          <!-- Right Outputs -->
           <g font-family="Cascadia Code, Consolas, monospace" font-size="11" fill="currentColor">
             <rect x="452" y="48" width="136" height="40" stroke="currentColor" stroke-opacity="0.45" fill="var(--paper)" />
-            <text x="464" y="66" font-weight="700">新 Agent 秒接力</text>
-            <text x="464" y="81" font-size="9.5" opacity="0.7">封号不丢进度</text>
+            <text x="464" y="66" font-weight="700" id="svgOut1T">新 Agent 秒接力</text>
+            <text x="464" y="81" font-size="9.5" opacity="0.7" id="svgOut1S">封号不丢进度</text>
 
             <rect x="452" y="114" width="136" height="40" stroke="currentColor" stroke-opacity="0.45" fill="var(--paper)" />
             <text x="464" y="132" font-weight="700">PDF / PPT / Word</text>
-            <text x="464" y="147" font-size="9.5" opacity="0.7">一键生成办公成品</text>
+            <text x="464" y="147" font-size="9.5" opacity="0.7" id="svgOut2S">一键生成办公成品</text>
 
             <rect x="452" y="180" width="136" height="40" stroke="currentColor" stroke-opacity="0.45" fill="var(--paper)" />
-            <text x="464" y="198" font-weight="700">多色知识星图</text>
-            <text x="464" y="213" font-size="9.5" opacity="0.7">自动发现隐性关联</text>
+            <text x="464" y="198" font-weight="700" id="svgOut3T">多色知识星图</text>
+            <text x="464" y="213" font-size="9.5" opacity="0.7" id="svgOut3S">自动发现隐性关联</text>
           </g>
         </svg>
       </div>
     </section>
 
-    <!-- 02 INTERACTIVE FEATURE SWITCHER -->
+    <!-- 02 FEATURES -->
     <div class="band-head" id="features">
-      <span><strong>02 //</strong> FIELD CAPABILITIES · 每天真正用得上的 4 个硬功能</span>
-      <span>点击左侧条目查看对应交互场景</span>
+      <span id="band2L"></span>
+      <span data-i18n="band2R">点击左侧条目查看对应交互场景</span>
     </div>
     <section class="feat-grid">
-      <div class="feat-list">
-        <button type="button" class="feat-row active" data-feat="0">
-          <span class="num">01</span>
-          <div>
-            <h3>任务完成自动弹窗（零打扰吸尘）</h3>
-            <p>AI 助手干完活，右下角滑出透明悬浮窗问你存不存，不抢焦点、12 秒自动消失。</p>
-          </div>
-        </button>
-        <button type="button" class="feat-row" data-feat="1">
-          <span class="num">02</span>
-          <div>
-            <h3>桌面乱文件夹哨兵 + 原位阅读</h3>
-            <p>只读收编桌面/下载里的 Word、PDF、Excel、PPT，不挪动原文件，软件内直接阅读。</p>
-          </div>
-        </button>
-        <button type="button" class="feat-row" data-feat="2">
-          <span class="num">03</span>
-          <div>
-            <h3>一键生成 PDF / PPT / Word / 知识长图</h3>
-            <p>纯本地零 Office 依赖生成，自选保存目录，直接拿去交汇报或分享给团队。</p>
-          </div>
-        </button>
-        <button type="button" class="feat-row" data-feat="3">
-          <span class="num">04</span>
-          <div>
-            <h3>Alt+Shift+Space 全局闪记 &amp; 网址剪藏</h3>
-            <p>任意软件呼出居中极简条：记灵感、Ctrl+V 贴截图，贴入文章链接自动抓正文入库。</p>
-          </div>
-        </button>
-      </div>
-
-      <div class="feat-stage" id="featStage">
-        <!-- 动态渲染微型实景模拟窗 -->
-      </div>
+      <div class="feat-list" id="featList"></div>
+      <div class="feat-stage" id="featStage"></div>
     </section>
 
-    <!-- 03 MULTI-OS DOWNLOAD MATRIX -->
+    <!-- 03 DOWNLOAD MATRIX -->
     <div class="band-head" id="download">
-      <span><strong>03 //</strong> DOWNLOAD &amp; INSTALL · 全平台获取（Windows / macOS / Linux）</span>
-      <span>RELEASE v3.0.0 · 永久开源免费</span>
+      <span id="band3L"></span>
+      <span data-i18n="band3R">RELEASE v3.0.0 · 永久开源免费</span>
     </div>
     <section class="dl-wrap">
       <div class="dl-header">
-        <div>
-          <h2>选择你的操作系统，3 分钟本地跑起来</h2>
-        </div>
-        <div class="os-tabs" role="tablist" aria-label="选择操作系统">
+        <h2 data-i18n="dlH2"></h2>
+        <div class="os-tabs" role="tablist" aria-label="OS Selector">
           <button type="button" class="os-tab active" data-os="win">Windows 10/11</button>
           <button type="button" class="os-tab" data-os="mac">macOS</button>
           <button type="button" class="os-tab" data-os="linux">Linux / WSL2</button>
         </div>
       </div>
-
-      <div class="os-panel" id="osPanel">
-        <!-- 动态渲染对应平台下载与命令 -->
-      </div>
+      <div class="os-panel" id="osPanel"></div>
     </section>
 
-    <!-- 04 TECHNICAL SPEC LEDGER -->
+    <!-- 04 SPECS -->
     <div class="band-head">
-      <span><strong>04 //</strong> TECHNICAL SPECIFICATION · 工程规格表</span>
+      <span><strong>04 //</strong> TECHNICAL SPECIFICATION</span>
       <span>NO CLOUD LOCK-IN · AUDITABLE CODE</span>
     </div>
-    <section class="spec-grid">
-      <div class="spec-cell">
-        <span class="k">数据存储</span>
-        <span class="v">100% 本地 SQLite + FTS5（可选 PostgreSQL）</span>
-      </div>
-      <div class="spec-cell">
-        <span class="k">外部 Agent 协议</span>
-        <span class="v">标准 MCP Server (JSON-RPC 2.0 over stdio)</span>
-      </div>
-      <div class="spec-cell">
-        <span class="k">模型兼容</span>
-        <span class="v">DeepSeek / 通义 / 智谱 / Kimi / SiliconFlow / 免费离线 Ollama</span>
-      </div>
-      <div class="spec-cell">
-        <span class="k">隐私边界</span>
-        <span class="v">零官方云端服务器 · 密钥仅存本机 .env · 自动脱敏</span>
-      </div>
-      <div class="spec-cell">
-        <span class="k">扩展能力</span>
-        <span class="v">Theme Studio 2.0（6 套内置皮肤 + AI 造皮肤 + JSON 皮肤插件）</span>
-      </div>
-      <div class="spec-cell">
-        <span class="k">开源协议 &amp; CI</span>
-        <span class="v">MIT License · GitHub Actions 三平台自动验证</span>
-      </div>
-    </section>
+    <section class="spec-grid" id="specGrid"></section>
 
     <footer>
       <span>NESTI // EXPLAINLAB V3 — BUILT FOR HUMANS WHO OWN THEIR MEMORY</span>
@@ -941,14 +738,12 @@
     </footer>
   </div>
 
-  <!-- 下载后优雅弹出：顺手点颗 Star -->
+  <!-- Post-download Star Gratitude Modal -->
   <div class="star-backdrop" id="starBackdrop" role="dialog" aria-modal="true" aria-labelledby="starModalTitle">
     <div class="star-modal">
-      <div class="m-kicker">✓ DOWNLOAD STARTED · 正在开始下载</div>
-      <h3 id="starModalTitle">如果它帮你的 AI 留住了记忆，顺手点颗 ★ Star 吧</h3>
-      <p>
-        Nesti (ExplainLab V3) 是 <strong>100% 本地免费开源</strong> 的独立开发作品，不卖会员、不锁数据。去 GitHub 点一颗 Star，既是对作者最大的鼓励，也能第一时间收到后续版本、社区皮肤插件和 <strong>Nesti 3D 桌宠</strong> 的开源更新通知！
-      </p>
+      <div class="m-kicker" data-i18n="modalKicker">✓ DOWNLOAD STARTED · 正在开始下载</div>
+      <h3 id="starModalTitle" data-i18n="modalTitle"></h3>
+      <p id="starModalBody"></p>
       <div class="m-actions">
         <a
           class="btn primary"
@@ -956,81 +751,467 @@
           target="_blank"
           rel="noreferrer"
           id="starGoBtn"
+          data-i18n="modalGo"
         >
           ★ 去 GitHub 点一颗 Star ↗
         </a>
-        <button type="button" class="m-close" id="starCloseBtn">稍后再说</button>
+        <button type="button" class="m-close" id="starCloseBtn" data-i18n="modalClose">稍后再说</button>
       </div>
     </div>
   </div>
 
   <script>
-    // 1. 纸白 / 墨黑 极简切换
-    const modeBtn = document.getElementById("modeToggle");
-    modeBtn.addEventListener("click", () => {
-      const isInk = document.documentElement.getAttribute("data-mode") === "ink";
-      document.documentElement.setAttribute("data-mode", isInk ? "paper" : "ink");
-    });
+    const I18N = {
+      zh: {
+        pageTitle: "Nesti (ExplainLab V3) — Claude 封号了，你的脑子还在",
+        langBtn: "EN",
+        modeBtn: "墨黑 / 纸白",
+        nav1: "01 封号接力",
+        nav2: "02 罐中脑拓扑",
+        nav3: "03 实景功能",
+        nav4: "04 全平台下载",
+        heroKicker: "00 // LOCAL-FIRST AI MEMORY LEDGER",
+        heroTitle: 'Claude 封号了，<br /><span class="strike">上下文全丢</span><br />你的脑子还在。',
+        heroSub: '把 <strong>Claude Code、Cursor、Codex、Trae、大肥鱼</strong> 的记忆从云端抽出来，锁进你硬盘里的同一个本地<strong>「罐中脑」</strong>。换账号、换模型、换工具，<strong>1 秒恢复全部进度与踩坑记录</strong>。',
+        heroCta1: "↓ 全平台下载 / 安装 (Win · Mac · Linux)",
+        heroCta2: "GitHub 源码 ↗",
+        proof: [
+          ["22+ 款", "主流 AI 助手兼容"],
+          ["100% 本地", "零云端账号 / SQLite"],
+          ["MIT 免费", "可离线接 Ollama"],
+        ],
+        simTitle: "INTERACTIVE DEMO // 点击下方三步体验「封号 1 秒接力」",
+        simTabs: [
+          ["STEP 01", "Claude 干活中"],
+          ["STEP 02", "💥 模拟封号/限流"],
+          ["STEP 03", "⚡ 新 AI 1 秒接力"],
+        ],
+        simStates: [
+          {
+            badge: "STEP 1/3",
+            headerL: "claude-code // workspace: my-saas-app",
+            headerR: "MCP: explainlab connected",
+            body: `
+              <div><span class="t-dim">$</span> claude "帮我排查生产环境 PostgreSQL 连接池偶发超时"</div>
+              <div style="margin-top:8px"><span class="t-ok">✓</span> 定位根因：psycopg 异步连接池未配置 pool_pre_ping，长连接空闲 300s 被防火墙回收。</div>
+              <div><span class="t-dim">[MCP auto-memory]</span> → <span class="t-hl">explainlab_record_knowledge</span></div>
+              <div><span class="t-dim">  space:</span> "Agent · Claude" (本地 SQLite)</div>
+              <div><span class="t-dim">  saved:</span> "PG 连接池超时根因与 pool_pre_ping 修复方案"</div>
+            `,
+            foot: "当前记忆已自动落盘到本地 explainlab.db（0 云端依赖）",
+            nextText: "下一步：💥 模拟封号 →",
+            nextIdx: 1,
+          },
+          {
+            badge: "STEP 2/3",
+            headerL: "anthropic-api // ERROR 403",
+            headerR: "STATUS: SUSPENDED",
+            body: `
+              <div class="t-err">✖ HTTP 403 Forbidden: Your organization account has been suspended.</div>
+              <div class="t-err">✖ Claude Code session terminated. Local conversation locked.</div>
+              <div style="margin-top:10px"><span class="t-dim">--- 对比 ---</span></div>
+              <div><span class="t-err">普通用户：</span> 一周架构决策、踩坑记录全部锁死，换工具只能从零复制粘贴。</div>
+              <div><span class="t-ok">Nesti 用户：</span> 本地硬盘 <span class="t-hl">backend/data/explainlab.db</span> 完好无损（47 条核心记忆随时可调）。</div>
+            `,
+            foot: "账号没了，但你的「罐中脑」一字节都没丢",
+            nextText: "下一步：⚡ 换新 AI 1 秒接力 →",
+            nextIdx: 2,
+          },
+          {
+            badge: "STEP 3/3",
+            headerL: "codex / cursor / 大肥鱼 // NEW SESSION",
+            headerR: "HANDOFF: 0.4s",
+            body: `
+              <div><span class="t-dim">$</span> codex "接手我刚才在 Claude 那边修了一半的数据库连接池"</div>
+              <div style="margin-top:8px"><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_search_knowledge("PG 连接池超时")</span></div>
+              <div><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_read_agent_session(agent="claude", read_only=true)</span></div>
+              <div style="margin-top:8px"><span class="t-ok">✓ 已 1 秒恢复上下文：</span></div>
+              <div>  1. 已确认根因是空闲连接回收，需加 <span class="t-hl">pool_pre_ping=True</span></div>
+              <div>  2. 上一步已改完 <span class="t-hl">db/session.py</span>，接下来直接补集成测试即可！</div>
+            `,
+            foot: "无缝接力完成 · 只读接力零污染主知识库",
+            nextText: "↺ 重新演示",
+            nextIdx: 0,
+          },
+        ],
+        band1L: "<strong>01 //</strong> MULTI-AGENT BRAIN IN A VAT · 多 AGENT 罐中脑架构",
+        band1R: "MCP (JSON-RPC 2.0) · 独立副库隔离 · 只读接力零污染",
+        topoH2: "治好所有 AI 助手和「大肥鱼」的三天失忆症",
+        topoP: "普通 AI 助手把记忆绑在各自的云端账号里，过几天就忘、换工具就清零。Nesti 在你本机架起一颗共享海马体：",
+        topoPoints: [
+          "<strong>独立副库防串台</strong>：每个接入的 Agent（Claude / Cursor / Codex / 大肥鱼）自动分配专属副库，互不污染。",
+          "<strong>跨工具只读接力</strong>：新助手通过 MCP 只读原会话，不往主知识库灌垃圾日志。",
+          "<strong>本地混合检索</strong>：SQLite FTS5 全文 + 向量 RRF 融合排序，毫秒级精准召回。",
+        ],
+        svg: {
+          bot: "大肥鱼 / MCP Bot",
+          brain: "Nesti 罐中脑",
+          local: "100% 本地硬盘",
+          o1t: "新 Agent 秒接力",
+          o1s: "封号不丢进度",
+          o2s: "一键生成办公成品",
+          o3t: "多色知识星图",
+          o3s: "自动发现隐性关联",
+        },
+        band2L: "<strong>02 //</strong> FIELD CAPABILITIES · 每天真正用得上的 4 个硬功能",
+        band2R: "点击左侧条目查看对应交互场景",
+        feats: [
+          {
+            num: "01",
+            name: "任务完成自动弹窗（零打扰吸尘）",
+            sub: "AI 助手干完活，右下角滑出透明悬浮窗问你存不存，不抢焦点、12 秒自动消失。",
+            title: "NESTI CAPTURE TOAST // 右下角临时悬浮窗（不常驻）",
+            right: "12s 自动消失",
+            html: `
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <span class="mock-badge" style="color:var(--signal);border-color:var(--signal)">检测到新完成任务 · Cursor</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">悬停暂停倒计时</span>
+              </div>
+              <div style="font-weight:700;font-size:14.5px;margin-bottom:6px">优化 React Flow 星图布局防重叠算法</div>
+              <p style="font-size:12.5px;color:var(--ink-2);margin-bottom:14px">已自动过滤 84% 过程日志，提炼出 2 条核心结论与代码改动要点，是否存入「Agent · Cursor」副库？</p>
+              <div style="display:flex;gap:8px">
+                <span style="background:var(--ink);color:var(--paper);padding:6px 14px;font-family:var(--mono);font-size:11.5px;font-weight:600">✓ 加入知识库</span>
+                <span style="border:1px solid var(--line-strong);padding:6px 14px;font-family:var(--mono);font-size:11.5px">忽略本次</span>
+              </div>
+            `,
+          },
+          {
+            num: "02",
+            name: "桌面乱文件夹哨兵 + 原位阅读",
+            sub: "只读收编桌面/下载里的 Word、PDF、Excel、PPT，不挪动原文件，软件内直接阅读。",
+            title: "FOLDER SENTINEL // 乱文件夹只读收编 · 原位阅读",
+            right: "不移动原文件",
+            html: `
+              <div class="mock-kv"><span>[PDF]  2026高校创新大赛申报指南.pdf</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
+              <div class="mock-kv"><span>[WORD] 项目架构评审纪要_最终版.docx</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
+              <div class="mock-kv"><span>[EXCEL] 实验数据集_逐年评分表.csv</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
+              <div class="mock-kv"><span>[PPT]  阶段性进展汇报_审阅版.pptx</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
+              <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--muted)">监听目录：Desktop / Downloads（只读扫描，Ctrl+K 可直接搜文件名并秒开预览）</div>
+            `,
+          },
+          {
+            num: "03",
+            name: "一键生成 PDF / PPT / Word / 知识长图",
+            sub: "纯本地零 Office 依赖生成，自选保存目录，直接拿去交汇报或分享给团队。",
+            title: "STUDIO EXPORT // 纯本地零 Office 依赖一键出成品",
+            right: "自选保存目录",
+            html: `
+              <div class="mock-kv"><span>01 · 总结报告 PDF (.pdf)</span><span class="mock-badge">带目录与分页排版</span></div>
+              <div class="mock-kv"><span>02 · 汇报演示 PPT (.pptx)</span><span class="mock-badge">16:9 封面+要点页</span></div>
+              <div class="mock-kv"><span>03 · 可编辑 Word (.docx)</span><span class="mock-badge">原生 OOXML 格式</span></div>
+              <div class="mock-kv"><span>04 · 高清知识卡片长图 (.png)</span><span class="mock-badge">适合发群 / 朋友圈</span></div>
+              <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--ok)">✓ 点击导出即弹出系统原生「另存为」窗口，自由选择保存文件夹</div>
+            `,
+          },
+          {
+            num: "04",
+            name: "Alt+Shift+Space 全局闪记 & 网址剪藏",
+            sub: "任意软件呼出居中极简条：记灵感、Ctrl+V 贴截图，贴入文章链接自动抓正文入库。",
+            title: "GLOBAL QUICK CAPTURE // 任意软件按下 Alt + Shift + Space",
+            right: "Ctrl+Enter 秒存",
+            html: `
+              <div style="border:1px solid var(--ink);padding:12px;background:var(--paper);font-family:var(--mono);font-size:12px;margin-bottom:10px">https://github.com/modelcontextprotocol/servers</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:11px;color:var(--ink-2)">
+                <span>自动识别为网页链接 → 触发「网址一键剪藏」抓正文转 Markdown</span>
+                <span style="color:var(--ok);font-weight:700">✓ 已秒存</span>
+              </div>
+              <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)">同样支持直接写灵感、Ctrl+V 粘贴剪贴板截图（自动上传为知识附件）。</div>
+            `,
+          },
+        ],
+        band3L: "<strong>03 //</strong> DOWNLOAD &amp; INSTALL · 全平台获取（Windows / macOS / Linux）",
+        band3R: "RELEASE v3.0.0 · 永久开源免费",
+        dlH2: "选择你的操作系统，3 分钟本地跑起来",
+        copyBtn: "复制命令",
+        copiedBtn: "✓ 已复制",
+        os: {
+          win: {
+            status: "✅ Windows 10 / 11 真机完整验证",
+            beta: false,
+            title: "Windows 一键体验包（5.4 MB · 含国内镜像加速）",
+            desc: "已预构建前端界面与国内清华/淘宝镜像脚本，解压后双击「一键启动-Nesti工作空间.bat」自动完成安装并生成桌面快捷方式。",
+            ctaText: "⬇ 下载 Nesti-AI-Workspace-V3.zip",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/download/v3.0.0/Nesti-AI-Workspace-V3.zip",
+            altText: "查看 Release v3.0.0",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/tag/v3.0.0",
+            cmd: `# 解压 Nesti-AI-Workspace-V3.zip 后：\n1. 双击「一键启动-Nesti工作空间.bat」启动原生桌面端\n2. 双击「一键接入本机AI助手.bat」自动接入本机 MCP\n\n# 或开发者源码启动：\ngit clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
+          },
+          mac: {
+            status: "🧪 macOS 源码跨平台兼容（GitHub Actions macos-latest CI）",
+            beta: true,
+            title: "macOS (Apple Silicon / Intel) 一键脚本启动",
+            desc: "已适配 macOS 原生红绿灯标题栏、Finder 文件高亮定位（open -R）、Application Support AI 助手扫描与一键启动脚本 start-nesti.sh。",
+            ctaText: "⬇ 下载 v3.0.0 源码包 (.tar.gz)",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
+            altText: "查看 macOS CI 状态",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
+            cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
+          },
+          linux: {
+            status: "🧪 Linux / Ubuntu / WSL2 源码跨平台兼容（ubuntu-latest CI）",
+            beta: true,
+            title: "Linux / WSL2 桌面端与无头 Web 服务模式",
+            desc: "已适配 XDG 配置目录、xdg-open 文件定位与 Unix MCP 入口。桌面环境可直接跑 Electron，服务器/NAS 可直接跑 FastAPI + Web 端。",
+            ctaText: "⬇ 下载 v3.0.0 源码包 (.tar.gz)",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
+            altText: "查看 Ubuntu CI 状态",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
+            cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
+          },
+        },
+        specs: [
+          ["数据存储", "100% 本地 SQLite + FTS5（可选 PostgreSQL）"],
+          ["外部 Agent 协议", "标准 MCP Server (JSON-RPC 2.0 over stdio)"],
+          ["模型兼容", "DeepSeek / 通义 / 智谱 / Kimi / SiliconFlow / 免费离线 Ollama"],
+          ["隐私边界", "零官方云端服务器 · 密钥仅存本机 .env · 自动脱敏"],
+          ["扩展能力", "Theme Studio 2.0（6 套内置皮肤 + AI 造皮肤 + JSON 插件）"],
+          ["开源协议 & CI", "MIT License · GitHub Actions 三平台自动验证"],
+        ],
+        modalKicker: "✓ DOWNLOAD STARTED · 正在开始下载",
+        modalTitle: "如果它帮你的 AI 留住了记忆，顺手点颗 ★ Star 吧",
+        modalBody: "Nesti (ExplainLab V3) 是 <strong>100% 本地免费开源</strong> 的独立开发作品，不卖会员、不锁数据。去 GitHub 点一颗 Star，既是对作者最大的鼓励，也能第一时间收到后续版本、社区皮肤插件和 <strong>Nesti 3D 桌宠</strong> 的开源更新通知！",
+        modalGo: "★ 去 GitHub 点一颗 Star ↗",
+        modalClose: "稍后再说",
+      },
 
-    // 2. 首屏「Claude 封号 → 1 秒无缝接力」交互模拟器
-    const SIM_STATES = [
-      {
-        badge: "STEP 1/3",
-        headerL: "claude-code // workspace: my-saas-app",
-        headerR: "MCP: explainlab connected",
-        body: `
-          <div><span class="t-dim">$</span> claude "帮我排查生产环境 PostgreSQL 连接池偶发超时"</div>
-          <div style="margin-top:8px"><span class="t-ok">✓</span> 定位根因：psycopg 异步连接池未配置 pool_pre_ping，长连接空闲 300s 被防火墙回收。</div>
-          <div><span class="t-dim">[MCP auto-memory]</span> → <span class="t-hl">explainlab_record_knowledge</span></div>
-          <div><span class="t-dim">  space:</span> "Agent · Claude" (本地 SQLite)</div>
-          <div><span class="t-dim">  saved:</span> "PG 连接池超时根因与 pool_pre_ping 修复方案"</div>
-        `,
-        foot: "当前记忆已自动落盘到本地 explainlab.db（0 云端依赖）",
-        nextText: "下一步：💥 模拟封号 →",
-        nextIdx: 1,
+      en: {
+        pageTitle: "Nesti (ExplainLab V3) — Claude got banned. Your brain didn't.",
+        langBtn: "中文",
+        modeBtn: "INK / PAPER",
+        nav1: "01 HANDOFF",
+        nav2: "02 BRAIN TOPOLOGY",
+        nav3: "03 CAPABILITIES",
+        nav4: "04 DOWNLOAD",
+        heroKicker: "00 // LOCAL-FIRST AI MEMORY LEDGER",
+        heroTitle: 'Claude got banned.<br /><span class="strike">Context wiped.</span><br />Your brain didn\'t.',
+        heroSub: 'Pull memory out of <strong>Claude Code, Cursor, Codex, Trae &amp; chat bots</strong> into one local <strong>"Brain in a Vat"</strong> on your own drive. Switch accounts, models, or IDEs and resume in <strong>1 second</strong>.',
+        heroCta1: "↓ Download / Install (Win · Mac · Linux)",
+        heroCta2: "GitHub Source ↗",
+        proof: [
+          ["22+ Agents", "Claude / Cursor / Codex / Bots"],
+          ["100% Local", "Zero cloud account · SQLite"],
+          ["MIT Free", "Offline Ollama supported"],
+        ],
+        simTitle: 'INTERACTIVE DEMO // CLICK THROUGH "BANNED → 1s HANDOFF"',
+        simTabs: [
+          ["STEP 01", "Claude working"],
+          ["STEP 02", "💥 Ban / Rate limit"],
+          ["STEP 03", "⚡ 1s Agent handoff"],
+        ],
+        simStates: [
+          {
+            badge: "STEP 1/3",
+            headerL: "claude-code // workspace: my-saas-app",
+            headerR: "MCP: explainlab connected",
+            body: `
+              <div><span class="t-dim">$</span> claude "debug sporadic PostgreSQL pool timeouts in prod"</div>
+              <div style="margin-top:8px"><span class="t-ok">✓</span> Root cause: async psycopg pool missing pool_pre_ping; idle connections dropped after 300s.</div>
+              <div><span class="t-dim">[MCP auto-memory]</span> → <span class="t-hl">explainlab_record_knowledge</span></div>
+              <div><span class="t-dim">  space:</span> "Agent · Claude" (local SQLite)</div>
+              <div><span class="t-dim">  saved:</span> "PG pool timeout root cause &amp; pool_pre_ping fix"</div>
+            `,
+            foot: "Memory persisted locally to explainlab.db (zero cloud lock-in)",
+            nextText: "Next: 💥 Simulate Ban →",
+            nextIdx: 1,
+          },
+          {
+            badge: "STEP 2/3",
+            headerL: "anthropic-api // ERROR 403",
+            headerR: "STATUS: SUSPENDED",
+            body: `
+              <div class="t-err">✖ HTTP 403 Forbidden: Your organization account has been suspended.</div>
+              <div class="t-err">✖ Claude Code session terminated. Cloud history inaccessible.</div>
+              <div style="margin-top:10px"><span class="t-dim">--- REALITY CHECK ---</span></div>
+              <div><span class="t-err">Without Nesti:</span> Weeks of architecture decisions &amp; bugfixes locked away. Start over.</div>
+              <div><span class="t-ok">With Nesti:</span> Local <span class="t-hl">backend/data/explainlab.db</span> intact (47 distilled memories ready).</div>
+            `,
+            foot: "Account gone — your local brain didn't lose a single byte",
+            nextText: "Next: ⚡ Switch to Codex →",
+            nextIdx: 2,
+          },
+          {
+            badge: "STEP 3/3",
+            headerL: "codex / cursor / bot // NEW SESSION",
+            headerR: "HANDOFF: 0.4s",
+            body: `
+              <div><span class="t-dim">$</span> codex "pick up the Postgres pool fix I was doing in Claude"</div>
+              <div style="margin-top:8px"><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_search_knowledge("PG pool timeout")</span></div>
+              <div><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_read_agent_session(agent="claude", read_only=true)</span></div>
+              <div style="margin-top:8px"><span class="t-ok">✓ Context restored in 0.4s:</span></div>
+              <div>  1. Confirmed idle connection drop; add <span class="t-hl">pool_pre_ping=True</span></div>
+              <div>  2. <span class="t-hl">db/session.py</span> already patched — writing integration test next.</div>
+            `,
+            foot: "Seamless read-only handoff · zero knowledge-base pollution",
+            nextText: "↺ Replay Demo",
+            nextIdx: 0,
+          },
+        ],
+        band1L: "<strong>01 //</strong> MULTI-AGENT BRAIN IN A VAT ARCHITECTURE",
+        band1R: "STANDARD MCP (JSON-RPC 2.0) · ISOLATED SPACES · READ-ONLY HANDOFF",
+        topoH2: "Cure 3-day goldfish memory across every AI agent you run",
+        topoP: "AI tools trap your context inside siloed cloud accounts. Nesti runs a single local hippocampus on your machine:",
+        topoPoints: [
+          "<strong>Isolated Agent Spaces</strong>: Every connected agent gets its own dedicated sub-space — no cross-contamination.",
+          "<strong>Read-Only Session Handoff</strong>: New agents read prior sessions on demand without dumping noise into your KB.",
+          "<strong>Local Hybrid Retrieval</strong>: SQLite FTS5 full-text + vector RRF fusion, millisecond recall even offline.",
+        ],
+        svg: {
+          bot: "Chat Bots / MCP",
+          brain: "Nesti Brain",
+          local: "100% Local Disk",
+          o1t: "1s Agent Handoff",
+          o1s: "Ban-proof context",
+          o2s: "1-click office export",
+          o3t: "Knowledge Graph",
+          o3s: "Auto-linked insights",
+        },
+        band2L: "<strong>02 //</strong> FIELD CAPABILITIES · 4 TOOLS YOU ACTUALLY USE DAILY",
+        band2R: "CLICK ANY ROW TO INSPECT LIVE UI",
+        feats: [
+          {
+            num: "01",
+            name: "Ephemeral Task-Completion Capture Toast",
+            sub: "When an agent finishes a task, a non-focus-stealing toast offers 1-click distillation and vanishes in 12s.",
+            title: "NESTI CAPTURE TOAST // EPHEMERAL & NON-INTRUSIVE",
+            right: "Auto-dismiss 12s",
+            html: `
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                <span class="mock-badge" style="color:var(--signal);border-color:var(--signal)">Task Completed · Cursor</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Hover pauses timer</span>
+              </div>
+              <div style="font-weight:700;font-size:14.5px;margin-bottom:6px">Refactored Force-Directed Graph Collision Solver</div>
+              <p style="font-size:12.5px;color:var(--ink-2);margin-bottom:14px">Filtered 84% raw tool logs and distilled 2 reusable architecture notes. Save to "Agent · Cursor"?</p>
+              <div style="display:flex;gap:8px">
+                <span style="background:var(--ink);color:var(--paper);padding:6px 14px;font-family:var(--mono);font-size:11.5px;font-weight:600">✓ Save to KB</span>
+                <span style="border:1px solid var(--line-strong);padding:6px 14px;font-family:var(--mono);font-size:11.5px">Dismiss</span>
+              </div>
+            `,
+          },
+          {
+            num: "02",
+            name: "Messy Folder Sentinel + In-Place Reader",
+            sub: "Index Desktop/Downloads Word, PDF, Excel & PPT files read-only without moving a single file.",
+            title: "FOLDER SENTINEL // READ-ONLY INDEX & BUILT-IN VIEWER",
+            right: "Zero file moves",
+            html: `
+              <div class="mock-kv"><span>[PDF]  Architecture_RFC_2026.pdf</span><span style="color:var(--ok)">Read · Reveal</span></div>
+              <div class="mock-kv"><span>[WORD] Quarterly_Review_Final.docx</span><span style="color:var(--ok)">Read · Reveal</span></div>
+              <div class="mock-kv"><span>[CSV]  Benchmark_Latency_Scores.csv</span><span style="color:var(--ok)">Read · Reveal</span></div>
+              <div class="mock-kv"><span>[PPT]  Release_Deck_v3.pptx</span><span style="color:var(--ok)">Read · Reveal</span></div>
+              <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--muted)">Watches Desktop / Downloads read-only. Press Ctrl+K to search filenames &amp; preview instantly.</div>
+            `,
+          },
+          {
+            num: "03",
+            name: "1-Click Export: PDF / PPTX / DOCX / Card PNG",
+            sub: "Zero-dependency local OOXML & print-grade export with native OS Save Dialog.",
+            title: "STUDIO EXPORT // ZERO OFFICE DEPENDENCY",
+            right: "Native Save Dialog",
+            html: `
+              <div class="mock-kv"><span>01 · Summary Report (.pdf)</span><span class="mock-badge">TOC + Print Layout</span></div>
+              <div class="mock-kv"><span>02 · 16:9 Slide Deck (.pptx)</span><span class="mock-badge">Cover + Key Slides</span></div>
+              <div class="mock-kv"><span>03 · Editable Document (.docx)</span><span class="mock-badge">Pure OOXML</span></div>
+              <div class="mock-kv"><span>04 · Shareable Card (.png)</span><span class="mock-badge">High-DPI Render</span></div>
+              <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--ok)">✓ Choose any destination folder via native OS file picker</div>
+            `,
+          },
+          {
+            num: "04",
+            name: "Alt+Shift+Space Quick Capture & URL Web Clipper",
+            sub: "Global floating bar for instant notes, Ctrl+V screenshots, or paste any URL to clip clean Markdown.",
+            title: "GLOBAL QUICK CAPTURE // ALT + SHIFT + SPACE ANYWHERE",
+            right: "Ctrl+Enter saves",
+            html: `
+              <div style="border:1px solid var(--ink);padding:12px;background:var(--paper);font-family:var(--mono);font-size:12px;margin-bottom:10px">https://github.com/modelcontextprotocol/servers</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:11px;color:var(--ink-2)">
+                <span>Auto-detected URL → Clipped clean Markdown + source ref</span>
+                <span style="color:var(--ok);font-weight:700">✓ Saved</span>
+              </div>
+              <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)">Also supports instant notes and Ctrl+V clipboard screenshots attached directly to the card.</div>
+            `,
+          },
+        ],
+        band3L: "<strong>03 //</strong> DOWNLOAD &amp; INSTALL (WINDOWS / MACOS / LINUX)",
+        band3R: "RELEASE v3.0.0 · FREE FOREVER",
+        dlH2: "Pick your OS. Running locally in 3 minutes.",
+        copyBtn: "Copy",
+        copiedBtn: "✓ Copied",
+        os: {
+          win: {
+            status: "✅ Windows 10 / 11 Verified on Real Hardware",
+            beta: false,
+            title: "Windows 1-Click Portable Bundle (5.4 MB)",
+            desc: "Prebuilt frontend included. Unzip and double-click the launcher .bat to auto-setup Python + Electron + Desktop shortcut.",
+            ctaText: "⬇ Download Nesti-AI-Workspace-V3.zip",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/download/v3.0.0/Nesti-AI-Workspace-V3.zip",
+            altText: "View Release v3.0.0",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/tag/v3.0.0",
+            cmd: `# After unzipping Nesti-AI-Workspace-V3.zip:\n1. Double-click "一键启动-Nesti工作空间.bat" to launch\n2. Double-click "一键接入本机AI助手.bat" to wire local MCP\n\n# Or run from source:\ngit clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
+          },
+          mac: {
+            status: "🧪 macOS Cross-Platform Source (GitHub Actions macos-latest CI)",
+            beta: true,
+            title: "macOS (Apple Silicon / Intel) Launcher",
+            desc: "Supports native hiddenInset traffic-light titlebar, Finder reveal (open -R), Application Support agent discovery, and start-nesti.sh.",
+            ctaText: "⬇ Download v3.0.0 Source (.tar.gz)",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
+            altText: "View macOS CI",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
+            cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
+          },
+          linux: {
+            status: "🧪 Linux / Ubuntu / WSL2 Source (GitHub Actions ubuntu-latest CI)",
+            beta: true,
+            title: "Linux / WSL2 Desktop & Headless Server",
+            desc: "Supports XDG config paths, xdg-open reveal, and Unix MCP launcher. Run Electron on desktop or FastAPI + Web UI on any server/NAS.",
+            ctaText: "⬇ Download v3.0.0 Source (.tar.gz)",
+            ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
+            altText: "View Ubuntu CI",
+            altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
+            cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
+            copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
+          },
+        },
+        specs: [
+          ["Storage Engine", "100% Local SQLite + FTS5 (PostgreSQL supported)"],
+          ["Agent Protocol", "Standard MCP Server (JSON-RPC 2.0 over stdio)"],
+          ["Model Support", "OpenAI-compatible APIs (DeepSeek/OpenAI/Kimi) + Local Ollama"],
+          ["Privacy Boundary", "Zero cloud server · Keys stay in local .env · Auto-redaction"],
+          ["Customization", "Theme Studio 2.0 (6 built-in skins + AI skin generator + JSON plugins)"],
+          ["License & CI", "MIT License · Verified on Win / macOS / Ubuntu CI"],
+        ],
+        modalKicker: "✓ DOWNLOAD STARTED",
+        modalTitle: "If Nesti saved your AI context, drop a ★ Star on GitHub",
+        modalBody: "Nesti (ExplainLab V3) is <strong>100% free, local-first, and MIT open-source</strong>. Starring the repo supports indie development and keeps you posted on new releases, community theme plugins, and the upcoming <strong>Nesti 3D Desktop Pet</strong>.",
+        modalGo: "★ Star on GitHub ↗",
+        modalClose: "Maybe later",
       },
-      {
-        badge: "STEP 2/3",
-        headerL: "anthropic-api // ERROR 403",
-        headerR: "STATUS: SUSPENDED",
-        body: `
-          <div class="t-err">✖ HTTP 403 Forbidden: Your organization account has been suspended.</div>
-          <div class="t-err">✖ Claude Code session terminated. Local conversation locked.</div>
-          <div style="margin-top:10px"><span class="t-dim">--- 对比 ---</span></div>
-          <div><span class="t-err">普通用户：</span> 一周架构决策、踩坑记录全部锁死，换工具只能从零复制粘贴。</div>
-          <div><span class="t-ok">Nesti 用户：</span> 本地硬盘 <span class="t-hl">backend/data/explainlab.db</span> 完好无损（47 条核心记忆随时可调）。</div>
-        `,
-        foot: "账号没了，但你的「罐中脑」一字节都没丢",
-        nextText: "下一步：⚡ 换新 AI 1 秒接力 →",
-        nextIdx: 2,
-      },
-      {
-        badge: "STEP 3/3",
-        headerL: "codex / cursor / 大肥鱼 // NEW SESSION",
-        headerR: "HANDOFF: 0.4s",
-        body: `
-          <div><span class="t-dim">$</span> codex "接手我刚才在 Claude 那边修了一半的数据库连接池"</div>
-          <div style="margin-top:8px"><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_search_knowledge("PG 连接池超时")</span></div>
-          <div><span class="t-dim">[MCP handoff]</span> → <span class="t-hl">explainlab_read_agent_session(agent="claude", read_only=true)</span></div>
-          <div style="margin-top:8px"><span class="t-ok">✓ 已 1 秒恢复上下文：</span></div>
-          <div>  1. 已确认根因是空闲连接回收，需加 <span class="t-hl">pool_pre_ping=True</span></div>
-          <div>  2. 上一步已改完 <span class="t-hl">db/session.py</span>，接下来直接补集成测试即可！</div>
-        `,
-        foot: "无缝接力完成 · 只读接力零污染主知识库",
-        nextText: "↺ 重新演示",
-        nextIdx: 0,
-      },
-    ];
+    };
 
-    const simTabs = document.querySelectorAll(".sim-tab");
-    const simTerminal = document.getElementById("simTerminal");
-    const simStepBadge = document.getElementById("simStepBadge");
+    const ua = navigator.userAgent.toLowerCase();
+    let currentOs = ua.includes("mac") ? "mac" : ua.includes("linux") ? "linux" : "win";
+    let currentSim = 0;
+    let currentFeat = 0;
+    let currentLang = (() => {
+      try {
+        const saved = localStorage.getItem("nesti_site_lang");
+        if (saved === "zh" || saved === "en") return saved;
+      } catch {}
+      return (navigator.language || "zh").toLowerCase().startsWith("zh") ? "zh" : "en";
+    })();
 
     function renderSim(idx) {
-      const s = SIM_STATES[idx];
-      simStepBadge.textContent = s.badge;
-      simTabs.forEach((t, i) => t.classList.toggle("active", i === idx));
-      simTerminal.innerHTML = `
+      currentSim = idx;
+      const t = I18N[currentLang];
+      const s = t.simStates[idx];
+      document.getElementById("simStepBadge").textContent = s.badge;
+      document.querySelectorAll(".sim-tab").forEach((el, i) => el.classList.toggle("active", i === idx));
+      document.getElementById("simTerminal").innerHTML = `
         <div>
           <div class="term-head"><span>${s.headerL}</span><span>${s.headerR}</span></div>
           <div class="term-body">${s.body}</div>
@@ -1043,134 +1224,24 @@
       document.getElementById("simNextBtn").addEventListener("click", () => renderSim(s.nextIdx));
     }
 
-    simTabs.forEach((tab) => {
-      tab.addEventListener("click", () => renderSim(Number(tab.dataset.sim)));
-    });
-    renderSim(0);
-
-    // 3. 实景功能切换演示窗
-    const FEAT_DEMOS = [
-      {
-        title: "NESTI CAPTURE TOAST // 右下角临时悬浮窗（不常驻）",
-        right: "12s 自动消失",
-        html: `
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span class="mock-badge" style="color:var(--signal);border-color:var(--signal)">检测到新完成任务 · Cursor</span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">悬停暂停倒计时</span>
-          </div>
-          <div style="font-weight:700;font-size:14.5px;margin-bottom:6px">优化 React Flow 星图布局防重叠算法</div>
-          <p style="font-size:12.5px;color:var(--ink-2);margin-bottom:14px">已自动过滤 84% 过程日志，提炼出 2 条核心结论与代码改动要点，是否存入「Agent · Cursor」副库？</p>
-          <div style="display:flex;gap:8px">
-            <span style="background:var(--ink);color:var(--paper);padding:6px 14px;font-family:var(--mono);font-size:11.5px;font-weight:600">✓ 加入知识库</span>
-            <span style="border:1px solid var(--line-strong);padding:6px 14px;font-family:var(--mono);font-size:11.5px">忽略本次</span>
-          </div>
-        `,
-      },
-      {
-        title: "FOLDER SENTINEL // 乱文件夹只读收编 · 原位阅读",
-        right: "不移动原文件",
-        html: `
-          <div class="mock-kv"><span>[PDF]  2026高校创新大赛申报指南.pdf</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
-          <div class="mock-kv"><span>[WORD] 项目架构评审纪要_最终版.docx</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
-          <div class="mock-kv"><span>[EXCEL] 实验数据集_逐年评分表.csv</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
-          <div class="mock-kv"><span>[PPT]  阶段性进展汇报_审阅版.pptx</span><span style="color:var(--ok)">原位阅读 · 定位</span></div>
-          <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--muted)">
-            监听目录：Desktop / Downloads（只读扫描，Ctrl+K 可直接搜文件名并秒开预览）
-          </div>
-        `,
-      },
-      {
-        title: "STUDIO EXPORT // 纯本地零 Office 依赖一键出成品",
-        right: "自选保存目录",
-        html: `
-          <div class="mock-kv"><span>01 · 总结报告 PDF (.pdf)</span><span class="mock-badge">带目录与分页排版</span></div>
-          <div class="mock-kv"><span>02 · 汇报演示 PPT (.pptx)</span><span class="mock-badge">16:9 封面+要点页</span></div>
-          <div class="mock-kv"><span>03 · 可编辑 Word (.docx)</span><span class="mock-badge">原生 OOXML 格式</span></div>
-          <div class="mock-kv"><span>04 · 高清知识卡片长图 (.png)</span><span class="mock-badge">适合发群 / 朋友圈</span></div>
-          <div style="margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--ok)">
-            ✓ 点击导出即弹出系统原生「另存为」窗口，自由选择保存文件夹
-          </div>
-        `,
-      },
-      {
-        title: "GLOBAL QUICK CAPTURE // 任意软件按下 Alt + Shift + Space",
-        right: "Ctrl+Enter 秒存",
-        html: `
-          <div style="border:1px solid var(--ink);padding:12px;background:var(--paper);font-family:var(--mono);font-size:12px;margin-bottom:10px">
-            https://github.com/modelcontextprotocol/servers
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:11px;color:var(--ink-2)">
-            <span>自动识别为网页链接 → 触发「网址一键剪藏」抓正文转 Markdown</span>
-            <span style="color:var(--ok);font-weight:700">✓ 已秒存</span>
-          </div>
-          <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted)">
-            同样支持直接写灵感、Ctrl+V 粘贴剪贴板截图（自动上传为知识附件）。
-          </div>
-        `,
-      },
-    ];
-
-    const featRows = document.querySelectorAll(".feat-row");
-    const featStage = document.getElementById("featStage");
     function renderFeat(idx) {
-      const f = FEAT_DEMOS[idx];
-      featRows.forEach((r, i) => r.classList.toggle("active", i === idx));
-      featStage.innerHTML = `
+      currentFeat = idx;
+      const f = I18N[currentLang].feats[idx];
+      document.querySelectorAll(".feat-row").forEach((r, i) => r.classList.toggle("active", i === idx));
+      document.getElementById("featStage").innerHTML = `
         <div class="mock-window">
           <div class="mock-bar"><span>${f.title}</span><span>${f.right}</span></div>
           <div class="mock-body">${f.html}</div>
         </div>
       `;
     }
-    featRows.forEach((r) => r.addEventListener("click", () => renderFeat(Number(r.dataset.feat))));
-    renderFeat(0);
-
-    // 4. 全平台下载矩阵（自动识别访客系统）
-    const OS_DATA = {
-      win: {
-        status: "✅ Windows 10 / 11 真机完整验证",
-        beta: false,
-        title: "Windows 一键体验包（5.4 MB · 含国内镜像加速）",
-        desc: "已预构建前端界面与国内清华/淘宝镜像脚本，解压后双击「一键启动-Nesti工作空间.bat」自动完成安装并生成桌面快捷方式。",
-        ctaText: "⬇ 下载 Nesti-AI-Workspace-V3.zip",
-        ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/download/v3.0.0/Nesti-AI-Workspace-V3.zip",
-        altText: "查看 Release v3.0.0",
-        altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/releases/tag/v3.0.0",
-        cmd: `# 解压 Nesti-AI-Workspace-V3.zip 后：\n1. 双击「一键启动-Nesti工作空间.bat」启动原生桌面端\n2. 双击「一键接入本机AI助手.bat」自动接入本机 MCP\n\n# 或开发者源码启动：\ngit clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
-        copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git`,
-      },
-      mac: {
-        status: "🧪 macOS 源码跨平台兼容（GitHub Actions macos-latest CI）",
-        beta: true,
-        title: "macOS (Apple Silicon / Intel) 一键脚本启动",
-        desc: "已适配 macOS 原生红绿灯标题栏、Finder 文件高亮定位（open -R）、Application Support AI 助手扫描与一键启动脚本 start-nesti.sh。",
-        ctaText: "⬇ 下载 v3.0.0 源码包 (.tar.gz)",
-        ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
-        altText: "查看 macOS CI 跑测状态",
-        altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
-        cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
-        copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
-      },
-      linux: {
-        status: "🧪 Linux / Ubuntu / WSL2 源码跨平台兼容（ubuntu-latest CI）",
-        beta: true,
-        title: "Linux / WSL2 桌面端与无头 Web 服务模式",
-        desc: "已适配 XDG 配置目录、xdg-open 文件定位与 Unix MCP 入口。桌面环境可直接跑 Electron，服务器/NAS 可直接跑 FastAPI + Web 端。",
-        ctaText: "⬇ 下载 v3.0.0 源码包 (.tar.gz)",
-        ctaHref: "https://github.com/wzzwanererer-netizen/ExplainLab/archive/refs/tags/v3.0.0.tar.gz",
-        altText: "查看 Ubuntu CI 跑测状态",
-        altHref: "https://github.com/wzzwanererer-netizen/ExplainLab/actions",
-        cmd: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git\ncd ExplainLab\nchmod +x start-nesti.sh scripts/explainlab-mcp.sh\n./start-nesti.sh`,
-        copy: `git clone https://github.com/wzzwanererer-netizen/ExplainLab.git && cd ExplainLab && chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh`,
-      },
-    };
-
-    const osTabs = document.querySelectorAll(".os-tab");
-    const osPanel = document.getElementById("osPanel");
 
     function renderOs(key) {
-      const d = OS_DATA[key];
-      osTabs.forEach((t) => t.classList.toggle("active", t.dataset.os === key));
+      currentOs = key;
+      const t = I18N[currentLang];
+      const d = t.os[key];
+      document.querySelectorAll(".os-tab").forEach((el) => el.classList.toggle("active", el.dataset.os === key));
+      const osPanel = document.getElementById("osPanel");
       osPanel.innerHTML = `
         <div>
           <span class="os-status ${d.beta ? "beta" : ""}">${d.status}</span>
@@ -1182,43 +1253,110 @@
           </div>
         </div>
         <div class="cmd-box">
-          <button type="button" class="copy-btn" id="copyCmdBtn">复制命令</button>
+          <button type="button" class="copy-btn" id="copyCmdBtn">${t.copyBtn}</button>
           <pre style="white-space:pre-wrap;margin-top:6px">${d.cmd}</pre>
         </div>
       `;
       const copyBtn = document.getElementById("copyCmdBtn");
       copyBtn.addEventListener("click", () => {
         void navigator.clipboard?.writeText(d.copy);
-        copyBtn.textContent = "✓ 已复制";
-        setTimeout(() => { copyBtn.textContent = "复制命令"; }, 1600);
+        copyBtn.textContent = t.copiedBtn;
+        setTimeout(() => { copyBtn.textContent = t.copyBtn; }, 1600);
       });
       const dlTrigger = osPanel.querySelector('[data-dl-trigger="true"]');
       if (dlTrigger) {
         dlTrigger.addEventListener("click", () => {
-          setTimeout(() => {
-            document.getElementById("starBackdrop").classList.add("open");
-          }, 260);
+          setTimeout(() => document.getElementById("starBackdrop").classList.add("open"), 260);
         });
       }
     }
 
+    function applyLang(lang) {
+      currentLang = lang;
+      try { localStorage.setItem("nesti_site_lang", lang); } catch {}
+      const t = I18N[lang];
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.title = t.pageTitle;
+      document.getElementById("langToggle").textContent = t.langBtn;
+
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const k = el.getAttribute("data-i18n");
+        if (k && t[k]) el.textContent = t[k];
+      });
+
+      document.getElementById("heroTitle").innerHTML = t.heroTitle;
+      document.getElementById("heroSub").innerHTML = t.heroSub;
+      document.getElementById("proofStrip").innerHTML = t.proof
+        .map(([b, s]) => `<div><b>${b}</b>${s}</div>`)
+        .join("");
+
+      t.simTabs.forEach(([s, l], i) => {
+        document.getElementById(`simTab${i}`).innerHTML = `<span>${s}</span>${l}`;
+      });
+
+      document.getElementById("band1L").innerHTML = t.band1L;
+      document.getElementById("band2L").innerHTML = t.band2L;
+      document.getElementById("band3L").innerHTML = t.band3L;
+      document.getElementById("topoPoints").innerHTML = t.topoPoints.map((p) => `<li>${p}</li>`).join("");
+
+      document.getElementById("svgBotLabel").textContent = t.svg.bot;
+      document.getElementById("svgBrainTitle").textContent = t.svg.brain;
+      document.getElementById("svgLocalLabel").textContent = t.svg.local;
+      document.getElementById("svgOut1T").textContent = t.svg.o1t;
+      document.getElementById("svgOut1S").textContent = t.svg.o1s;
+      document.getElementById("svgOut2S").textContent = t.svg.o2s;
+      document.getElementById("svgOut3T").textContent = t.svg.o3t;
+      document.getElementById("svgOut3S").textContent = t.svg.o3s;
+
+      const featList = document.getElementById("featList");
+      featList.innerHTML = t.feats
+        .map(
+          (f, i) => `
+          <button type="button" class="feat-row ${i === currentFeat ? "active" : ""}" data-feat="${i}">
+            <span class="num">${f.num}</span>
+            <div><h3>${f.name}</h3><p>${f.sub}</p></div>
+          </button>`,
+        )
+        .join("");
+      featList.querySelectorAll(".feat-row").forEach((r) => {
+        r.addEventListener("click", () => renderFeat(Number(r.dataset.feat)));
+      });
+
+      document.getElementById("specGrid").innerHTML = t.specs
+        .map(([k, v]) => `<div class="spec-cell"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+        .join("");
+
+      document.getElementById("starModalBody").innerHTML = t.modalBody;
+
+      renderSim(currentSim);
+      renderFeat(currentFeat);
+      renderOs(currentOs);
+    }
+
+    document.getElementById("modeToggle").addEventListener("click", () => {
+      const isInk = document.documentElement.getAttribute("data-mode") === "ink";
+      document.documentElement.setAttribute("data-mode", isInk ? "paper" : "ink");
+    });
+
+    document.getElementById("langToggle").addEventListener("click", () => {
+      applyLang(currentLang === "zh" ? "en" : "zh");
+    });
+
+    document.querySelectorAll(".sim-tab").forEach((tab) => {
+      tab.addEventListener("click", () => renderSim(Number(tab.dataset.sim)));
+    });
+    document.querySelectorAll(".os-tab").forEach((tab) => {
+      tab.addEventListener("click", () => renderOs(tab.dataset.os));
+    });
+
     const starBackdrop = document.getElementById("starBackdrop");
     const closeStarModal = () => starBackdrop.classList.remove("open");
     document.getElementById("starCloseBtn").addEventListener("click", closeStarModal);
-    document.getElementById("starGoBtn").addEventListener("click", () => {
-      setTimeout(closeStarModal, 300);
-    });
-    starBackdrop.addEventListener("click", (e) => {
-      if (e.target === starBackdrop) closeStarModal();
-    });
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeStarModal();
-    });
+    document.getElementById("starGoBtn").addEventListener("click", () => setTimeout(closeStarModal, 300));
+    starBackdrop.addEventListener("click", (e) => { if (e.target === starBackdrop) closeStarModal(); });
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeStarModal(); });
 
-    osTabs.forEach((t) => t.addEventListener("click", () => renderOs(t.dataset.os)));
-    const ua = navigator.userAgent.toLowerCase();
-    const detectedOs = ua.includes("mac") ? "mac" : ua.includes("linux") ? "linux" : "win";
-    renderOs(detectedOs);
+    applyLang(currentLang);
   </script>
 </body>
 </html>
