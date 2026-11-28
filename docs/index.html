@@ -588,6 +588,63 @@
     }
     footer a:hover { color: var(--signal); text-decoration: underline; }
 
+    /* Post-download Star Gratitude Modal */
+    .star-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(18, 18, 17, 0.56);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .star-backdrop.open { display: flex; }
+    .star-modal {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      color: var(--ink);
+      border: 1.5px solid var(--ink);
+      box-shadow: 8px 8px 0 var(--ink);
+      padding: 26px 26px 22px;
+    }
+    .star-modal .m-kicker {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ok);
+      margin-bottom: 8px;
+    }
+    .star-modal h3 {
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.25;
+      margin-bottom: 10px;
+    }
+    .star-modal p {
+      font-size: 13.5px;
+      color: var(--ink-2);
+      line-height: 1.68;
+      margin-bottom: 18px;
+    }
+    .star-modal .m-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .star-modal .m-close {
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--ink-2);
+      padding: 11px 16px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .star-modal .m-close:hover { color: var(--ink); border-color: var(--ink); }
+
     @media (max-width: 900px) {
       .hero, .topo-grid, .feat-grid, .os-panel, .spec-grid {
         grid-template-columns: 1fr;
@@ -620,13 +677,11 @@
           href="https://github.com/wzzwanererer-netizen/ExplainLab"
           target="_blank"
           rel="noreferrer"
-          style="display:inline-flex;align-items:center"
+          class="mode-btn"
+          style="display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:var(--paper);border-color:var(--ink)"
+          title="点 Star 追踪 V3 更新与社区皮肤插件"
         >
-          <img
-            src="https://img.shields.io/github/stars/wzzwanererer-netizen/ExplainLab?style=flat-square&color=121211&label=STARS"
-            alt="GitHub Stars"
-            height="20"
-          />
+          <span>★ STAR ON GITHUB</span>
         </a>
         <button type="button" class="mode-btn" id="modeToggle">墨黑 / 纸白</button>
       </div>
@@ -886,6 +941,29 @@
     </footer>
   </div>
 
+  <!-- 下载后优雅弹出：顺手点颗 Star -->
+  <div class="star-backdrop" id="starBackdrop" role="dialog" aria-modal="true" aria-labelledby="starModalTitle">
+    <div class="star-modal">
+      <div class="m-kicker">✓ DOWNLOAD STARTED · 正在开始下载</div>
+      <h3 id="starModalTitle">如果它帮你的 AI 留住了记忆，顺手点颗 ★ Star 吧</h3>
+      <p>
+        Nesti (ExplainLab V3) 是 <strong>100% 本地免费开源</strong> 的独立开发作品，不卖会员、不锁数据。去 GitHub 点一颗 Star，既是对作者最大的鼓励，也能第一时间收到后续版本、社区皮肤插件和 <strong>Nesti 3D 桌宠</strong> 的开源更新通知！
+      </p>
+      <div class="m-actions">
+        <a
+          class="btn primary"
+          href="https://github.com/wzzwanererer-netizen/ExplainLab"
+          target="_blank"
+          rel="noreferrer"
+          id="starGoBtn"
+        >
+          ★ 去 GitHub 点一颗 Star ↗
+        </a>
+        <button type="button" class="m-close" id="starCloseBtn">稍后再说</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // 1. 纸白 / 墨黑 极简切换
     const modeBtn = document.getElementById("modeToggle");
@@ -1099,7 +1177,7 @@
           <h3>${d.title}</h3>
           <p>${d.desc}</p>
           <div class="cta-group">
-            <a class="btn primary" href="${d.ctaHref}">${d.ctaText}</a>
+            <a class="btn primary" data-dl-trigger="true" href="${d.ctaHref}">${d.ctaText}</a>
             <a class="btn" href="${d.altHref}" target="_blank" rel="noreferrer">${d.altText} ↗</a>
           </div>
         </div>
@@ -1114,7 +1192,28 @@
         copyBtn.textContent = "✓ 已复制";
         setTimeout(() => { copyBtn.textContent = "复制命令"; }, 1600);
       });
+      const dlTrigger = osPanel.querySelector('[data-dl-trigger="true"]');
+      if (dlTrigger) {
+        dlTrigger.addEventListener("click", () => {
+          setTimeout(() => {
+            document.getElementById("starBackdrop").classList.add("open");
+          }, 260);
+        });
+      }
     }
+
+    const starBackdrop = document.getElementById("starBackdrop");
+    const closeStarModal = () => starBackdrop.classList.remove("open");
+    document.getElementById("starCloseBtn").addEventListener("click", closeStarModal);
+    document.getElementById("starGoBtn").addEventListener("click", () => {
+      setTimeout(closeStarModal, 300);
+    });
+    starBackdrop.addEventListener("click", (e) => {
+      if (e.target === starBackdrop) closeStarModal();
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeStarModal();
+    });
 
     osTabs.forEach((t) => t.addEventListener("click", () => renderOs(t.dataset.os)));
     const ua = navigator.userAgent.toLowerCase();
