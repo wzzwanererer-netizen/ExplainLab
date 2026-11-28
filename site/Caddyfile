@@ -1,0 +1,6 @@
+# 把 your-domain.com 换成你解析到 BWG VPS 的域名，Caddy 会自动申请并续期 HTTPS 证书
+your-domain.com {
+    root * /var/www/nesti
+    encode zstd gzip
+    file_server
+}

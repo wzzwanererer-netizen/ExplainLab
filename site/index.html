@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="zh-CN" data-skin="nesti-fluent">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nesti (ExplainLab V3) — 多 Agent 共享「罐中脑」· Claude 封号也能 1 秒无缝衔接</title>
+  <meta
+    name="description"
+    content="给电脑里所有 AI 助手（Claude Code / Cursor / Codex / Trae / CodeBuddy / 大肥鱼等 22 款）装上同一个 100% 本地开源的长期记忆「罐中脑」。账号被封、切换工具也不丢上下文，永久开源免费。"
+  />
+  <link rel="icon" href="./nesti-logo.png" type="image/png" />
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --surface: #ffffff;
+      --surface-2: #eef3fb;
+      --text: #151c2c;
+      --text-2: #4b5870;
+      --muted: #7b889f;
+      --accent: #2f6ae0;
+      --accent-soft: rgba(47, 106, 224, 0.1);
+      --border: rgba(21, 28, 44, 0.1);
+      --border-strong: rgba(21, 28, 44, 0.18);
+      --danger: #d63e4f;
+      --ok: #0e9f75;
+      --radius: 14px;
+      --font: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+      --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    }
+
+    html[data-skin="noir-gold"] {
+      --bg: #11100e;
+      --surface: #1a1815;
+      --surface-2: #221f1b;
+      --text: #f3ece0;
+      --text-2: #b9ae9c;
+      --muted: #827868;
+      --accent: #d4a853;
+      --accent-soft: rgba(212, 168, 83, 0.14);
+      --border: rgba(212, 168, 83, 0.18);
+      --border-strong: rgba(212, 168, 83, 0.36);
+      --danger: #e26d6d;
+      --ok: #52c997;
+    }
+
+    html[data-skin="cyber-neon"] {
+      --bg: #050914;
+      --surface: #0b1328;
+      --surface-2: #101c38;
+      --text: #e6f7ff;
+      --text-2: #8fb4d4;
+      --muted: #587899;
+      --accent: #00e5ff;
+      --accent-soft: rgba(0, 229, 255, 0.14);
+      --border: rgba(0, 229, 255, 0.2);
+      --border-strong: rgba(0, 229, 255, 0.42);
+      --danger: #ff3b7f;
+      --ok: #22ffa8;
+      --radius: 6px;
+    }
+
+    html[data-skin="vintage-library"] {
+      --bg: #f3ecde;
+      --surface: #fbf7ef;
+      --surface-2: #ece2cf;
+      --text: #2b2118;
+      --text-2: #5d4c3b;
+      --muted: #897661;
+      --accent: #8c3228;
+      --accent-soft: rgba(140, 50, 40, 0.1);
+      --border: rgba(92, 68, 42, 0.18);
+      --border-strong: rgba(92, 68, 42, 0.34);
+      --danger: #9e2a2b;
+      --ok: #2f6f4e;
+      --font: "Georgia", "Songti SC", "STSong", "Noto Serif SC", "Microsoft YaHei UI", serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.65;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    a { color: inherit; text-decoration: none; }
+
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+
+    /* Top Navigation */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .brand img { width: 28px; height: 28px; border-radius: 7px; }
+    .brand small {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 13px;
+      color: var(--text-2);
+    }
+    .nav-links a:hover { color: var(--accent); }
+    .skin-pills {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+    }
+    .skin-pills button {
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      font-size: 11px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .skin-pills button.active {
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 600;
+    }
+    html[data-skin="cyber-neon"] .skin-pills button.active,
+    html[data-skin="noir-gold"] .skin-pills button.active {
+      color: #0b101c;
+    }
+
+    /* Hero */
+    .hero { padding: 68px 0 48px; }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+    .pill.neutral {
+      background: var(--surface);
+      color: var(--text-2);
+      border-color: var(--border);
+      font-weight: 500;
+    }
+    h1 {
+      font-size: clamp(30px, 4.6vw, 48px);
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      max-width: 820px;
+    }
+    h1 .hl { color: var(--accent); }
+    .lead {
+      margin-top: 18px;
+      font-size: 16.5px;
+      color: var(--text-2);
+      max-width: 720px;
+    }
+    .cta-row {
+      margin-top: 28px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.12s ease, border-color 0.15s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: var(--accent); }
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    html[data-skin="cyber-neon"] .btn.primary,
+    html[data-skin="noir-gold"] .btn.primary { color: #0b101c; }
+    .sub-note {
+      margin-top: 12px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+
+    /* Killer Scenario Box: Claude 封号无缝衔接 */
+    .scenario-card {
+      margin-top: 42px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 26px;
+    }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .scenario-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+    }
+    .step-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 16px;
+    }
+    .step-box .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+    }
+    .tag.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+    .tag.core { background: var(--accent-soft); color: var(--accent); }
+    .tag.good { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+    .step-box h3 { font-size: 15px; margin-bottom: 6px; }
+    .step-box p { font-size: 13px; color: var(--text-2); }
+
+    /* Sections */
+    section { padding: 42px 0; }
+    .sec-title {
+      font-size: 24px;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+    }
+    .sec-desc {
+      font-size: 14.5px;
+      color: var(--text-2);
+      max-width: 680px;
+      margin-bottom: 24px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card h3 { font-size: 16px; }
+    .card p { font-size: 13.5px; color: var(--text-2); }
+    .card .meta {
+      margin-top: auto;
+      padding-top: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--accent);
+    }
+
+    /* Agent Matrix */
+    .agent-wall {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .agent-chip {
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .agent-chip.hot {
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Quick Start */
+    .code-box {
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      overflow-x: auto;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    /* FAQ */
+    .faq-list { display: grid; gap: 12px; }
+    .faq-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+    .faq-item h4 { font-size: 14.5px; margin-bottom: 6px; }
+    .faq-item p { font-size: 13.5px; color: var(--text-2); }
+
+    footer {
+      margin-top: 32px;
+      padding: 28px 0 44px;
+      border-top: 1px solid var(--border);
+      font-size: 12.5px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    @media (max-width: 720px) {
+      .nav-links { display: none; }
+      .hero { padding-top: 42px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#">
+        <img src="./nesti-logo.png" alt="Nesti" />
+        <span>Nesti · ExplainLab <small>v3.0</small></span>
+      </a>
+      <nav class="nav-links">
+        <a href="#handoff">封号无缝衔接</a>
+        <a href="#brain">多 Agent 罐中脑</a>
+        <a href="#features">核心能力</a>
+        <a href="#download">快速上手</a>
+      </nav>
+      <div class="skin-pills" role="group" aria-label="切换页面皮肤预览">
+        <button type="button" class="active" data-set-skin="nesti-fluent">默认</button>
+        <button type="button" data-set-skin="noir-gold">黑金</button>
+        <button type="button" data-set-skin="cyber-neon">赛博</button>
+        <button type="button" data-set-skin="vintage-library">书房</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="badge-row">
+        <span class="pill">MIT 开源免费 · 100% 本地隐私</span>
+        <span class="pill neutral">支持 22 款主流 AI 助手</span>
+        <span class="pill neutral">Windows 原生桌面端</span>
+      </div>
+
+      <h1>
+        AI 只是打工的，记忆必须留在你自己硬盘里。<br />
+        给所有 AI 装上同一个本地<span class="hl">「罐中脑」</span>。
+      </h1>
+
+      <p class="lead">
+        治好「大肥鱼 / AI 助手」三天就失忆的金鱼脑；就算 <strong>Claude 突然封号、额度用光、临时换 Cursor / Codex / Trae / DeepSeek</strong>，新助手接上 Nesti 罐中脑，<strong>1 秒读懂你之前干到哪一步、踩过什么坑</strong>，完全不用从头复述。
+      </p>
+
+      <div class="cta-row" id="download">
+        <a
+          class="btn primary"
+          href="https://github.com/wzzwanererer-netizen/ExplainLab/releases/download/v3.0.0/Nesti-AI-Workspace-V3.zip"
+        >
+          下载 Windows 一键体验包 (v3.0 · 5.4MB)
+        </a>
+        <a
+          class="btn"
+          href="https://github.com/wzzwanererer-netizen/ExplainLab"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub 开源仓库 · Star
+        </a>
+        <a
+          class="btn"
+          href="https://www.bilibili.com/video/BV1dgykzrE7h/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          观看 B 站实机演示
+        </a>
+      </div>
+      <p class="sub-note">
+        解压双击 <code>一键启动-Nesti工作空间.bat</code> 即可运行（已内置国内清华源与淘宝镜像加速，零云端账号，数据全存本地 SQLite）。
+      </p>
+
+      <!-- 核心引流卖点 1：Claude 封号无缝衔接 -->
+      <div class="scenario-card" id="handoff">
+        <div class="eyebrow">ZERO LOCK-IN · 防封号 · 防失忆 · 跨工具接力</div>
+        <h2 style="font-size: 20px;">Claude 突然封号 / 限流了？换个 AI 助手 1 秒接着干</h2>
+        <div class="scenario-grid">
+          <div class="step-box">
+            <span class="tag bad">痛点现场</span>
+            <h3>以前：号没了 = 脑子没了</h3>
+            <p>
+              在 Claude Code 或某个 AI 工具里调了一周的架构、踩了一堆坑，突然封号/限流/换电脑，换到 Cursor 或 Codex 还得从零复制粘贴半小时上下文。
+            </p>
+          </div>
+          <div class="step-box">
+            <span class="tag core">Nesti 罐中脑</span>
+            <h3>平时：自动沉淀到本地副库</h3>
+            <p>
+              每个 AI 助手通过标准 MCP 协议接入本地 Nesti，完成任务时右下角自动弹窗提醒入库，也能只读扫描本机历史对话，所有结论与架构决策 100% 落在你硬盘里。
+            </p>
+          </div>
+          <div class="step-box">
+            <span class="tag good">无缝接力</span>
+            <h3>换工具：新 AI 1 秒接手上下文</h3>
+            <p>
+              打开任意新助手（Codex / Trae / CodeBuddy / Qoder / Kimi），说一句「读取我刚在 Claude 那边的进度」，通过只读接力工具 1 秒恢复现场，零污染知识库。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 核心引流卖点 2：大肥鱼 / 22 款 AI 助手统一罐中脑 -->
+    <section id="brain">
+      <div class="eyebrow">BRAIN IN A VAT · 22 款主流 AI 统一海马体</div>
+      <h2 class="sec-title">不管是写代码的 Agent，还是养在群里的「大肥鱼」，都能共用一颗脑子</h2>
+      <p class="sec-desc">
+        告别每个软件各自为战的短期记忆。Nesti 内置标准 MCP Server（JSON-RPC 2.0 over stdio），每个接入的 Agent 自动获得专属隔离副库，既不互相污染，又能在全局知识星图里联合检索。
+      </p>
+
+      <div class="agent-wall">
+        <span class="agent-chip hot">Claude Code</span>
+        <span class="agent-chip hot">Cursor</span>
+        <span class="agent-chip hot">OpenAI Codex</span>
+        <span class="agent-chip hot">Antigravity</span>
+        <span class="agent-chip hot">Trae / Trae CN</span>
+        <span class="agent-chip hot">CodeBuddy / WorkBuddy</span>
+        <span class="agent-chip">Qoder</span>
+        <span class="agent-chip">GitHub Copilot</span>
+        <span class="agent-chip">Windsurf</span>
+        <span class="agent-chip">Cline / Roo Code</span>
+        <span class="agent-chip">Kimi Code / 办公</span>
+        <span class="agent-chip">豆包工作</span>
+        <span class="agent-chip">千问办公 / QwenWork</span>
+        <span class="agent-chip">DSH / DeepSeek</span>
+        <span class="agent-chip">OpenCode / Hermes / ZCode</span>
+        <span class="agent-chip hot">任意支持 MCP 的 Bot / 大肥鱼</span>
+      </div>
+    </section>
+
+    <!-- 核心实用能力 -->
+    <section id="features">
+      <div class="eyebrow">EVERYDAY PRODUCTIVITY · 真正每天用得上的硬核功能</div>
+      <h2 class="sec-title">不只是记忆库，更是本地隐私的个人效率中枢</h2>
+      <p class="sec-desc">所有重度痛点一次解决：收资料、找文件、做总结、防失忆，全部本地闭环运行。</p>
+
+      <div class="grid-3">
+        <article class="card">
+          <h3>任务完成自动弹窗 · 零打扰吸尘</h3>
+          <p>
+            本机 AI 助手刚干完一个活，屏幕右下角轻柔滑出临时悬浮窗问你「存入知识库 / 忽略」，不抢焦点，不点 12 秒自动消失，绝不常驻桌面碍眼。
+          </p>
+          <span class="meta">45s 静默防误触 · 支持自选对话精准提炼</span>
+        </article>
+
+        <article class="card">
+          <h3>乱文件夹哨兵 + 文件原位阅读</h3>
+          <p>
+            桌面和下载目录堆了几百个 Word / PDF / Excel / PPT？只读一键收编进本地文件库，绝不挪动原文件，软件内直接原位阅读，右键一键在资源管理器定位。
+          </p>
+          <span class="meta">不改原文件 · Ctrl+K 跨知识与文件名秒搜</span>
+        </article>
+
+        <article class="card">
+          <h3>一键生成 PDF / PPT / Word / 知识长图</h3>
+          <p>
+            纯本地零 Office 依赖生成：选中整个专题或单条笔记，自选保存目录，一键输出排版精美的总结报告 PDF、16:9 汇报 PPT、可编辑 Word 或高清知识长图。
+          </p>
+          <span class="meta">直接交汇报 / 发朋友圈 / 发团队群</span>
+        </article>
+
+        <article class="card">
+          <h3>Alt+Shift+Space 全局闪记 &amp; 网址剪藏</h3>
+          <p>
+            在任何软件里按下快捷键呼出极简输入条：记灵感、Ctrl+V 贴截图秒存附件；如果贴入文章/GitHub 链接，自动抓取正文剥离广告，生成干净 Markdown 卡片。
+          </p>
+          <span class="meta">全局热键 · 支持多选卡片批量生效/移动/删除</span>
+        </article>
+
+        <article class="card">
+          <h3>本地混合检索 + 知识星图</h3>
+          <p>
+            SQLite FTS5 全文检索 + 语义向量 RRF 融合排序，支持 DeepSeek、通义千问、智谱、Kimi、SiliconFlow 以及本机免费离线 Ollama，断网也能查知识。
+          </p>
+          <span class="meta">多色 Agent 星图聚类 · 点击跨库高亮定位</span>
+        </article>
+
+        <article class="card">
+          <h3>可扩展 UI 风格插件（含 AI 造皮肤）</h3>
+          <p>
+            不强绑单一风格：内置 6 套整站皮肤，支持用 AI 一句话生成专属皮肤、零代码可视化捏皮肤，并导出 <code>.nesti-style.json</code> 分享给朋友。
+          </p>
+          <span class="meta">试试本页右上角切换风格预览</span>
+        </article>
+      </div>
+    </section>
+
+    <!-- 3 步快速开始 -->
+    <section>
+      <div class="eyebrow">QUICK START · 3 分钟本地跑起来</div>
+      <h2 class="sec-title">源码运行或一键体验包，任选其一</h2>
+      <div class="code-box">
+# 方式 1（小白推荐）：下载上方 Nesti-AI-Workspace-V3.zip 解压<br />
+# 双击「一键启动-Nesti工作空间.bat」自动通过国内镜像装好并启动<br />
+# 双击「一键接入本机AI助手.bat」自动把本机 AI 助手接入共享记忆<br /><br />
+# 方式 2（开发者源码运行）：<br />
+git clone https://github.com/wzzwanererer-netizen/ExplainLab.git<br />
+cd ExplainLab &amp;&amp; uv sync --locked<br />
+cd backend &amp;&amp; uv run alembic upgrade head &amp;&amp; cd ..<br />
+cd frontend &amp;&amp; npm ci &amp;&amp; npm run build &amp;&amp; cd ../desktop &amp;&amp; npm ci &amp;&amp; npm start
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section>
+      <div class="eyebrow">FAQ · 大家最关心的 3 个问题</div>
+      <h2 class="sec-title">隐私、费用与模型配置</h2>
+      <div class="faq-list">
+        <div class="faq-item">
+          <h4>1. 我的聊天记录和文件会上传到作者服务器吗？</h4>
+          <p>完全不会。Nesti / ExplainLab 是 100% 本地开源软件，没有任何官方云端服务器，所有数据库、附件和 API Key 都在你自己的硬盘里，代码在 GitHub 完全透明可审计。</p>
+        </div>
+        <div class="faq-item">
+          <h4>2. 不买 API Key 能用吗？</h4>
+          <p>可以！新建笔记、网址剪藏、文件库原位阅读、乱文件夹哨兵、一键出 PDF/PPT/Word、全局闪记、知识星图、6 套皮肤全部免费离线可用；如需 AI 对话与自动提炼，可在软件「模型与 Key 设置」填入 DeepSeek 或直接连本机免费的 Ollama。</p>
+        </div>
+        <div class="faq-item">
+          <h4>3. Claude 封号后，具体怎么把记忆接给 Cursor / Codex？</h4>
+          <p>因为平时对话结论已沉淀在 Nesti 本地副库里，新工具安装后双击「一键接入本机AI助手.bat」挂上 MCP，直接让新助手调用 Nesti 检索或只读接力工具，1 秒就能拿到之前完整的架构决策与进度。</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Nesti · AI 工作空间（ExplainLab V3） · MIT License 开源项目</span>
+      <span>
+        <a href="https://github.com/wzzwanererer-netizen/ExplainLab" target="_blank" rel="noreferrer">GitHub</a>
+        &nbsp;·&nbsp;
+        <a href="https://github.com/wzzwanererer-netizen/ExplainLab/releases/tag/v3.0.0" target="_blank" rel="noreferrer">Release v3.0.0</a>
+      </span>
+    </footer>
+  </main>
+
+  <script>
+    const buttons = document.querySelectorAll("[data-set-skin]");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const skin = btn.getAttribute("data-set-skin");
+        document.documentElement.setAttribute("data-skin", skin);
+        buttons.forEach((b) => b.classList.toggle("active", b === btn));
+      });
+    });
+  </script>
+</body>
+</html>
