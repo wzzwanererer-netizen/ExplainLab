@@ -50,5 +50,6 @@ release/
 *.zip
 *.sha256
 *.bak*
+dist-share/
 video-studio/
 frontend/dist-qoder-sites/

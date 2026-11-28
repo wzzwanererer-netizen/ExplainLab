@@ -394,3 +394,198 @@ export interface MarkdownImportReport {
   }[];
   index_sync?: string;
 }
+
+export interface SandboxResponse {
+  item_id: string;
+  exists: boolean;
+  html: string | null;
+  updated_at: string | null;
+}
+
+export interface AgentStatus {
+  id: string;
+  name: string;
+  description: string;
+  space_name: string;
+  space_id: string | null;
+  installed: boolean;
+  connected: boolean;
+  item_count: number;
+  session_dir: string | null;
+  session_files_count: number;
+  unprocessed_count: number;
+  rule_installed: boolean;
+  last_vacuum_at: string | null;
+  is_custom: boolean;
+}
+
+export interface AgentAddInput {
+  name: string;
+  description?: string | null;
+  session_dir?: string | null;
+  write_rule?: boolean;
+}
+
+export interface SessionFilePreview {
+  file_path: string;
+  label: string;
+  preview: string;
+  updated_at: string;
+  size_kb: number;
+  processed: boolean;
+  created_count: number;
+}
+
+export interface VacuumCreatedItem {
+  id: string;
+  agent_name: string;
+  space_id: string;
+  title: string;
+  source_file: string;
+}
+
+export interface VacuumReport {
+  scanned_sessions: number;
+  skipped_sessions: number;
+  created_items: VacuumCreatedItem[];
+  errors: string[];
+}
+
+export interface MediaItem {
+  id: string;
+  item_id: string;
+  filename: string;
+  kind: "image" | "audio" | "video" | "pdf" | "word" | "excel" | "ppt" | "file" | string;
+  mime: string;
+  size_bytes: number;
+  url: string;
+  created_at: string;
+}
+
+export interface LibraryMediaItem extends MediaItem {
+  item_title: string;
+  space_id: string | null;
+  space_name: string | null;
+}
+
+export interface DocPreviewWordBlock {
+  type: "heading" | "paragraph" | "table" | "image";
+  level?: number;
+  text?: string;
+  rows?: string[][];
+  src?: string;
+}
+
+export interface DocPreviewExcelSheet {
+  name: string;
+  rows: string[][];
+  total_rows: number;
+  truncated: boolean;
+}
+
+export interface DocPreviewPptSlide {
+  index: number;
+  title: string;
+  bullets: string[];
+  tables: string[][][];
+  images: string[];
+  notes: string;
+}
+
+export interface DocPreviewZipEntry {
+  name: string;
+  size_bytes: number;
+  compressed_bytes: number;
+  is_dir: boolean;
+}
+
+export interface DocPreviewResponse {
+  kind: string;
+  stream_url?: string;
+  warning?: string;
+  blocks?: DocPreviewWordBlock[];
+  sheets?: DocPreviewExcelSheet[];
+  slides?: DocPreviewPptSlide[];
+  entries?: DocPreviewZipEntry[];
+  total_entries?: number;
+  total_size_bytes?: number;
+  truncated?: boolean;
+  html?: string;
+  language?: string;
+  text?: string;
+}
+
+export interface FolderPreset {
+  label: string;
+  path: string;
+}
+
+export interface WatchedFolder {
+  id: string;
+  name: string;
+  path: string;
+  space_id: string;
+  space_name: string;
+  enabled: boolean;
+  use_ai_summary: boolean;
+  file_count: number;
+  indexed_count: number;
+  last_scan_at: string | null;
+  created_at: string;
+}
+
+export interface FolderScanReport {
+  folder_id: string;
+  scanned_files: number;
+  skipped_files: number;
+  created_items: {
+    id: string;
+    title: string;
+    file_path: string;
+    kind: string;
+  }[];
+  errors: string[];
+}
+
+export interface ModelSettings {
+  model_provider: string | null;
+  model_base_url: string | null;
+  model_name: string | null;
+  model_api_key_set: boolean;
+  model_api_key_masked: string | null;
+  embed_base_url: string | null;
+  embed_model: string | null;
+  embed_api_key_set: boolean;
+  embed_api_key_masked: string | null;
+  env_file: string;
+}
+
+export interface ModelSettingsUpdateInput {
+  model_base_url?: string | null;
+  model_name?: string | null;
+  model_api_key?: string | null;
+  clear_model_api_key?: boolean;
+  embed_base_url?: string | null;
+  embed_model?: string | null;
+  embed_api_key?: string | null;
+  clear_embed_api_key?: boolean;
+}
+
+export interface ModelTestResult {
+  ok: boolean;
+  latency_ms: number;
+  error_code?: string | null;
+  message: string;
+}
+
+export interface CompletedTaskSuggestion {
+  suggestion_id: string;
+  agent_id: string;
+  agent_name: string;
+  space_id: string | null;
+  file_path: string;
+  signature: string;
+  label: string;
+  preview: string;
+  updated_at: string;
+}

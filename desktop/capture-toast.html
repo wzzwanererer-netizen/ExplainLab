@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ExplainLab 任务入库提醒</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
+      user-select: none;
+    }
+    .wrap {
+      padding: 8px;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: flex-end;
+    }
+    .card {
+      position: relative;
+      width: 100%;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
+      padding: 13px 14px 14px;
+      color: #0f172a;
+      overflow: hidden;
+      animation: slideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    body.dark .card {
+      background: rgba(20, 27, 40, 0.96);
+      border-color: rgba(148, 163, 184, 0.22);
+      color: #f1f5f9;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.48);
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(14px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .badge-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+    .logo {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      background: linear-gradient(145deg, #2563eb, #60a5fa);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .agent-pill {
+      font-size: 11px;
+      font-weight: 600;
+      color: #2563eb;
+      background: rgba(37, 99, 235, 0.1);
+      padding: 2px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    body.dark .agent-pill {
+      color: #93c5fd;
+      background: rgba(59, 130, 246, 0.2);
+    }
+    .subtitle {
+      font-size: 11px;
+      color: #64748b;
+      white-space: nowrap;
+    }
+    body.dark .subtitle { color: #94a3b8; }
+    .close-btn {
+      width: 22px;
+      height: 22px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .close-btn:hover { background: rgba(100, 116, 139, 0.15); }
+    .title {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .preview {
+      font-size: 11.5px;
+      color: #475569;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 32px;
+    }
+    body.dark .preview { color: #cbd5e1; }
+    .actions {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.55; cursor: default; }
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+      flex: 1;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.92; }
+    .btn-ghost {
+      background: rgba(100, 116, 139, 0.12);
+      color: #334155;
+    }
+    body.dark .btn-ghost {
+      background: rgba(148, 163, 184, 0.16);
+      color: #e2e8f0;
+    }
+    .btn-ghost:hover:not(:disabled) { background: rgba(100, 116, 139, 0.2); }
+    .timer-hint {
+      font-size: 10.5px;
+      color: #94a3b8;
+      margin-left: auto;
+      white-space: nowrap;
+    }
+    .progress-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: rgba(148, 163, 184, 0.18);
+    }
+    .progress-bar {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #2563eb, #60a5fa);
+      transform-origin: left center;
+      transition: width 0.1s linear;
+    }
+    .status-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: #059669;
+    }
+    body.dark .status-text { color: #34d399; }
+    .status-err { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="card" class="card">
+      <div class="header">
+        <div class="badge-row">
+          <img src="./nesti-logo.png" alt="Nesti" style="width:20px;height:20px;border-radius:5px;flex-shrink:0;object-fit:contain" />
+          <span id="agentPill" class="agent-pill">AI 助手</span>
+          <span class="subtitle">刚完成一项任务</span>
+        </div>
+        <button id="closeBtn" class="close-btn" title="关闭">×</button>
+      </div>
+      <div id="title" class="title">检测到新完成的任务</div>
+      <div id="preview" class="preview">是否提炼核心结论并收入 ExplainLab 知识库？</div>
+      <div id="actions" class="actions">
+        <button id="acceptBtn" class="btn btn-primary">加入知识库</button>
+        <button id="dismissBtn" class="btn btn-ghost">不加入</button>
+        <span id="timerHint" class="timer-hint">12s</span>
+      </div>
+      <div class="progress-track">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DURATION_MS = 12000;
+    let payload = null;
+    let remainingMs = DURATION_MS;
+    let paused = false;
+    let busy = false;
+    let done = false;
+    let timer = null;
+
+    const card = document.getElementById("card");
+    const agentPill = document.getElementById("agentPill");
+    const titleEl = document.getElementById("title");
+    const previewEl = document.getElementById("preview");
+    const actionsEl = document.getElementById("actions");
+    const acceptBtn = document.getElementById("acceptBtn");
+    const dismissBtn = document.getElementById("dismissBtn");
+    const closeBtn = document.getElementById("closeBtn");
+    const timerHint = document.getElementById("timerHint");
+    const progressBar = document.getElementById("progressBar");
+
+    card.addEventListener("mouseenter", () => { paused = true; });
+    card.addEventListener("mouseleave", () => { paused = false; });
+
+    function startCountdown(ms) {
+      if (timer) clearInterval(timer);
+      remainingMs = ms;
+      const total = ms;
+      timer = setInterval(() => {
+        if (paused || busy) return;
+        remainingMs -= 100;
+        const ratio = Math.max(0, remainingMs / total);
+        progressBar.style.width = `${ratio * 100}%`;
+        if (timerHint) timerHint.textContent = `${Math.ceil(remainingMs / 1000)}s`;
+        if (remainingMs <= 0) {
+          clearInterval(timer);
+          if (payload && !done) {
+            window.captureToastApi.dismiss(payload);
+          } else {
+            window.captureToastApi.close();
+          }
+        }
+      }, 100);
+    }
+
+    window.captureToastApi.onInit((data) => {
+      payload = data.suggestion;
+      if (data.theme === "dark") document.body.classList.add("dark");
+      else document.body.classList.remove("dark");
+      agentPill.textContent = payload.agent_name || "AI 助手";
+      titleEl.textContent = payload.label || "新完成的对话任务";
+      previewEl.textContent = payload.preview || "点击「加入知识库」将自动提炼核心结论并归档。";
+      startCountdown(DURATION_MS);
+    });
+
+    acceptBtn.addEventListener("click", () => {
+      if (!payload || busy) return;
+      busy = true;
+      acceptBtn.disabled = true;
+      dismissBtn.disabled = true;
+      acceptBtn.textContent = "正在提炼入库…";
+      timerHint.textContent = "";
+      window.captureToastApi.accept(payload);
+    });
+
+    dismissBtn.addEventListener("click", () => {
+      if (payload) window.captureToastApi.dismiss(payload);
+      else window.captureToastApi.close();
+    });
+
+    closeBtn.addEventListener("click", () => {
+      if (payload && !done) window.captureToastApi.dismiss(payload);
+      else window.captureToastApi.close();
+    });
+
+    window.captureToastApi.onResult((res) => {
+      busy = false;
+      done = true;
+      if (res.ok) {
+        const cnt = res.createdCount || 0;
+        actionsEl.innerHTML = cnt > 0
+          ? `<span class="status-text">已入库 ${cnt} 条知识</span><button id="viewBtn" class="btn btn-ghost" style="margin-left:auto">去查看</button>`
+          : `<span class="status-text">已扫描（内容为闲聊或已存在）</span>`;
+        const viewBtn = document.getElementById("viewBtn");
+        if (viewBtn) {
+          viewBtn.addEventListener("click", () => {
+            window.captureToastApi.openSpace(res.spaceId || (payload && payload.space_id) || "");
+          });
+        }
+      } else {
+        actionsEl.innerHTML = `<span class="status-text status-err">入库失败：${res.error || "请检查模型配置"}</span>`;
+      }
+      startCountdown(3200);
+    });
+  </script>
+</body>
+</html>

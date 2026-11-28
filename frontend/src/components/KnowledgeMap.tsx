@@ -99,11 +99,46 @@ const nodeTypes = { knowledge: KnowledgeNode };
 
 const ALL_RELATIONS = Object.keys(RELATION_LABEL) as RelationType[];
 
+const FALLBACK_SPACE_COLORS = [
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#f97316",
+  "#6366f1",
+];
+
+function spaceColorFor(space: Space | undefined): string {
+  if (!space) return "#3b74e8";
+  if (space.kind === "personal") return "#3b74e8";
+  const name = space.name.toLowerCase();
+  if (name.includes("antigravity")) return "#0ea5e9";
+  if (name.includes("codex")) return "#10b981";
+  if (name.includes("dsh")) return "#f59e0b";
+  if (name.includes("qoder")) return "#8b5cf6";
+  if (name.includes("claude")) return "#f97316";
+  if (name.includes("cursor")) return "#06b6d4";
+  if (name.includes("trae")) return "#14b8a6";
+  if (name.includes("pet") || name.includes("nesti")) return "#ec4899";
+  if (name.includes("文件夹")) return "#64748b";
+  let h = 0;
+  for (let i = 0; i < space.id.length; i += 1) {
+    h = (h * 31 + space.id.charCodeAt(i)) >>> 0;
+  }
+  return FALLBACK_SPACE_COLORS[h % FALLBACK_SPACE_COLORS.length];
+}
+
+interface KnowledgeMapProps {
+  onLocateInKnowledge?: (spaceId: string | null | undefined, itemId: string) => void;
+}
+
 /**
  * 知识地图：默认 Obsidian 风格力导向星图（支持悬停聚光灯、物理拖拽、局部 1/2 跳图谱、
  * 关系筛选、物理参数调节），并保留 ELK 层级视图切换；点击节点打开右侧治理详情。
  */
-export function KnowledgeMap() {
+export function KnowledgeMap({ onLocateInKnowledge }: KnowledgeMapProps = {}) {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [spaceId, setSpaceId] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -269,6 +304,44 @@ export function KnowledgeMap() {
   const toggleRelation = (type: RelationType) => {
     setEnabledRelations((prev) => ({ ...prev, [type]: !prev[type] }));
   };
+
+  const spaceById = useMemo(
+    () => new Map(spaces.map((s) => [s.id, s])),
+    [spaces],
+  );
+
+  const nodeColors = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!rawGraph) return map;
+    for (const n of rawGraph.nodes) {
+      const sp = n.space_id ? spaceById.get(n.space_id) : undefined;
+      map.set(n.id, spaceColorFor(sp));
+    }
+    return map;
+  }, [rawGraph, spaceById]);
+
+  const activeSpaceLegend = useMemo(() => {
+    if (!rawGraph) return [];
+    const counts = new Map<string, number>();
+    for (const n of rawGraph.nodes) {
+      const key = n.space_id ?? "__personal__";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([key, count]) => {
+        const sp =
+          key === "__personal__"
+            ? spaces.find((s) => s.kind === "personal")
+            : spaceById.get(key);
+        return {
+          key,
+          label: sp ? sp.name.replace(/^Agent\s*·\s*/i, "") : "个人总知识库",
+          color: spaceColorFor(sp),
+          count,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+  }, [rawGraph, spaces, spaceById]);
 
   const totalNodes = elements.nodes.length;
   const totalEdges = elements.edges.length;
@@ -492,6 +565,7 @@ export function KnowledgeMap() {
             <ObsidianGraphCanvas
               elements={elements}
               edgeTypes={edgeTypes}
+              nodeColors={nodeColors}
               selectedId={selectedId}
               searchQuery={searchQuery}
               config={forceConfig}
@@ -593,6 +667,39 @@ export function KnowledgeMap() {
                       })}
                     </div>
                   </div>
+
+                  {/* 空间 / Agent 配色图例 */}
+                  {activeSpaceLegend.length > 0 && (
+                    <div
+                      className="space-y-1.5 border-t pt-2.5"
+                      style={{ borderColor: "var(--nesti-border-subtle)" }}
+                    >
+                      <div
+                        className="font-semibold"
+                        style={{ color: "var(--nesti-text-primary)" }}
+                      >
+                        空间 / Agent 配色
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                        {activeSpaceLegend.slice(0, 8).map((entry) => (
+                          <div
+                            key={entry.key}
+                            className="flex items-center gap-1.5 truncate text-[11px]"
+                            title={`${entry.label}（${entry.count} 条）`}
+                          >
+                            <span
+                              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ background: entry.color }}
+                            />
+                            <span className="truncate">{entry.label}</span>
+                            <span className="ml-auto font-mono text-[10px] opacity-65">
+                              {entry.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 关系筛选 & 图例 */}
                   <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: "var(--nesti-border-subtle)" }}>
@@ -772,6 +879,18 @@ export function KnowledgeMap() {
                 知识详情
               </h3>
               <div className="flex items-center gap-1.5">
+                {onLocateInKnowledge && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onLocateInKnowledge(selectedItem.space_id, selectedItem.id)
+                    }
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    style={{ background: "var(--nesti-accent)" }}
+                  >
+                    定位到知识库 →
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() =>
@@ -810,6 +929,7 @@ export function KnowledgeMap() {
               onNotice={setNotice}
               onError={setError}
               onChanged={() => void handleChanged()}
+              onNavigateItem={(targetId) => void openDetail(targetId)}
             />
           </aside>
         )}

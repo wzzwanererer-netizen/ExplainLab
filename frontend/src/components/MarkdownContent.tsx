@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 
 import {
   parseInlineTokens,
@@ -16,6 +16,7 @@ function renderInline(
   text: string,
   onWikilinkClick?: (targetTitle: string) => void,
   onTagClick?: (tag: string) => void,
+  onImageClick?: (src: string, alt: string) => void,
 ) {
   const lines = text.split("\n");
   return lines.map((line, lineIdx) => {
@@ -53,6 +54,18 @@ function renderInline(
                 >
                   {tok.value}
                 </code>
+              );
+            case "image":
+              return (
+                <img
+                  key={idx}
+                  src={tok.src}
+                  alt={tok.alt || "知识插图"}
+                  loading="lazy"
+                  onClick={() => onImageClick?.(tok.src, tok.alt)}
+                  className="my-1.5 block max-h-60 cursor-zoom-in rounded-xl border object-contain shadow-xs transition-transform hover:scale-[1.01]"
+                  style={{ borderColor: "var(--nesti-border-subtle)" }}
+                />
               );
             case "link":
               return (
@@ -118,6 +131,10 @@ export function MarkdownContent({
   onTagClick,
 }: MarkdownContentProps) {
   const blocks = parseMarkdownBlocks(content);
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  const openLightbox = (src: string, alt: string) => setLightbox({ src, alt });
+  const inline = (txt: string) =>
+    renderInline(txt, onWikilinkClick, onTagClick, openLightbox);
 
   return (
     <div
@@ -139,7 +156,7 @@ export function MarkdownContent({
                 className={cls}
                 style={{ color: "var(--nesti-text-primary)" }}
               >
-                {renderInline(block.text, onWikilinkClick, onTagClick)}
+                {inline(block.text)}
               </div>
             );
           }
@@ -180,7 +197,7 @@ export function MarkdownContent({
                 }}
               >
                 {block.lines.map((l, li) => (
-                  <p key={li}>{renderInline(l, onWikilinkClick, onTagClick)}</p>
+                  <p key={li}>{inline(l)}</p>
                 ))}
               </blockquote>
             );
@@ -198,7 +215,7 @@ export function MarkdownContent({
                       />
                     )}
                     <span className={item.checked ? "line-through opacity-70" : ""}>
-                      {renderInline(item.text, onWikilinkClick, onTagClick)}
+                      {inline(item.text)}
                     </span>
                   </li>
                 ))}
@@ -208,7 +225,7 @@ export function MarkdownContent({
             return (
               <ol key={idx} className="space-y-1 pl-5 list-decimal">
                 {block.items.map((item, ii) => (
-                  <li key={ii}>{renderInline(item, onWikilinkClick, onTagClick)}</li>
+                  <li key={ii}>{inline(item)}</li>
                 ))}
               </ol>
             );
@@ -231,7 +248,7 @@ export function MarkdownContent({
                             color: "var(--nesti-text-primary)",
                           }}
                         >
-                          {renderInline(h, onWikilinkClick, onTagClick)}
+                          {inline(h)}
                         </th>
                       ))}
                     </tr>
@@ -245,13 +262,75 @@ export function MarkdownContent({
                       >
                         {row.map((cell, ci) => (
                           <td key={ci} className="px-2.5 py-1.5">
-                            {renderInline(cell, onWikilinkClick, onTagClick)}
+                            {inline(cell)}
                           </td>
                         ))}
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            );
+          case "image":
+            return (
+              <figure key={idx} className="my-2">
+                <img
+                  src={block.src}
+                  alt={block.alt || "知识插图"}
+                  loading="lazy"
+                  onClick={() => setLightbox({ src: block.src, alt: block.alt })}
+                  className="max-h-72 cursor-zoom-in rounded-xl border object-contain shadow-xs transition-transform hover:scale-[1.01]"
+                  style={{ borderColor: "var(--nesti-border-subtle)" }}
+                />
+                {block.alt && (
+                  <figcaption
+                    className="mt-1 text-[11px]"
+                    style={{ color: "var(--nesti-text-tertiary)" }}
+                  >
+                    {block.alt}
+                  </figcaption>
+                )}
+              </figure>
+            );
+          case "mediaCard":
+            return (
+              <div
+                key={idx}
+                className="my-2.5 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-start"
+                style={{
+                  background: "var(--nesti-surface-0)",
+                  borderColor: "var(--nesti-border-subtle)",
+                }}
+              >
+                <img
+                  src={block.src}
+                  alt={block.alt || block.title}
+                  loading="lazy"
+                  onClick={() => setLightbox({ src: block.src, alt: block.alt || block.title })}
+                  className="h-24 w-32 shrink-0 cursor-zoom-in rounded-lg border object-cover shadow-xs transition-transform hover:scale-[1.02]"
+                  style={{ borderColor: "var(--nesti-border-subtle)" }}
+                />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div
+                    className="text-sm font-semibold"
+                    style={{ color: "var(--nesti-text-primary)" }}
+                  >
+                    {inline(block.title)}
+                  </div>
+                  <ul className="list-disc space-y-0.5 pl-4 text-xs">
+                    {block.bullets.map((b, bi) => (
+                      <li key={bi}>{inline(b)}</li>
+                    ))}
+                  </ul>
+                  {block.note && (
+                    <p
+                      className="pt-0.5 text-[11px]"
+                      style={{ color: "var(--nesti-text-tertiary)" }}
+                    >
+                      {inline(block.note)}
+                    </p>
+                  )}
+                </div>
               </div>
             );
           case "hr":
@@ -265,11 +344,25 @@ export function MarkdownContent({
           default:
             return (
               <p key={idx} className="whitespace-pre-wrap">
-                {renderInline(block.text, onWikilinkClick, onTagClick)}
+                {inline(block.text)}
               </p>
             );
         }
       })}
+      {lightbox && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-6 backdrop-blur-xs"
+          onClick={() => setLightbox(null)}
+        >
+          <img
+            src={lightbox.src}
+            alt={lightbox.alt}
+            className="max-h-[88vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }

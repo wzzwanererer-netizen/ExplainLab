@@ -41,6 +41,7 @@ interface Props {
   onNotice: (message: string) => void;
   onError: (message: string) => void;
   onChanged: () => void;
+  onNavigateItem?: (itemId: string) => void;
 }
 
 /**
@@ -48,7 +49,13 @@ interface Props {
  * 查重分析（词面 + 模型）、合并重复（提交审核）、版本回滚。
  * 全部数据来自后端真实 API；模型未配置时如实显示错误。
  */
-export function KnowledgeDetail({ item, onNotice, onError, onChanged }: Props) {
+export function KnowledgeDetail({
+  item,
+  onNotice,
+  onError,
+  onChanged,
+  onNavigateItem,
+}: Props) {
   const [relations, setRelations] = useState<KnowledgeRelation[]>([]);
   const [versions, setVersions] = useState<KnowledgeVersion[]>([]);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -247,14 +254,29 @@ export function KnowledgeDetail({ item, onNotice, onError, onChanged }: Props) {
                         {otherId.slice(0, 8)}… · {ORIGIN_LABEL[r.origin]} ·{" "}
                         {(r.confidence * 100).toFixed(0)}%
                       </span>
-                      <button
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {onNavigateItem && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateItem(otherId)}
+                            className="rounded-md border px-2 py-0.5 text-xs font-medium hover:opacity-85"
+                            style={{
+                              borderColor: "var(--nf-accent-border, rgba(59,116,232,0.35))",
+                              color: "var(--nf-accent, #3b74e8)",
+                            }}
+                          >
+                            定位 →
+                          </button>
+                        )}
+                        <button
                         type="button"
                         onClick={() => void handleDeleteRelation(r.id)}
                         aria-label={`删除关系 ${r.id}`}
                         className="shrink-0 rounded-md border border-slate-700 px-2 py-0.5 text-xs text-red-400 hover:bg-red-950/40"
                       >
-                        删除
-                      </button>
+                          删除
+                        </button>
+                      </div>
                     </li>
                   );
                 })}

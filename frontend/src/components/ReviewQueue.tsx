@@ -85,30 +85,50 @@ export function ReviewQueue() {
     }
   }
 
+  const fieldStyle = {
+    background: "var(--nesti-surface-0)",
+    borderColor: "var(--nesti-border-subtle)",
+    color: "var(--nesti-text-primary)",
+  };
+
   return (
-    <div className="max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-medium text-slate-300">重要变更审核</h2>
+    <div className="max-w-4xl space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <div
+            className="text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+            style={{ color: "var(--nesti-accent)" }}
+          >
+            GOVERNANCE · 审核队列
+          </div>
+          <h2
+            className="text-lg font-semibold tracking-tight"
+            style={{ color: "var(--nesti-text-primary)" }}
+          >
+            重要变更审核
+          </h2>
+          <p className="text-xs" style={{ color: "var(--nesti-text-secondary)" }}>
+            生效知识的编辑 / 删除 / 回滚与任何合并重复都会进入此队列；批准后才应用。
+          </p>
+        </div>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value as ReviewStatus | "all")}
           aria-label="审核状态筛选"
-          className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-slate-500"
+          className="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          style={fieldStyle}
         >
           <option value="pending">待审核</option>
           <option value="approved">已批准</option>
           <option value="rejected">已驳回</option>
           <option value="all">全部</option>
         </select>
-        <p className="text-xs text-slate-500">
-          生效知识的编辑 / 删除 / 回滚与任何合并重复都会进入此队列；批准后才应用。
-        </p>
-      </div>
+      </header>
 
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300"
+          className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-500"
         >
           {error}
         </div>
@@ -116,49 +136,81 @@ export function ReviewQueue() {
       {notice && (
         <div
           role="status"
-          className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300"
+          className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3 text-sm text-emerald-600"
         >
           {notice}
         </div>
       )}
 
       {loading ? (
-        <p role="status" className="text-sm text-slate-400">
+        <p role="status" className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
           正在加载审核单…
         </p>
       ) : reviews.length === 0 ? (
-        <p className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-500">
+        <p
+          className="rounded-[14px] border p-6 text-sm"
+          style={{
+            background: "var(--nesti-surface-1)",
+            borderColor: "var(--nesti-border-subtle)",
+            color: "var(--nesti-text-secondary)",
+          }}
+        >
           当前筛选下没有审核单。
         </p>
       ) : (
         reviews.map((r) => (
           <article
             key={r.id}
-            className="rounded-xl border border-slate-800 bg-slate-900 p-4"
+            className="rounded-[14px] border p-4 shadow-xs"
+            style={{
+              background: "var(--nesti-surface-1)",
+              borderColor: "var(--nesti-border-subtle)",
+            }}
           >
             <div className="mb-2 flex items-start justify-between gap-3">
-              <h3 className="text-sm font-medium">
+              <h3
+                className="text-sm font-semibold"
+                style={{ color: "var(--nesti-text-primary)" }}
+              >
                 {ACTION_LABEL[r.action]}
-                <span className="ml-2 text-xs text-slate-500">
+                <span
+                  className="ml-2 text-xs font-normal"
+                  style={{ color: "var(--nesti-text-tertiary)" }}
+                >
                   条目 {r.item_id.slice(0, 8)}…
                 </span>
               </h3>
               <span
-                className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${
+                className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                style={
                   r.status === "pending"
-                    ? "bg-amber-950/60 text-amber-300"
+                    ? { background: "rgba(217, 119, 6, 0.12)", color: "#b45309" }
                     : r.status === "approved"
-                      ? "bg-emerald-950/60 text-emerald-300"
-                      : "bg-slate-800 text-slate-400"
-                }`}
+                      ? { background: "rgba(5, 150, 105, 0.12)", color: "#047857" }
+                      : {
+                          background: "var(--nesti-surface-2)",
+                          color: "var(--nesti-text-tertiary)",
+                        }
+                }
               >
                 {STATUS_LABEL[r.status]}
               </span>
             </div>
-            <p className="text-sm text-slate-300">{payloadSummary(r)}</p>
+            <p className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
+              {payloadSummary(r)}
+            </p>
             {Boolean(r.payload?.__a1_import) && (
-              <div className="mt-2 rounded-md border border-slate-800 bg-slate-950/60 p-2 text-xs text-slate-400">
-                <div className="font-medium text-slate-300">V2 Active ZIP 导入清单</div>
+              <div
+                className="mt-2 rounded-lg border p-2.5 text-xs"
+                style={{
+                  background: "var(--nesti-surface-0)",
+                  borderColor: "var(--nesti-border-subtle)",
+                  color: "var(--nesti-text-secondary)",
+                }}
+              >
+                <div className="font-semibold" style={{ color: "var(--nesti-text-primary)" }}>
+                  V2 Active ZIP 导入清单
+                </div>
                 {Array.isArray((r.payload.__a1_import as { attachments?: unknown[] }).attachments) && (
                   <p className="mt-1">
                     待发布附件：{((r.payload.__a1_import as { attachments?: unknown[] }).attachments ?? []).length} 个
@@ -166,9 +218,15 @@ export function ReviewQueue() {
                 )}
               </div>
             )}
-            {r.reason && <p className="mt-1 text-xs text-slate-500">理由：{r.reason}</p>}
+            {r.reason && (
+              <p className="mt-1 text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
+                理由：{r.reason}
+              </p>
+            )}
             {r.resolution_note && (
-              <p className="mt-1 text-xs text-slate-500">备注：{r.resolution_note}</p>
+              <p className="mt-1 text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
+                备注：{r.resolution_note}
+              </p>
             )}
             {r.status === "pending" && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -177,19 +235,21 @@ export function ReviewQueue() {
                   onChange={(e) => setNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
                   placeholder="可选审批备注…"
                   aria-label="审批备注"
-                  className="min-w-44 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs outline-none focus:border-slate-500"
+                  className="min-w-44 flex-1 rounded-lg border px-2.5 py-1.5 text-xs outline-none"
+                  style={fieldStyle}
                 />
                 <button
                   type="button"
                   onClick={() => void handleResolve(r.id, true)}
-                  className="rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-900 hover:bg-white"
+                  className="rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: "var(--nesti-accent)" }}
                 >
                   批准
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleResolve(r.id, false)}
-                  className="rounded-md border border-slate-700 px-3 py-1 text-xs text-red-400 hover:bg-red-950/40"
+                  className="rounded-lg border border-red-400/50 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-500/10"
                 >
                   驳回
                 </button>

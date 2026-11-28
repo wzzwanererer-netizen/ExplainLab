@@ -120,13 +120,38 @@ export function SearchView() {
     }
   }
 
-  const inputClass =
-    "rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-slate-500";
+  const fieldStyle = {
+    background: "var(--nesti-surface-0)",
+    borderColor: "var(--nesti-border-subtle)",
+    color: "var(--nesti-text-primary)",
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <header className="space-y-1">
+        <div
+          className="text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+          style={{ color: "var(--nesti-accent)" }}
+        >
+          HYBRID RETRIEVAL · 混合检索
+        </div>
+        <h2
+          className="text-lg font-semibold tracking-tight"
+          style={{ color: "var(--nesti-text-primary)" }}
+        >
+          跨会话与全库语义检索
+        </h2>
+        <p className="text-xs" style={{ color: "var(--nesti-text-secondary)" }}>
+          结合 FTS5 关键词召回与语义向量召回，一键直达任意知识条目与原始出处。
+        </p>
+      </header>
+
       <form
-        className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-4"
+        className="flex flex-wrap items-center gap-3 rounded-[14px] border p-4 shadow-xs"
+        style={{
+          background: "var(--nesti-surface-1)",
+          borderColor: "var(--nesti-border-subtle)",
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           void runSearch(query, spaceId, mode);
@@ -137,13 +162,15 @@ export function SearchView() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="输入关键词，跨会话检索知识…"
           aria-label="检索关键词"
-          className={`${inputClass} min-w-64 flex-1`}
+          className="min-w-64 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none"
+          style={fieldStyle}
         />
         <select
           value={spaceId}
           onChange={(e) => setSpaceId(e.target.value)}
           aria-label="检索空间"
-          className={inputClass}
+          className="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          style={fieldStyle}
         >
           <option value="">全部空间</option>
           {spaces.map((s) => (
@@ -157,7 +184,8 @@ export function SearchView() {
           value={mode}
           onChange={(e) => setMode(e.target.value as SearchMode)}
           aria-label="检索模式"
-          className={inputClass}
+          className="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          style={fieldStyle}
         >
           {(Object.keys(MODE_LABEL) as SearchMode[]).map((m) => (
             <option key={m} value={m}>
@@ -168,7 +196,8 @@ export function SearchView() {
         <button
           type="submit"
           disabled={!query.trim() || loading}
-          className="rounded-md bg-slate-100 px-4 py-1.5 text-sm font-medium text-slate-900 hover:bg-white disabled:opacity-40"
+          className="rounded-[9px] px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--nesti-accent)" }}
         >
           {loading ? "检索中…" : "检索"}
         </button>
@@ -176,7 +205,11 @@ export function SearchView() {
           type="button"
           onClick={() => void handleReindex()}
           disabled={reindexing}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+          className="rounded-[9px] border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--nesti-surface-hover)] disabled:opacity-40"
+          style={{
+            borderColor: "var(--nesti-border-strong)",
+            color: "var(--nesti-text-primary)",
+          }}
         >
           {reindexing ? "重建中…" : "重建索引"}
         </button>
@@ -185,7 +218,7 @@ export function SearchView() {
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300"
+          className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-500"
         >
           {error}
         </div>
@@ -193,7 +226,7 @@ export function SearchView() {
       {notice && (
         <div
           role="status"
-          className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300"
+          className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3 text-sm text-emerald-600"
         >
           {notice}
         </div>
@@ -202,9 +235,20 @@ export function SearchView() {
       {result && (
         <div
           role="status"
-          className="rounded-md border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400"
+          className="rounded-xl border px-3.5 py-2.5 text-xs"
+          style={{
+            background: "var(--nesti-surface-1)",
+            borderColor: "var(--nesti-border-subtle)",
+            color: "var(--nesti-text-secondary)",
+          }}
         >
-          <span className="mr-2 rounded-full bg-slate-800 px-2.5 py-0.5 text-slate-300">
+          <span
+            className="mr-2 rounded-full px-2.5 py-0.5 font-medium"
+            style={{
+              background: "color-mix(in srgb, var(--nesti-accent) 12%, transparent)",
+              color: "var(--nesti-accent)",
+            }}
+          >
             实际模式：{MODE_LABEL[result.mode]}
           </span>
           {CAPABILITY_HINT[result.embed_capability]}
@@ -213,38 +257,82 @@ export function SearchView() {
 
       <section className="space-y-3">
         {loading ? (
-          <p role="status" className="text-sm text-slate-400">
+          <p role="status" className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
             正在检索…
           </p>
         ) : !result ? (
-          <p className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-500">
+          <p
+            className="rounded-[14px] border p-6 text-sm"
+            style={{
+              background: "var(--nesti-surface-1)",
+              borderColor: "var(--nesti-border-subtle)",
+              color: "var(--nesti-text-secondary)",
+            }}
+          >
             输入关键词开始跨会话检索。可在「知识库」或「对话」中积累知识后再检索。
           </p>
         ) : result.count === 0 ? (
-          <p className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-500">
+          <p
+            className="rounded-[14px] border p-6 text-sm"
+            style={{
+              background: "var(--nesti-surface-1)",
+              borderColor: "var(--nesti-border-subtle)",
+              color: "var(--nesti-text-secondary)",
+            }}
+          >
             未检索到匹配知识。可尝试更换关键词，或点击「重建索引」为存量知识建立索引。
           </p>
         ) : (
           result.results.map((hit) => (
             <article
               key={hit.item_id}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-4"
+              className="rounded-[14px] border p-4 shadow-xs transition-colors"
+              style={{
+                background: "var(--nesti-surface-1)",
+                borderColor: "var(--nesti-border-subtle)",
+              }}
             >
               <div className="mb-2 flex items-start justify-between gap-3">
-                <h3 className="text-sm font-medium">{hit.title}</h3>
-                <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-0.5 text-xs text-slate-400">
+                <h3
+                  className="text-[15px] font-semibold"
+                  style={{ color: "var(--nesti-text-primary)" }}
+                >
+                  {hit.title}
+                </h3>
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  style={{
+                    background: "var(--nesti-surface-2)",
+                    color: "var(--nesti-text-secondary)",
+                  }}
+                >
                   {STATUS_LABEL[hit.status]}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap text-sm text-slate-300">{hit.snippet}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-slate-300">
+              <p
+                className="whitespace-pre-wrap text-sm leading-relaxed"
+                style={{ color: "var(--nesti-text-secondary)" }}
+              >
+                {hit.snippet}
+              </p>
+              <div
+                className="mt-3 flex flex-wrap items-center gap-2 text-xs"
+                style={{ color: "var(--nesti-text-tertiary)" }}
+              >
+                <span
+                  className="rounded-full px-2.5 py-0.5 font-medium"
+                  style={{
+                    background: "color-mix(in srgb, var(--nesti-accent) 10%, transparent)",
+                    color: "var(--nesti-accent)",
+                  }}
+                >
                   融合分 {hit.score.toFixed(4)}
                 </span>
                 {Object.entries(hit.channels).map(([ch, value]) => (
                   <span
                     key={ch}
-                    className="rounded-full border border-slate-700 px-2.5 py-0.5"
+                    className="rounded-full border px-2.5 py-0.5"
+                    style={{ borderColor: "var(--nesti-border-subtle)" }}
                   >
                     {CHANNEL_LABEL[ch] ?? ch} {value.toFixed(4)}
                   </span>
@@ -253,7 +341,11 @@ export function SearchView() {
                   type="button"
                   onClick={() => void toggleDetail(hit.item_id)}
                   aria-expanded={expandedId === hit.item_id}
-                  className="ml-auto rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                  className="ml-auto rounded-lg border px-3 py-1 text-xs font-medium transition-colors hover:bg-[var(--nesti-surface-hover)]"
+                  style={{
+                    borderColor: "var(--nesti-border-strong)",
+                    color: "var(--nesti-text-primary)",
+                  }}
                 >
                   {expandedId === hit.item_id ? "收起详情" : "查看详情"}
                 </button>

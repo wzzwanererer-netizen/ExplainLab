@@ -13,6 +13,7 @@ export type InlineToken =
   | { type: "bold"; value: string }
   | { type: "italic"; value: string }
   | { type: "code"; value: string }
+  | { type: "image"; alt: string; src: string }
   | { type: "link"; label: string; href: string }
   | { type: "wikilink"; target: string; label: string }
   | { type: "tag"; tag: string };
@@ -24,6 +25,15 @@ export type MarkdownBlock =
   | { type: "ul"; items: { text: string; checked?: boolean }[] }
   | { type: "ol"; items: string[] }
   | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "image"; alt: string; src: string }
+  | {
+      type: "mediaCard";
+      alt: string;
+      src: string;
+      title: string;
+      bullets: string[];
+      note?: string;
+    }
   | { type: "hr" }
   | { type: "paragraph"; text: string };
 
@@ -72,11 +82,11 @@ export function getActiveWikilinkQuery(
   };
 }
 
-/** 解析行内 Markdown 语法：行内代码、[[双链]]、外部链接、加粗、斜体、#标签。 */
+/** 解析行内 Markdown 语法：行内代码、行内图片、[[双链]]、外部链接、加粗、斜体、#标签。 */
 export function parseInlineTokens(text: string): InlineToken[] {
   const tokens: InlineToken[] = [];
   const pattern =
-    /(`[^`\n]+`)|(\[\[([^[\]|#\n]+)(?:\|([^[\]\n]+))?\]\])|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(\*\*([^*\n]+)\*\*)|(\*([^*\n]+)\*)|((?:^|(?<=[\s(（[【,，;；]))#([\p{L}\p{N}_\-/]{1,32}))/gu;
+    /(`[^`\n]+`)|(!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/|data:image\/[a-zA-Z0-9.+-]+;base64,)[^\s)]+)\))|(\[\[([^[\]|#\n]+)(?:\|([^[\]\n]+))?\]\])|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(\*\*([^*\n]+)\*\*)|(\*([^*\n]+)\*)|((?:^|(?<=[\s(（[【,，;；]))#([\p{L}\p{N}_\-/]{1,32}))/gu;
 
   let lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -87,21 +97,23 @@ export function parseInlineTokens(text: string): InlineToken[] {
     if (m[1]) {
       tokens.push({ type: "code", value: m[1].slice(1, -1) });
     } else if (m[2]) {
-      const target = m[3].trim();
-      const label = (m[4] ?? m[3]).trim();
-      tokens.push({ type: "wikilink", target, label });
+      tokens.push({ type: "image", alt: m[3].trim(), src: m[4].trim() });
     } else if (m[5]) {
-      tokens.push({ type: "link", label: m[6], href: m[7] });
+      const target = m[6].trim();
+      const label = (m[7] ?? m[6]).trim();
+      tokens.push({ type: "wikilink", target, label });
     } else if (m[8]) {
-      tokens.push({ type: "bold", value: m[9] });
-    } else if (m[10]) {
-      tokens.push({ type: "italic", value: m[11] });
-    } else if (m[12]) {
-      const tag = m[13].replace(/^\/+|\/+$/g, "");
+      tokens.push({ type: "link", label: m[9], href: m[10] });
+    } else if (m[11]) {
+      tokens.push({ type: "bold", value: m[12] });
+    } else if (m[13]) {
+      tokens.push({ type: "italic", value: m[14] });
+    } else if (m[15]) {
+      const tag = m[16].replace(/^\/+|\/+$/g, "");
       if (tag && !/^\d+$/.test(tag)) {
         tokens.push({ type: "tag", tag });
       } else {
-        tokens.push({ type: "text", value: m[12] });
+        tokens.push({ type: "text", value: m[15] });
       }
     }
     lastIndex = pattern.lastIndex;
@@ -150,6 +162,53 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       if (i < lines.length) i += 1;
       blocks.push({ type: "code", lang, code: codeLines.join("\n") });
       continue;
+    }
+
+    // 独立图片或 ChatGPT 风格左图右文卡片（![alt](src) 后紧跟标题+要点列表）
+    const imgMatch = /^!\[([^\]]*)\]\(([^)\s]+)\)\s*$/.exec(trimmed);
+    if (imgMatch) {
+      const alt = imgMatch[1].trim();
+      const src = imgMatch[2].trim();
+      const safeSrc =
+        /^(https?:\/\/|\/api\/|data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(src)
+          ? src
+          : "";
+      if (safeSrc) {
+        // 探测紧随其后的「加粗标题/小标题 + 列表」自动组合成左图右文卡片
+        let j = i + 1;
+        while (j < lines.length && !lines[j].trim()) j += 1;
+        const nextLine = j < lines.length ? lines[j].trim() : "";
+        const titleMatch = /^(?:\*\*(.+?)\*\*|#{2,4}\s+(.+))$/.exec(nextLine);
+        if (titleMatch && j + 1 < lines.length && /^[-*+]\s+/.test(lines[j + 1].trim())) {
+          const cardTitle = (titleMatch[1] ?? titleMatch[2]).trim();
+          let k = j + 1;
+          const bullets: string[] = [];
+          while (k < lines.length && /^[-*+]\s+/.test(lines[k].trim())) {
+            bullets.push(lines[k].trim().replace(/^[-*+]\s+/, ""));
+            k += 1;
+          }
+          let note: string | undefined;
+          let m = k;
+          while (m < lines.length && !lines[m].trim()) m += 1;
+          if (m < lines.length && /^>\s?/.test(lines[m].trim())) {
+            note = lines[m].trim().replace(/^>\s?/, "");
+            k = m + 1;
+          }
+          blocks.push({
+            type: "mediaCard",
+            alt,
+            src: safeSrc,
+            title: cardTitle,
+            bullets,
+            note,
+          });
+          i = k;
+          continue;
+        }
+        blocks.push({ type: "image", alt, src: safeSrc });
+        i += 1;
+        continue;
+      }
     }
 
     // 标题
@@ -232,7 +291,7 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !/^(```|#{1,4}\s+|>\s?|[-*+]\s+|\d+\.\s+|(-{3,}|\*{3,}|_{3,})$)/.test(
+      !/^(```|!\[[^\]]*\]\(|#{1,4}\s+|>\s?|[-*+]\s+|\d+\.\s+|(-{3,}|\*{3,}|_{3,})$)/.test(
         lines[i].trim(),
       )
     ) {

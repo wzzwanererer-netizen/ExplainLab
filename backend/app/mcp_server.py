@@ -258,6 +258,58 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "explainlab_list_agent_sessions",
+        "description": (
+            "跨 Agent 无缝接力（纯只读，不会写入知识库）：列出本机其他 AI 助手"
+            "（如 Codex、Claude Code、Antigravity、DSH、Cursor、Qoder）最近的本地对话列表，"
+            "便于在某个助手额度用完时快速找到刚才讨论的会话并无缝继续。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_name": {
+                    "type": "string",
+                    "description": "可选，按助手名筛选，如 codex / claude / antigravity / dsh / cursor / qoder",
+                },
+                "keyword": {
+                    "type": "string",
+                    "description": "可选，按项目名或对话内容关键词筛选",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "description": "返回会话条数上限，默认 10",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "explainlab_read_agent_session",
+        "description": (
+            "跨 Agent 无缝接力（纯只读，零污染知识库，自动脱敏）：读取 explainlab_list_agent_sessions 返回的"
+            "某条本地会话对话内容（保留开头目标与最新进展），让当前 Agent 无缝接着上一个 Agent 继续工作。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "会话文件路径（从 explainlab_list_agent_sessions 返回的 file_path 字段获取）",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 30000,
+                    "description": "最大返回字符数，默认 12000",
+                },
+            },
+            "required": ["file_path"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 RESOURCES: list[dict[str, Any]] = [
@@ -534,6 +586,26 @@ class ExplainLabMCPServer:
             if args.get("status"):
                 params["status"] = args["status"]
             _, data = self._request("GET", "/api/reviews", params=params)
+            return data
+
+        if name == "explainlab_list_agent_sessions":
+            params = {"limit": int(args.get("limit") or 10)}
+            if args.get("agent_name"):
+                params["agent_name"] = args["agent_name"]
+            if args.get("keyword"):
+                params["keyword"] = args["keyword"]
+            _, data = self._request("GET", "/api/agents/handoff/sessions", params=params)
+            return data
+
+        if name == "explainlab_read_agent_session":
+            _, data = self._request(
+                "POST",
+                "/api/agents/handoff/read",
+                json_body={
+                    "file_path": args["file_path"],
+                    "max_chars": int(args.get("max_chars") or 12000),
+                },
+            )
             return data
 
         raise ValueError(f"Unknown tool: {name}")

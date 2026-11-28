@@ -2,68 +2,70 @@
 
 :root,
 [data-theme="light"] {
-  --nf-brand-primary: #2463eb;
-  --nf-brand-glacier: #79caff;
-  --nf-brand-violet: #8785ef;
-  --nf-brand-ice: #e5edfa;
-  --nf-brand-offwhite: #f5f8fc;
-  --nf-brand-navy: #243247;
+  /* Nesti Official Palette: Cobalt Blue + Mist Ice + Pearl White + Charcoal Ink */
+  --nf-brand-primary: #3b74e8;
+  --nf-brand-glacier: #7bb8ff;
+  --nf-brand-violet: #7e82f5;
+  --nf-brand-ice: #dce8fb;
+  --nf-brand-offwhite: #fafbfd;
+  --nf-brand-navy: #1e2433;
 
-  /* Windows 11 Mica / Layered Desktop Surfaces */
-  --nf-bg-window: #e9eff8;
+  /* Nesti Airy Techwear Atelier — Windows 11 Mica Surfaces */
+  --nf-bg-window: #edf3fc;
   --nf-mica-window: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--nf-accent) 7%, #eaf0f8) 0%,
-    #eef3fa 48%,
-    color-mix(in srgb, var(--nf-brand-glacier) 11%, #edf2fa) 100%
+    138deg,
+    color-mix(in srgb, var(--nf-accent) 6%, #eef4fd) 0%,
+    #f3f7fd 48%,
+    color-mix(in srgb, var(--nf-brand-glacier) 10%, #f1f6fd) 100%
   );
-  --nf-bg-canvas: #f7f9fd;
+  --nf-bg-canvas: #fafbfd;
   --nf-bg-surface: #ffffff;
-  --nf-bg-surface-subtle: #f3f6fb;
-  --nf-bg-surface-hover: #e8eef7;
-  --nf-bg-surface-active: #dde6f5;
-  --nf-bg-glass: rgba(255, 255, 255, 0.78);
-  --nf-bg-overlay: rgba(15, 23, 42, 0.36);
+  --nf-bg-surface-subtle: #f3f6fc;
+  --nf-bg-surface-hover: #eaf0fa;
+  --nf-bg-surface-active: #dfe9f8;
+  --nf-bg-glass: rgba(255, 255, 255, 0.84);
+  --nf-bg-overlay: rgba(20, 27, 42, 0.34);
 
-  --nf-text-primary: #1b273a;
-  --nf-text-secondary: #4a5b75;
-  --nf-text-muted: #7687a0;
+  --nf-text-primary: #1e2433;
+  --nf-text-secondary: #526077;
+  --nf-text-muted: #8695ab;
   --nf-text-on-accent: #ffffff;
 
-  --nf-border-subtle: rgba(36, 50, 71, 0.08);
-  --nf-border-default: rgba(36, 50, 71, 0.14);
-  --nf-border-strong: rgba(36, 50, 71, 0.24);
+  --nf-border-subtle: rgba(30, 36, 51, 0.07);
+  --nf-border-default: rgba(30, 36, 51, 0.12);
+  --nf-border-strong: rgba(30, 36, 51, 0.22);
 
-  --nf-status-success: #0f9d75;
-  --nf-status-success-bg: rgba(15, 157, 117, 0.10);
-  --nf-status-warning: #c97a08;
-  --nf-status-warning-bg: rgba(201, 122, 8, 0.11);
+  --nf-status-success: #0e9f75;
+  --nf-status-success-bg: rgba(14, 159, 117, 0.10);
+  --nf-status-warning: #c87b0a;
+  --nf-status-warning-bg: rgba(200, 123, 10, 0.11);
   --nf-status-danger: #d63e4f;
   --nf-status-danger-bg: rgba(214, 62, 79, 0.10);
-  --nf-status-info: #2463eb;
-  --nf-status-info-bg: rgba(36, 99, 235, 0.10);
+  --nf-status-info: #3b74e8;
+  --nf-status-info-bg: rgba(59, 116, 232, 0.10);
 
-  --nf-accent: #2463eb;
-  --nf-accent-hover: #1d4ed8;
-  --nf-accent-secondary: #79caff;
-  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 12%, transparent);
-  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 8%, transparent);
-  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 30%, transparent);
+  --nf-accent: #3b74e8;
+  --nf-accent-hover: #2b62d6;
+  --nf-accent-secondary: #7bb8ff;
+  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 10%, transparent);
+  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 6%, transparent);
+  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 26%, transparent);
   --nf-module-icon: var(--nf-accent);
 
-  --nf-shadow-sm: 0 1px 2px rgba(24, 39, 64, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-  --nf-shadow-md: 0 4px 14px rgba(24, 39, 64, 0.07), 0 1px 3px rgba(24, 39, 64, 0.04);
-  --nf-shadow-lg: 0 16px 36px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
-  --nf-workspace-shadow: -2px -1px 12px rgba(24, 39, 64, 0.04);
+  --nf-shadow-sm: 0 1px 2px rgba(30, 36, 51, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.65) inset;
+  --nf-shadow-md: 0 8px 24px -10px rgba(30, 36, 51, 0.09), 0 1px 3px rgba(30, 36, 51, 0.04);
+  --nf-shadow-lg: 0 20px 44px -12px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.06);
+  --nf-workspace-shadow: -2px -1px 14px rgba(30, 36, 51, 0.035);
 
   --nf-radius-xs: 4px;
-  --nf-radius-sm: 6px;
-  --nf-radius-md: 8px;
-  --nf-radius-lg: 11px;
+  --nf-radius-sm: 7px;
+  --nf-radius-md: 10px;
+  --nf-radius-lg: 14px;
   --nf-row-height: 34px;
   --nf-control-height: 29px;
 
-  --nf-font-sans: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
+  --nf-font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, -apple-system, sans-serif;
+  --nf-font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --nf-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
 
   --nf-graph-grid: #dce5f2;
@@ -87,29 +89,29 @@
 }
 
 [data-theme="dark"] {
-  --nf-bg-window: #0b1019;
+  --nf-bg-window: #0a0f19;
   --nf-mica-window: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--nf-accent) 10%, #0b1019) 0%,
-    #0d131f 52%,
-    #0a101a 100%
+    138deg,
+    color-mix(in srgb, var(--nf-accent) 7%, #0a0f19) 0%,
+    #0c121d 52%,
+    #0a0f18 100%
   );
-  --nf-bg-canvas: #101724;
-  --nf-bg-surface: #151f30;
-  --nf-bg-surface-subtle: #111927;
-  --nf-bg-surface-hover: #1c283d;
-  --nf-bg-surface-active: #22324d;
-  --nf-bg-glass: rgba(17, 25, 39, 0.84);
-  --nf-bg-overlay: rgba(4, 8, 15, 0.65);
+  --nf-bg-canvas: #0d131f;
+  --nf-bg-surface: #141c2b;
+  --nf-bg-surface-subtle: #111827;
+  --nf-bg-surface-hover: #1a2436;
+  --nf-bg-surface-active: #203047;
+  --nf-bg-glass: rgba(17, 24, 39, 0.86);
+  --nf-bg-overlay: rgba(4, 8, 15, 0.62);
 
-  --nf-text-primary: #e7effa;
-  --nf-text-secondary: #a2b3cc;
-  --nf-text-muted: #6f83a0;
+  --nf-text-primary: #e8eef8;
+  --nf-text-secondary: #a3b1c7;
+  --nf-text-muted: #6d7d96;
   --nf-text-on-accent: #ffffff;
 
-  --nf-border-subtle: rgba(148, 163, 184, 0.12);
-  --nf-border-default: rgba(148, 163, 184, 0.20);
-  --nf-border-strong: rgba(148, 163, 184, 0.32);
+  --nf-border-subtle: rgba(148, 163, 184, 0.10);
+  --nf-border-default: rgba(148, 163, 184, 0.17);
+  --nf-border-strong: rgba(148, 163, 184, 0.28);
 
   --nf-status-success: #34d399;
   --nf-status-success-bg: rgba(52, 211, 153, 0.13);
@@ -120,13 +122,13 @@
   --nf-status-info: #60a5fa;
   --nf-status-info-bg: rgba(96, 165, 250, 0.14);
 
-  --nf-accent: #4c82f7;
-  --nf-accent-hover: #6495ff;
-  --nf-accent-secondary: #79caff;
-  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 18%, transparent);
-  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 12%, transparent);
-  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 36%, transparent);
-  --nf-module-icon: #79caff;
+  --nf-accent: #5b91ff;
+  --nf-accent-hover: #74a3ff;
+  --nf-accent-secondary: #8ac4ff;
+  --nf-accent-soft: color-mix(in srgb, var(--nf-accent) 16%, transparent);
+  --nf-accent-subtle: color-mix(in srgb, var(--nf-accent) 10%, transparent);
+  --nf-accent-border: color-mix(in srgb, var(--nf-accent) 34%, transparent);
+  --nf-module-icon: #8ac4ff;
 
   --nf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --nf-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.38);
@@ -142,8 +144,8 @@
 }
 
 /* Six Preset Accent Palettes */
-[data-preset="glacier"] { --nf-accent: #2463eb; --nf-accent-hover: #1d4ed8; --nf-module-icon: #2463eb; }
-[data-theme="dark"][data-preset="glacier"] { --nf-accent: #4c82f7; --nf-accent-hover: #6495ff; --nf-module-icon: #79caff; }
+[data-preset="glacier"] { --nf-accent: #3b74e8; --nf-accent-hover: #2b62d6; --nf-module-icon: #3b74e8; }
+[data-theme="dark"][data-preset="glacier"] { --nf-accent: #5b91ff; --nf-accent-hover: #74a3ff; --nf-module-icon: #8ac4ff; }
 
 [data-preset="iris"] { --nf-accent: #6d5ce7; --nf-accent-hover: #5b48d6; --nf-module-icon: #6d5ce7; }
 [data-theme="dark"][data-preset="iris"] { --nf-accent: #8785ef; --nf-accent-hover: #9f9df5; --nf-module-icon: #a79bff; }
@@ -165,7 +167,7 @@
 [data-density="spacious"] { --nf-row-height: 40px; --nf-control-height: 34px; }
 
 [data-radius="sharp"] { --nf-radius-xs: 2px; --nf-radius-sm: 3px; --nf-radius-md: 4px; --nf-radius-lg: 6px; }
-[data-radius="balanced"] { --nf-radius-xs: 4px; --nf-radius-sm: 6px; --nf-radius-md: 8px; --nf-radius-lg: 11px; }
+[data-radius="balanced"] { --nf-radius-xs: 4px; --nf-radius-sm: 7px; --nf-radius-md: 10px; --nf-radius-lg: 14px; }
 [data-radius="soft"] { --nf-radius-xs: 6px; --nf-radius-sm: 8px; --nf-radius-md: 11px; --nf-radius-lg: 15px; }
 
 [data-shadow="none"] { --nf-shadow-sm: none; --nf-shadow-md: none; --nf-shadow-lg: 0 4px 12px rgba(20, 31, 48, 0.08); }

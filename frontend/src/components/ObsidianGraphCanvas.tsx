@@ -14,6 +14,7 @@ import {
 export interface ObsidianGraphCanvasProps {
   elements: MapElements;
   edgeTypes: Map<string, RelationType>;
+  nodeColors?: Map<string, string>;
   selectedId: string | null;
   searchQuery: string;
   config: ForceConfig;
@@ -121,6 +122,7 @@ function drawRoundedRect(
 export function ObsidianGraphCanvas({
   elements,
   edgeTypes,
+  nodeColors,
   selectedId,
   searchQuery,
   config,
@@ -161,6 +163,8 @@ export function ObsidianGraphCanvas({
   showArrowsRef.current = showArrows;
   const showEdgeLabelsRef = useRef(showEdgeLabels);
   showEdgeLabelsRef.current = showEdgeLabels;
+  const nodeColorsRef = useRef(nodeColors);
+  nodeColorsRef.current = nodeColors;
 
   const [cursorStyle, setCursorStyle] = useState<"grab" | "grabbing" | "pointer">(
     "grab",
@@ -441,11 +445,10 @@ export function ObsidianGraphCanvas({
         cfg.nodeScale *
         (isHovered ? 1.24 : isSelected ? 1.15 : 1);
 
+      const customColor = nodeColorsRef.current?.get(node.id);
       const nodeColor = node.archived
         ? theme.archived
-        : node.status === "draft"
-          ? theme.draft
-          : theme.accent;
+        : (customColor ?? (node.status === "draft" ? theme.draft : theme.accent));
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -600,10 +603,10 @@ export function ObsidianGraphCanvas({
     ensureLoopRunning();
   }, [config, reheatToken, ensureLoopRunning]);
 
-  // 选中/搜索/开关变化时重绘一帧
+  // 选中/搜索/开关/配色变化时重绘一帧
   useEffect(() => {
     drawFrame();
-  }, [selectedId, searchQuery, showArrows, showEdgeLabels, drawFrame]);
+  }, [selectedId, searchQuery, showArrows, showEdgeLabels, nodeColors, drawFrame]);
 
   // 监听容器尺寸与主题切换
   useEffect(() => {

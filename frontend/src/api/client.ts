@@ -1,9 +1,13 @@
 import type {
+  AgentAddInput,
+  AgentStatus,
   AnalyzeResponse,
   AnswerFeedback,
   ChatCitation,
+  CompletedTaskSuggestion,
   Conversation,
   ConversationDetail,
+  DocPreviewResponse,
   DuplicateCandidate,
   ExperimentAnswerInput,
   ExperimentCompleteResult,
@@ -11,6 +15,8 @@ import type {
   ExperimentListOptions,
   ExperimentSession,
   ExtractResponse,
+  FolderPreset,
+  FolderScanReport,
   GraphOptions,
   GraphResponse,
   HealthResponse,
@@ -19,10 +25,15 @@ import type {
   KnowledgeRelation,
   KnowledgeUpdateInput,
   KnowledgeVersion,
+  LibraryMediaItem,
   LinkItem,
   MarkdownImportInput,
   MarkdownImportReport,
+  MediaItem,
   Message,
+  ModelSettings,
+  ModelSettingsUpdateInput,
+  ModelTestResult,
   MutationResult,
   RelationCreateInput,
   ReindexResponse,
@@ -30,13 +41,17 @@ import type {
   ReviewStatus,
   ReviewSubmitInput,
   ReviewSubmitResult,
+  SandboxResponse,
   SearchOptions,
   SearchResponse,
+  SessionFilePreview,
   SourceAttachInput,
   SourceRef,
   Space,
   AttachmentItem,
   AttachmentUploadInput,
+  VacuumReport,
+  WatchedFolder,
 } from "./types";
 
 import { handleDemoRequest, IS_STATIC_DEMO } from "./demoRuntime";
@@ -119,6 +134,23 @@ export const api = {
     request<Space>("/api/spaces", {
       method: "POST",
       body: JSON.stringify({ name, description: description ?? null }),
+    }),
+
+  // 模型与 API Key 热更新设置
+  getModelSettings: () => request<ModelSettings>("/api/settings/models"),
+  updateModelSettings: (input: ModelSettingsUpdateInput) =>
+    request<ModelSettings>("/api/settings/models", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  testModelConnection: (input: {
+    base_url: string;
+    model_name: string;
+    api_key?: string | null;
+  }) =>
+    request<ModelTestResult>("/api/settings/models/test", {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
 
   // 会话与对话
@@ -381,6 +413,131 @@ export const api = {
   listLinks: (itemId: string) => request<LinkItem[]>(`/api/knowledge/${itemId}/links`),
   listBacklinks: (itemId: string) => request<LinkItem[]>(`/api/knowledge/${itemId}/backlinks`),
 
+  // V3 AI 助手副库管理中心 & 本地会话吸尘器
+  discoverAgents: () => request<AgentStatus[]>("/api/agents/discover"),
+  addAgent: (input: AgentAddInput) =>
+    request<AgentStatus>("/api/agents/add", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  listAgentSessions: (agentId: string) =>
+    request<SessionFilePreview[]>(`/api/agents/${encodeURIComponent(agentId)}/sessions`),
+  vacuumAgents: (
+    agentName?: string | null,
+    maxSessions = 3,
+    sessionFiles?: string[] | null,
+  ) =>
+    request<VacuumReport>("/api/agents/vacuum", {
+      method: "POST",
+      body: JSON.stringify({
+        agent_name: agentName ?? null,
+        max_sessions: maxSessions,
+        session_files: sessionFiles && sessionFiles.length > 0 ? sessionFiles : null,
+      }),
+    }),
+  getCompletedSuggestions: (includeLatest = false) =>
+    request<CompletedTaskSuggestion[]>(
+      `/api/agents/completed-suggestions?include_latest=${includeLatest ? "true" : "false"}`,
+    ),
+  dismissTaskSuggestion: (filePath: string, signature: string) =>
+    request<{ ok: boolean }>("/api/agents/dismiss-suggestion", {
+      method: "POST",
+      body: JSON.stringify({ file_path: filePath, signature }),
+    }),
+
+  // V3 交互式动态原理沙盒
+  getSandbox: (itemId: string) =>
+    request<SandboxResponse>(`/api/knowledge/${itemId}/sandbox`),
+  generateSandbox: (itemId: string, instruction?: string) =>
+    request<SandboxResponse>(`/api/knowledge/${itemId}/sandbox/generate`, {
+      method: "POST",
+      body: JSON.stringify({ instruction: instruction?.trim() || null }),
+    }),
+  deleteSandbox: (itemId: string) =>
+    request<void>(`/api/knowledge/${itemId}/sandbox`, { method: "DELETE" }),
+
+  // V3 多模态媒体附件（图片 / 音频 / 视频 Range 流式播放 / Word / Excel / PPT / PDF 阅读器）
+  listMediaLibrary: (kind?: string | null) =>
+    request<LibraryMediaItem[]>(
+      `/api/media/library${kind && kind !== "all" ? `?kind=${encodeURIComponent(kind)}` : ""}`,
+    ),
+  listItemMedia: (itemId: string) =>
+    request<MediaItem[]>(`/api/knowledge/${itemId}/media`),
+  previewItemMedia: (itemId: string, mediaId: string) =>
+    request<DocPreviewResponse>(`/api/knowledge/${itemId}/media/${mediaId}/preview`),
+  revealItemMedia: async (itemId: string, mediaId: string): Promise<void> => {
+    const bridge = (
+      window as unknown as {
+        explainlabDesktop?: { showItemInFolder?: (p: string) => void };
+      }
+    ).explainlabDesktop;
+    const hasDesktopBridge = Boolean(bridge?.showItemInFolder);
+    const res = await request<{ path?: string }>(
+      `/api/knowledge/${itemId}/media/${mediaId}/reveal?open_os=${hasDesktopBridge ? "false" : "true"}`,
+      { method: "POST" },
+    );
+    if (res?.path && bridge?.showItemInFolder) {
+      bridge.showItemInFolder(res.path);
+    }
+  },
+  uploadItemMedia: async (itemId: string, file: File): Promise<MediaItem> => {
+    const res = await fetch(
+      `/api/knowledge/${itemId}/media?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      },
+    );
+    if (!res.ok) {
+      let detail = `上传失败 (${res.status})`;
+      try {
+        const j = (await res.json()) as { detail?: string };
+        if (j.detail) detail = j.detail;
+      } catch {
+        // ignore
+      }
+      throw new ApiError(res.status, detail);
+    }
+    return (await res.json()) as MediaItem;
+  },
+  deleteItemMedia: (itemId: string, mediaId: string) =>
+    request<void>(`/api/knowledge/${itemId}/media/${mediaId}`, { method: "DELETE" }),
+
+  // V3 乱文件夹哨兵（只读监听与收编）
+  listFolderPresets: () => request<FolderPreset[]>("/api/folders/presets"),
+  listWatchedFolders: () => request<WatchedFolder[]>("/api/folders"),
+  addWatchedFolder: (input: {
+    path: string;
+    name?: string | null;
+    space_id?: string | null;
+    use_ai_summary?: boolean;
+  }) =>
+    request<WatchedFolder>("/api/folders", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  patchWatchedFolder: (
+    folderId: string,
+    patch: { enabled?: boolean; use_ai_summary?: boolean },
+  ) =>
+    request<WatchedFolder>(`/api/folders/${folderId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteWatchedFolder: (folderId: string) =>
+    request<void>(`/api/folders/${folderId}`, { method: "DELETE" }),
+  scanWatchedFolder: (folderId: string, maxFiles = 12) =>
+    request<FolderScanReport>(`/api/folders/${folderId}/scan`, {
+      method: "POST",
+      body: JSON.stringify({ max_files: maxFiles }),
+    }),
+  revealLocalPath: (path: string) =>
+    request<void>("/api/folders/reveal", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+
   // V2 Markdown / ZIP 导入导出
   importMarkdown: (input: MarkdownImportInput) =>
     request<MarkdownImportReport>("/api/knowledge/import", {
@@ -395,4 +552,137 @@ export const api = {
     return await response.blob();
   },
   exportSingleMarkdownUrl: (itemId: string) => `/api/knowledge/${itemId}/markdown`,
+
+  // V3 一键生成办公成品（总结 PDF / 汇报 PPT / 可编辑 Word / 高清知识卡片长图，支持自选保存目录）
+  generateDeliverable: async (
+    format: "pdf" | "pptx" | "docx" | "card",
+    target: { space_id?: string | null; item_id?: string | null; title?: string | null },
+  ): Promise<{ saved: boolean; canceled?: boolean; path?: string; filename: string }> => {
+    const bridge = (
+      window as unknown as {
+        explainlabDesktop?: {
+          saveBinaryFile?: (p: {
+            defaultFilename: string;
+            filterName: string;
+            extensions: string[];
+            base64: string;
+          }) => Promise<{ saved: boolean; canceled?: boolean; path?: string }>;
+          exportHtmlToPdf?: (p: {
+            defaultFilename: string;
+            html: string;
+          }) => Promise<{ saved: boolean; canceled?: boolean; path?: string }>;
+          exportHtmlToPng?: (p: {
+            defaultFilename: string;
+            html: string;
+          }) => Promise<{ saved: boolean; canceled?: boolean; path?: string }>;
+        };
+      }
+    ).explainlabDesktop;
+
+    if (format === "pdf" || format === "card") {
+      const res = await request<{ filename: string; html: string; item_count: number }>(
+        "/api/export/html",
+        {
+          method: "POST",
+          body: JSON.stringify({ ...target, mode: format === "card" ? "card" : "pdf" }),
+        },
+      );
+      if (format === "pdf" && bridge?.exportHtmlToPdf) {
+        const out = await bridge.exportHtmlToPdf({
+          defaultFilename: res.filename,
+          html: res.html,
+        });
+        return { ...out, filename: res.filename };
+      }
+      if (format === "card" && bridge?.exportHtmlToPng) {
+        const out = await bridge.exportHtmlToPng({
+          defaultFilename: res.filename,
+          html: res.html,
+        });
+        return { ...out, filename: res.filename };
+      }
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(res.html);
+        win.document.close();
+        if (format === "pdf") {
+          window.setTimeout(() => win.print(), 300);
+        }
+      }
+      return { saved: true, filename: res.filename };
+    }
+
+    const endpoint = format === "docx" ? "/api/export/docx" : "/api/export/pptx";
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(target),
+    });
+    if (!resp.ok) {
+      let detail = `生成失败 (${resp.status})`;
+      try {
+        const j = (await resp.json()) as { detail?: string };
+        if (j.detail) detail = j.detail;
+      } catch {
+        // ignore
+      }
+      throw new ApiError(resp.status, detail);
+    }
+    const cd = resp.headers.get("content-disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const filename = m ? decodeURIComponent(m[1]) : `Nesti-知识总结.${format}`;
+    const buf = await resp.arrayBuffer();
+
+    if (bridge?.saveBinaryFile) {
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      const out = await bridge.saveBinaryFile({
+        defaultFilename: filename,
+        filterName: format === "docx" ? "Word 文档" : "PowerPoint 演示文稿",
+        extensions: [format],
+        base64: btoa(binary),
+      });
+      return { ...out, filename };
+    }
+
+    const blob = new Blob([buf]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return { saved: true, filename };
+  },
+
+  // V3 网址一键剪藏（贴链接直接抓正文转为 Markdown 卡片入库）
+  clipUrl: (url: string, spaceId?: string | null) =>
+    request<KnowledgeItem>("/api/export/clip-url", {
+      method: "POST",
+      body: JSON.stringify({ url, space_id: spaceId ?? null }),
+    }),
+
+  // V3 AI 一句话生成 UI 风格插件草稿
+  generateStylePlugin: (prompt: string) =>
+    request<{
+      name: string;
+      englishName: string;
+      description: string;
+      mode: "light" | "dark";
+      canvasBg: string;
+      cardBg: string;
+      accent: string;
+      secondary: string;
+      fontMood: "sans" | "serif" | "mono";
+      texture: "none" | "grid" | "dots" | "aurora";
+      cornerStyle: "sharp" | "balanced" | "soft";
+    }>("/api/export/generate-style", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    }),
 };

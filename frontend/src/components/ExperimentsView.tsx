@@ -42,31 +42,63 @@ function ModeCard({
   onSelect: () => void;
 }) {
   const meta = MODE_META[kind];
-  const a = meta.accent;
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`flex flex-col gap-1 rounded-xl border p-4 text-left transition-colors ${
-        selected ? `${a.border} ${a.bg}` : "border-slate-800 bg-slate-900 hover:border-slate-600"
-      }`}
+      className="flex flex-col gap-1 rounded-[14px] border p-4 text-left transition-all"
+      style={
+        selected
+          ? {
+              borderColor: "var(--nesti-accent)",
+              background: "color-mix(in srgb, var(--nesti-accent) 10%, var(--nesti-surface-1))",
+              boxShadow: "0 0 0 1px color-mix(in srgb, var(--nesti-accent) 30%, transparent)",
+            }
+          : {
+              borderColor: "var(--nesti-border-subtle)",
+              background: "var(--nesti-surface-1)",
+            }
+      }
     >
       <div className="flex items-center justify-between gap-2">
-        <span className={`text-base font-semibold ${selected ? a.text : "text-slate-100"}`}>
+        <span
+          className="text-base font-semibold"
+          style={{ color: selected ? "var(--nesti-accent)" : "var(--nesti-text-primary)" }}
+        >
           {meta.label}
         </span>
         <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            meta.needsModel ? "bg-slate-800 text-slate-400" : a.badge
-          }`}
+          className="rounded-full px-2.5 py-0.5 text-xs font-medium"
+          style={
+            meta.needsModel
+              ? {
+                  background: "var(--nesti-surface-2)",
+                  color: "var(--nesti-text-secondary)",
+                  border: "1px solid var(--nesti-border-subtle)",
+                }
+              : {
+                  background: "color-mix(in srgb, var(--nf-status-success) 14%, transparent)",
+                  color: "var(--nf-status-success)",
+                }
+          }
         >
           {meta.needsModel ? "需模型" : "确定性"}
         </span>
       </div>
-      <span className="text-xs text-slate-400">{meta.tagline}</span>
-      <span className="mt-1 text-sm leading-relaxed text-slate-300">{meta.description}</span>
-      <span className={`mt-1 text-xs ${selected ? a.text : "text-slate-500"}`}>
+      <span className="text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
+        {meta.tagline}
+      </span>
+      <span
+        className="mt-1 text-sm leading-relaxed"
+        style={{ color: "var(--nesti-text-secondary)" }}
+      >
+        {meta.description}
+      </span>
+      <span
+        className="mt-1 text-xs font-medium"
+        style={{ color: selected ? "var(--nesti-accent)" : "var(--nesti-text-tertiary)" }}
+      >
         {meta.requirement}
       </span>
     </button>
@@ -250,18 +282,32 @@ export function ExperimentsView() {
     [items, selectedIds],
   );
 
-  const inputClass =
-    "rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-slate-500";
+  const fieldStyle = {
+    background: "var(--nesti-surface-0)",
+    borderColor: "var(--nesti-border-subtle)",
+    color: "var(--nesti-text-primary)",
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <h2 className="text-lg font-semibold text-slate-100">交互式知识实验</h2>
-        <p className="mt-1 text-sm text-slate-400">
+    <div className="space-y-5">
+      <header className="space-y-1">
+        <div
+          className="text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+          style={{ color: "var(--nesti-accent)" }}
+        >
+          KNOWLEDGE LAB · 知识实验
+        </div>
+        <h2
+          className="text-lg font-semibold tracking-tight"
+          style={{ color: "var(--nesti-text-primary)" }}
+        >
+          交互式知识实验
+        </h2>
+        <p className="text-xs" style={{ color: "var(--nesti-text-secondary)" }}>
           围绕你的知识库主动学习：出题测验、对比辨析、编排先修路径。
           测验与对比由真实模型生成，学习路径由知识关系确定性推导。
         </p>
-      </div>
+      </header>
 
       <div className="grid gap-3 sm:grid-cols-3">
         {MODE_ORDER.map((kind) => (
@@ -277,7 +323,7 @@ export function ExperimentsView() {
       {error && (
         <div
           role="alert"
-          className="rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300"
+          className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-500"
         >
           {error}
         </div>
@@ -285,21 +331,33 @@ export function ExperimentsView() {
       {notice && (
         <div
           role="status"
-          className="rounded-md border border-emerald-900 bg-emerald-950/40 p-3 text-sm text-emerald-300"
+          className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3 text-sm text-emerald-600"
         >
           {notice}
         </div>
       )}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="w-full shrink-0 space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-4 lg:w-96">
+        <div
+          className="w-full shrink-0 space-y-3 rounded-[14px] border p-4 shadow-xs lg:w-96"
+          style={{
+            background: "var(--nesti-surface-1)",
+            borderColor: "var(--nesti-border-subtle)",
+          }}
+        >
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-slate-300">选择知识</h3>
+            <h3
+              className="text-sm font-semibold"
+              style={{ color: "var(--nesti-text-primary)" }}
+            >
+              选择知识
+            </h3>
             <select
               value={spaceId}
               onChange={(e) => setSpaceId(e.target.value)}
               aria-label="知识空间"
-              className={inputClass}
+              className="rounded-lg border px-3 py-1.5 text-sm outline-none"
+              style={fieldStyle}
             >
               <option value="">全部空间</option>
               {spaces.map((s) => (
@@ -311,13 +369,13 @@ export function ExperimentsView() {
             </select>
           </div>
 
-          <div className="max-h-72 space-y-1 overflow-auto pr-1" role="group" aria-label="知识列表">
+          <div className="max-h-72 space-y-1.5 overflow-auto pr-1" role="group" aria-label="知识列表">
             {itemsLoading ? (
-              <p role="status" className="text-sm text-slate-500">
+              <p role="status" className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
                 正在加载知识…
               </p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
                 当前空间暂无知识。可在「对话」提取或「知识库」新增。
               </p>
             ) : (
@@ -328,11 +386,20 @@ export function ExperimentsView() {
                 return (
                   <label
                     key={item.id}
-                    className={`flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors ${
+                    className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-sm transition-colors ${
+                      blocked ? "cursor-not-allowed opacity-40" : ""
+                    }`}
+                    style={
                       checked
-                        ? `${meta.accent.border} ${meta.accent.bg}`
-                        : "border-slate-800 bg-slate-950/60 hover:border-slate-600"
-                    } ${blocked ? "cursor-not-allowed opacity-40" : ""}`}
+                        ? {
+                            borderColor: "var(--nesti-accent)",
+                            background: "color-mix(in srgb, var(--nesti-accent) 9%, transparent)",
+                          }
+                        : {
+                            borderColor: "var(--nesti-border-subtle)",
+                            background: "var(--nesti-surface-0)",
+                          }
+                    }
                   >
                     <input
                       type="checkbox"
@@ -344,10 +411,14 @@ export function ExperimentsView() {
                       aria-label={item.title}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-slate-200" title={item.title}>
+                      <span
+                        className="block truncate font-medium"
+                        style={{ color: "var(--nesti-text-primary)" }}
+                        title={item.title}
+                      >
                         {item.title}
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
                         {STATUS_LABEL[item.status]}
                         {mode === "chain" && checked ? " · 目标知识" : ""}
                       </span>
@@ -359,10 +430,21 @@ export function ExperimentsView() {
           </div>
 
           {mode !== "compare" && (
-            <div className="space-y-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-              <div className="flex items-center justify-between text-xs text-slate-400">
+            <div
+              className="space-y-1.5 rounded-lg border p-3"
+              style={{
+                background: "var(--nesti-surface-0)",
+                borderColor: "var(--nesti-border-subtle)",
+              }}
+            >
+              <div
+                className="flex items-center justify-between text-xs"
+                style={{ color: "var(--nesti-text-secondary)" }}
+              >
                 <span>{range.label}</span>
-                <span className={`font-semibold ${meta.accent.text}`}>{count}</span>
+                <span className="font-semibold" style={{ color: "var(--nesti-accent)" }}>
+                  {count}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -370,7 +452,11 @@ export function ExperimentsView() {
                   onClick={() => setCount((c) => Math.max(range.min, c - 1))}
                   disabled={count <= range.min}
                   aria-label="减少"
-                  className="h-7 w-7 shrink-0 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                  className="h-7 w-7 shrink-0 rounded-md border disabled:opacity-40"
+                  style={{
+                    borderColor: "var(--nesti-border-strong)",
+                    color: "var(--nesti-text-primary)",
+                  }}
                 >
                   −
                 </button>
@@ -389,7 +475,11 @@ export function ExperimentsView() {
                   onClick={() => setCount((c) => Math.min(range.max, c + 1))}
                   disabled={count >= range.max}
                   aria-label="增加"
-                  className="h-7 w-7 shrink-0 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                  className="h-7 w-7 shrink-0 rounded-md border disabled:opacity-40"
+                  style={{
+                    borderColor: "var(--nesti-border-strong)",
+                    color: "var(--nesti-text-primary)",
+                  }}
                 >
                   +
                 </button>
@@ -397,7 +487,10 @@ export function ExperimentsView() {
             </div>
           )}
 
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div
+            className="flex items-center justify-between text-xs"
+            style={{ color: "var(--nesti-text-tertiary)" }}
+          >
             <span>
               已选 {selectedIds.length} 条
               {selectedItems.length > 0 && mode === "compare"
@@ -405,41 +498,58 @@ export function ExperimentsView() {
                 : ""}
             </span>
           </div>
-          {hint && <p className="text-xs text-amber-300">{hint}</p>}
+          {hint && <p className="text-xs text-amber-600">{hint}</p>}
 
           <button
             type="button"
             onClick={() => void handleGenerate()}
             disabled={!ready || generating}
-            className={`w-full rounded-md px-4 py-2 text-sm font-medium text-slate-900 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-              mode === "quiz"
-                ? "bg-amber-300 hover:bg-amber-200"
-                : mode === "compare"
-                  ? "bg-sky-300 hover:bg-sky-200"
-                  : "bg-emerald-300 hover:bg-emerald-200"
-            }`}
+            className="w-full rounded-[9px] px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: "var(--nesti-accent)" }}
           >
             {generating ? "生成中…" : `生成${meta.label}`}
           </button>
           {!ready && (
-            <p className="text-center text-xs text-slate-500">{meta.requirement}</p>
+            <p className="text-center text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
+              {meta.requirement}
+            </p>
           )}
         </div>
 
         <div className="min-w-0 flex-1 space-y-4">
           {session ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 p-3">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs ${MODE_META[session.kind].accent.badge}`}>
+              <div
+                className="flex flex-wrap items-center gap-2 rounded-[14px] border p-3"
+                style={{
+                  background: "var(--nesti-surface-1)",
+                  borderColor: "var(--nesti-border-subtle)",
+                }}
+              >
+                <span
+                  className="rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  style={{
+                    background: "color-mix(in srgb, var(--nesti-accent) 12%, transparent)",
+                    color: "var(--nesti-accent)",
+                  }}
+                >
                   {MODE_META[session.kind].label}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm text-slate-200" title={session.title}>
+                <span
+                  className="min-w-0 flex-1 truncate text-sm font-medium"
+                  style={{ color: "var(--nesti-text-primary)" }}
+                  title={session.title}
+                >
                   {session.title}
                 </span>
                 <button
                   type="button"
                   onClick={() => setSession(null)}
-                  className="shrink-0 rounded-md border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                  className="shrink-0 rounded-lg border px-3 py-1 text-xs font-medium"
+                  style={{
+                    borderColor: "var(--nesti-border-strong)",
+                    color: "var(--nesti-text-primary)",
+                  }}
                 >
                   关闭
                 </button>
@@ -465,12 +575,22 @@ export function ExperimentsView() {
               )}
             </div>
           ) : (
-            <div className="flex h-full min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-8 text-center">
-              <span className={`text-3xl ${meta.accent.text}`}>✦</span>
-              <p className="mt-3 text-sm text-slate-300">
+            <div
+              className="flex h-full min-h-64 flex-col items-center justify-center rounded-[14px] border border-dashed p-8 text-center"
+              style={{
+                background: "var(--nesti-surface-1)",
+                borderColor: "var(--nesti-border-strong)",
+              }}
+            >
+              <span className="text-3xl" style={{ color: "var(--nesti-accent)" }}>
+                ✦
+              </span>
+              <p className="mt-3 text-sm font-medium" style={{ color: "var(--nesti-text-primary)" }}>
                 选择「{meta.label}」模式与知识，点击生成开始实验。
               </p>
-              <p className="mt-1 text-xs text-slate-500">{meta.description}</p>
+              <p className="mt-1 text-xs" style={{ color: "var(--nesti-text-secondary)" }}>
+                {meta.description}
+              </p>
             </div>
           )}
 
@@ -487,22 +607,40 @@ export function ExperimentsView() {
       {detailItem && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div
-            className="absolute inset-0 bg-slate-950/70"
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
             onClick={() => setDetailItem(null)}
             aria-hidden
           />
-          <aside className="exp-fade-in relative z-10 h-full w-full max-w-md overflow-auto border-l border-slate-800 bg-slate-900 p-4">
+          <aside
+            className="exp-fade-in relative z-10 h-full w-full max-w-md overflow-auto border-l p-5 shadow-xl"
+            style={{
+              background: "var(--nesti-surface-1)",
+              borderColor: "var(--nesti-border-subtle)",
+            }}
+          >
             <div className="flex items-start justify-between gap-2">
-              <h3 className="text-base font-semibold text-slate-100">{detailItem.title}</h3>
+              <h3
+                className="text-base font-semibold"
+                style={{ color: "var(--nesti-text-primary)" }}
+              >
+                {detailItem.title}
+              </h3>
               <button
                 type="button"
                 onClick={() => setDetailItem(null)}
-                className="shrink-0 rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium"
+                style={{
+                  borderColor: "var(--nesti-border-strong)",
+                  color: "var(--nesti-text-primary)",
+                }}
               >
                 关闭
               </button>
             </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+            <p
+              className="mt-2 whitespace-pre-wrap text-sm leading-relaxed"
+              style={{ color: "var(--nesti-text-secondary)" }}
+            >
               {detailItem.content}
             </p>
             <KnowledgeDetail

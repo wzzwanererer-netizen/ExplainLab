@@ -16,16 +16,22 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.routes.agents import router as agents_router
 from app.api.routes.attachments import router as attachments_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.experiments import router as experiments_router
+from app.api.routes.export import router as export_router
+from app.api.routes.folders import router as folders_router
 from app.api.routes.governance import router as governance_router
 from app.api.routes.graph import router as graph_router
 from app.api.routes.health import router as health_router
 from app.api.routes.import_export import router as import_export_router
 from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.links import router as links_router
+from app.api.routes.media import router as media_router
+from app.api.routes.sandbox import router as sandbox_router
 from app.api.routes.search import router as search_router
+from app.api.routes.settings import router as settings_router
 from app.api.routes.spaces import router as spaces_router
 from app.core.config import Settings, get_settings
 from app.db.process_lock import ProcessLock
@@ -179,6 +185,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(health_router, prefix="/api")
+    application.include_router(settings_router, prefix="/api")
+    application.include_router(export_router, prefix="/api")
+    application.include_router(agents_router, prefix="/api")
+    application.include_router(folders_router, prefix="/api")
     application.include_router(spaces_router, prefix="/api")
     application.include_router(conversations_router, prefix="/api")
     # A1-03（R11）：links 静态字面路径须先于 knowledge 的 {item_id} 动态段注册。
@@ -187,6 +197,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(import_export_router, prefix="/api")
     application.include_router(attachments_router, prefix="/api")
     application.include_router(knowledge_router, prefix="/api")
+    application.include_router(media_router, prefix="/api")
+    application.include_router(sandbox_router, prefix="/api")
     application.include_router(governance_router, prefix="/api")
     application.include_router(search_router, prefix="/api")
     application.include_router(graph_router, prefix="/api")

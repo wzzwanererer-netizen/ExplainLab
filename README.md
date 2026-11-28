@@ -1,46 +1,62 @@
-# ExplainLab V2 — 原生桌面 AI 知识工作区与多 Agent 共享外脑
+# Nesti · AI 工作空间（ExplainLab V3）
 
-![ExplainLab V2 Banner](docs/assets/explainlab-banner.png)
+![ExplainLab Banner](docs/assets/explainlab-banner.png)
 
-> **给所有 AI 装上共享外脑** · 面向学习与科研的本地 AI 知识管理、交互式学习与多 Agent MCP 外脑平台（2026 Qoder 高校创造力大赛 · StudyHack 赛道作品）。
+> **给电脑里所有 AI 助手装上同一个本地「长期海马体」** · 100% 本地隐私、跨 22 款主流 AI 助手共享记忆、乱文件夹资产化管理、一键生成办公成品、以及可扩展的 Theme Studio 2.0 风格插件工坊。
 
-- **在线交互体验（Qoder Sites）**：https://explainlab-t6omhu7gei6.qoder.zone
-- **1080p 功能演示视频（B站）**：https://www.bilibili.com/video/BV1dgykzrE7h/
+- **开源协议**：MIT License（完全免费，本地运行，零云端数据上传）
+- **演示视频（B站）**：https://www.bilibili.com/video/BV1dgykzrE7h/
 
 ---
 
-## 核心特性
+## 为什么做 Nesti / ExplainLab V3？
 
-1. **Markdown 双链知识库与严格知识治理**
-   - 支持 **源码 / 预览 / 分屏** 实时写作、输入 `[[` 自动联想补全双链、点击跳转与 `#标签` 筛选；
-   - 支持 `.md` / `.zip`（含附件）完整导入导出；
-   - 内置 **审核门禁（Review Queue / HTTP 202）**、线性版本快照回滚、词面 + 模型查重合并与来源追溯（`source_refs`），防止 AI 幻觉污染主知识库。
-2. **Obsidian 风格力导向知识星图**
-   - 纯 TypeScript 零重依赖自研物理引擎（库仑斥力 + 弹簧引力 + 矩形标签防重叠碰撞），HiDPI Canvas 渲染；
-   - 节点按连接度动态缩放、悬停聚光灯聚焦 1 跳邻居、物理拖拽弹性联动，支持 **全局 / 1 跳 / 2 跳局部图谱** 及 **主库与各 Agent 副库一键切换**。
-3. **SSE 实时流式研究对话与引用溯源**
-   - 提问前自动执行 **混合检索（SQLite FTS5 / PostgreSQL tsvector + 语义向量 RRF 融合排序）** 注入上下文；
-   - 逐字流式作答，点击下方引用胶囊在右侧直接滑出原笔记对照；支持一键从对话提取知识。
-4. **交互式知识实验（主动学习引擎）**
-   - 自动将知识库转化为 **测验（Quiz）**、**概念对比（Compare）** 与 **先修学习路径（Chain）**。
-5. **标准 MCP Server 多 Agent 共享外脑 + 动态独立副库**
-   - 内置标准 JSON-RPC 2.0 over stdio MCP Server（11 个工具），无缝接入 **Qoder、DSH、Cursor、Claude、Codex、Trae、Kimi、WorkBuddy** 等 Agent；
-   - 外部 Agent 首次写入时自动按名称动态创建专属副库（如 `Agent · Qoder`、`Agent · DSH`），与主库清晰隔离又可在全局星图中联合发现跨工具关联。
-6. **Nesti Fluent 原生桌面端 & Theme Studio**
-   - 基于 Electron 的独立 Windows 11 Mica 质感桌面窗口（无边框集成标题栏、多标签页条、`Ctrl+K` 命令面板），内置浅/深色模式与 6 套预设配色。
+你电脑里可能同时装了 Claude Code、Cursor、Codex、Antigravity、Trae、CodeBuddy、Qoder、豆包工作、千问办公……但它们彼此孤立，过几天就「金鱼脑失忆」；桌面和下载文件夹里也堆满了散落的 Word / PDF / PPT / Excel。
+
+**ExplainLab V3（Nesti · AI 工作空间）** 就是为此而生的 **本地 AI 长期记忆中枢 + 个人知识资产工作台**。
+
+---
+
+## 核心特性（V3 完整版）
+
+1. **多 Agent 统一记忆外脑（支持 22 款主流 AI 助手 + MCP 共享记忆）**
+   - 内置标准 MCP Server（JSON-RPC 2.0 over stdio），支持一键接入 **Antigravity、Claude Code、Cursor、Codex、Trae CN、CodeBuddy、WorkBuddy、Qoder、Kimi、QwenWork、DSH、OpenCode、GitHub Copilot** 等主流助手；
+   - 每个外部 Agent 自动拥有独立副库（`Agent · xxx`），与个人主知识库隔离，同时支持 **自动对话吸尘**、**自选对话精炼入库** 与 **跨 Agent 只读无缝接力**（零污染知识库）；
+   - **任务完成临时悬浮弹窗**：AI 助手完成任务后右下角自动滑出透明悬浮窗询问是否入库，不抢焦点、不点 12 秒自动消失。
+
+2. **全局快捷键「一键闪记」（`Alt + Shift + Space`） & 网址一键剪藏**
+   - 在电脑任意软件里按下 `Alt + Shift + Space` 呼出居中极简悬浮输入条：支持文字灵感、`Ctrl + V` 粘贴截图秒存附件，粘贴 `https://` 链接自动触发 **网址一键剪藏**（剥离杂乱脚本/导航，转为干净 Markdown 卡片）。
+
+3. **一键生成办公成品（支持自选保存目录）**
+   - 纯本地零重依赖生成，无需安装 Office：在知识库顶部或卡片右键一键生成 **总结报告 PDF (.pdf)**、**16:9 汇报演示 PPT (.pptx)**、**可编辑 Word (.docx)** 与 **高清知识卡片长图 (.png)**。
+
+4. **乱文件夹哨兵 + 内置文件资产库**
+   - 只读监听本机桌面/下载等杂乱目录，一键收编 Word / Excel / PPT / PDF / ZIP / 图片 / 音视频（不搬运原文件）；
+   - 内置 **原位阅读器**（Word/Excel/PPT/PDF/音视频直接看），右键一键在 Windows 资源管理器中精确定位。
+
+5. **Obsidian 风格力导向知识星图 & 知识治理**
+   - 多色 Agent/专题聚类 + 自动发现隐性关联连线，点击节点跨空间高亮定位到知识库；
+   - 支持 **卡片批量管理**（多选批量生效 / 批量移动空间 / 批量删除）、`[[双链]]` 自动补全、版本回滚与审核门禁（Review Queue）。
+
+6. **Theme Studio 2.0 · UI 风格插件工坊**
+   - 内置 6 套整站皮肤：**Nesti Fluent（官方默认）**、**未来赛博（Cybernetic Terminal）**、**复古图书馆（Classical Library）**、**极简墨水屏（E-Ink Zen）**、**森系护眼（Nordic Matcha）**、**爵士黑金（Noir Gold）**；
+   - 支持 **「AI 一句话生成专属风格」**、**零代码可视化风格制作器** 与 `.nesti-style.json` 风格插件导入导出。
+
+7. **全原生 Windows 桌面体验**
+   - Electron 无边框集成标题栏 + 系统托盘常驻 + 开机静默自启 + `Ctrl + K` 全局瞬搜 + 可视化「模型与 Key 设置」（支持 DeepSeek、通义千问、智谱 GLM、Kimi、SiliconFlow 及本地免费 Ollama）。
 
 ---
 
 ## 架构概览
 
 ```text
-外部 Agent 生态 (Qoder / DSH / Cursor / Claude / Codex / Trae / Kimi)
-        │  MCP (JSON-RPC 2.0 over stdio, 11 Tools)
+外部 Agent 生态 (22 款主流 AI 助手 · Claude / Cursor / Codex / Antigravity / Trae / CodeBuddy ...)
+        │  MCP (JSON-RPC 2.0 over stdio) + 本地会话只读接力
         ▼
   ExplainLab MCP Server ──┐
                           ├──HTTP + SSE /api──▶ FastAPI Backend (SQLAlchemy 2 + Alembic + 双库方言适配)
-  原生桌面端 (Electron) ───┘                              │  Protocol 端口注入
-                                                         ▼
+  Nesti 原生桌面端 ───────┘                              │  Protocol 端口注入
+  (Electron + Theme Studio 2.0)                          ▼
                                             knowledge-core (纯 Python 领域核心，零 Web/ORM 依赖)
                                                          │
                                                          ▼
@@ -57,17 +73,23 @@
 
 ### 1. 安装依赖与初始化数据库
 ```bash
-# 安装 Python 后端与独立核心依赖
+# 安装 Python 后端与独立核心依赖（国内可加 UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple）
 uv sync --locked
 
-# 复制配置模板（如需 AI 对话与向量检索，请填入你自己的 API Key）
+# 复制配置模板（也可启动后在软件「模型与 Key 设置」页面可视化配置）
 cp backend/.env.example backend/.env
 
 # 初始化本地 SQLite 数据库
 cd backend && uv run alembic upgrade head
 ```
 
-### 2. 启动后端与前端（开发模式）
+### 2. 启动原生 Electron 桌面端（推荐）
+```bash
+cd frontend && npm ci && npm run build
+cd ../desktop && npm ci && npm start
+```
+
+### 3. 开发模式（Web 浏览器）
 ```bash
 # 终端 1：启动 FastAPI 后端（http://127.0.0.1:8000）
 cd backend && uv run uvicorn app.main:app --reload
@@ -76,21 +98,15 @@ cd backend && uv run uvicorn app.main:app --reload
 cd frontend && npm ci && npm run dev
 ```
 
-### 3. 启动原生 Electron 桌面端（Windows）
-```bash
-cd frontend && npm run build
-cd ../desktop && npm install && npm start
-```
-
-### 4. 接入外部 Agent（MCP）
-详见 [docs/agent-mcp-setup.md](docs/agent-mcp-setup.md)，在任意支持 MCP 的 Agent 中配置 `scripts/explainlab-mcp.cmd` 即可。
+### 4. 接入本机 AI 助手（MCP）
+详见 [docs/agent-mcp-setup.md](docs/agent-mcp-setup.md)，在任意支持 MCP 的客户端配置 `scripts/explainlab-mcp.cmd` 即可共享长期记忆。
 
 ---
 
 ## 测试与质量保障
 
 ```bash
-# 后端 + knowledge-core 根级全量测试（1,520+ 项）
+# 后端 + knowledge-core 根级全量测试
 uv run pytest -o addopts="--import-mode=importlib"
 
 # 代码检查
@@ -104,4 +120,4 @@ cd frontend && npm run test && npm run typecheck && npm run build
 
 ## License
 
-本项目采用 [MIT License](LICENSE) 开源。
+本项目采用 [MIT License](LICENSE) 开源。欢迎提交 Issue、PR 或分享你创作的 `.nesti-style.json` UI 风格插件！

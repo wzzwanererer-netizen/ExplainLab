@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nesti 一键闪记</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    .shell {
+      margin: 12px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(59, 116, 232, 0.22);
+      border-radius: 16px;
+      box-shadow: 0 18px 46px rgba(15, 23, 42, 0.18), 0 2px 10px rgba(59, 116, 232, 0.08);
+      padding: 14px 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      -webkit-app-region: drag;
+    }
+    body.dark .shell {
+      background: rgba(24, 29, 41, 0.96);
+      border-color: rgba(122, 166, 255, 0.28);
+      color: #edf2ff;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #3b74e8;
+      letter-spacing: 0.02em;
+    }
+    body.dark .brand { color: #8cb4ff; }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #3b74e8, #6aa0ff);
+      box-shadow: 0 0 0 3px rgba(59, 116, 232, 0.16);
+    }
+    .hint {
+      font-size: 11px;
+      color: #8695ab;
+    }
+    .close-btn {
+      -webkit-app-region: no-drag;
+      border: none;
+      background: transparent;
+      color: #8695ab;
+      font-size: 15px;
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+    }
+    .close-btn:hover { background: rgba(30, 36, 51, 0.07); color: #1e2433; }
+    body.dark .close-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    textarea {
+      -webkit-app-region: no-drag;
+      width: 100%;
+      height: 76px;
+      resize: none;
+      border: 1px solid rgba(30, 36, 51, 0.1);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13.5px;
+      line-height: 1.55;
+      font-family: inherit;
+      color: #1e2433;
+      background: #f8fafd;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    textarea:focus {
+      border-color: #3b74e8;
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(59, 116, 232, 0.14);
+    }
+    body.dark textarea {
+      background: rgba(15, 19, 28, 0.85);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #edf2ff;
+    }
+    body.dark textarea:focus {
+      border-color: #6aa0ff;
+      background: rgba(15, 19, 28, 1);
+    }
+    .img-bar {
+      -webkit-app-region: no-drag;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #edf3fc;
+      border: 1px solid rgba(59, 116, 232, 0.18);
+      font-size: 12px;
+      color: #2f5fb8;
+    }
+    body.dark .img-bar {
+      background: rgba(59, 116, 232, 0.16);
+      color: #b4ceff;
+    }
+    .img-bar.show { display: flex; }
+    .img-bar img {
+      width: 34px;
+      height: 24px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid rgba(30, 36, 51, 0.12);
+    }
+    .img-bar button {
+      margin-left: auto;
+      border: none;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .img-bar button:hover { background: rgba(59, 116, 232, 0.15); }
+    .footer {
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .status {
+      font-size: 11.5px;
+      color: #64748b;
+    }
+    .status.ok { color: #059669; font-weight: 600; }
+    .status.err { color: #dc2626; }
+    .actions { display: flex; align-items: center; gap: 8px; }
+    .btn {
+      border: 1px solid rgba(30, 36, 51, 0.14);
+      background: #ffffff;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .btn:hover { background: #f1f5f9; }
+    .btn-primary {
+      border-color: #3b74e8;
+      background: #3b74e8;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .btn-primary:hover { background: #2f62cc; }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="top">
+      <div class="brand">
+        <span class="dot"></span>
+        <span>Nesti 一键闪记</span>
+        <span class="hint">· 支持文字 / 网址 / Ctrl+V 贴图</span>
+      </div>
+      <button class="close-btn" id="btnClose" title="关闭 (ESC)">✕</button>
+    </div>
+
+    <textarea
+      id="noteInput"
+      placeholder="记一句灵感、贴一段代码或 Ctrl+V 粘贴截图…（Ctrl+Enter 秒存入库，ESC 隐藏）"
+    ></textarea>
+
+    <div class="img-bar" id="imgBar">
+      <img id="imgPreview" alt="已粘贴截图" />
+      <span id="imgMeta">已附带剪贴板截图</span>
+      <button id="btnClearImg" type="button">移除</button>
+    </div>
+
+    <div class="footer">
+      <span class="status" id="statusText">Alt+Shift+Space 随时呼出</span>
+      <div class="actions">
+        <button class="btn" id="btnCancel" type="button">取消</button>
+        <button class="btn btn-primary" id="btnSubmit" type="button">秒存入库 ↵</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const noteInput = document.getElementById("noteInput");
+    const imgBar = document.getElementById("imgBar");
+    const imgPreview = document.getElementById("imgPreview");
+    const imgMeta = document.getElementById("imgMeta");
+    const statusText = document.getElementById("statusText");
+    const btnSubmit = document.getElementById("btnSubmit");
+    const btnCancel = document.getElementById("btnCancel");
+    const btnClose = document.getElementById("btnClose");
+    const btnClearImg = document.getElementById("btnClearImg");
+
+    let pastedImage = null; // { base64, mimeType, filename }
+    let submitting = false;
+
+    function resetForm() {
+      noteInput.value = "";
+      pastedImage = null;
+      imgBar.classList.remove("show");
+      imgPreview.src = "";
+      statusText.className = "status";
+      statusText.textContent = "Alt+Shift+Space 随时呼出";
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = "秒存入库 ↵";
+    }
+
+    function closeBar() {
+      if (submitting) return;
+      window.nestiQuickNote.close();
+    }
+
+    btnClose.addEventListener("click", closeBar);
+    btnCancel.addEventListener("click", closeBar);
+    btnClearImg.addEventListener("click", () => {
+      pastedImage = null;
+      imgBar.classList.remove("show");
+      imgPreview.src = "";
+    });
+
+    noteInput.addEventListener("paste", (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type && it.type.startsWith("image/")) {
+          const file = it.getAsFile();
+          if (!file) continue;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = String(reader.result || "");
+            const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : "";
+            if (!base64) return;
+            const ext = it.type.includes("jpeg") ? "jpg" : "png";
+            pastedImage = {
+              base64,
+              mimeType: it.type,
+              filename: `quick-capture-${Date.now()}.${ext}`,
+            };
+            imgPreview.src = dataUrl;
+            imgMeta.textContent = `已附带截图 (${Math.max(1, Math.round(file.size / 1024))} KB)`;
+            imgBar.classList.add("show");
+          };
+          reader.readAsDataURL(file);
+          break;
+        }
+      }
+    });
+
+    async function handleSubmit() {
+      if (submitting) return;
+      const text = noteInput.value.trim();
+      if (!text && !pastedImage) {
+        statusText.className = "status err";
+        statusText.textContent = "请输入内容或粘贴截图";
+        noteInput.focus();
+        return;
+      }
+      submitting = true;
+      btnSubmit.disabled = true;
+      btnSubmit.textContent = "正在存入…";
+      statusText.className = "status";
+      statusText.textContent = "正在写入本地知识库…";
+
+      try {
+        const res = await window.nestiQuickNote.submit({
+          text,
+          image: pastedImage,
+        });
+        if (res && res.ok) {
+          statusText.className = "status ok";
+          statusText.textContent = res.message || "已秒存至知识库";
+          setTimeout(() => {
+            submitting = false;
+            resetForm();
+            window.nestiQuickNote.close();
+          }, 520);
+        } else {
+          submitting = false;
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = "秒存入库 ↵";
+          statusText.className = "status err";
+          statusText.textContent = (res && res.error) || "存入失败，请检查后端状态";
+        }
+      } catch (err) {
+        submitting = false;
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = "秒存入库 ↵";
+        statusText.className = "status err";
+        statusText.textContent = err && err.message ? err.message : "存入失败";
+      }
+    }
+
+    btnSubmit.addEventListener("click", handleSubmit);
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeBar();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        void handleSubmit();
+      }
+    });
+
+    window.nestiQuickNote.onFocusInput((data) => {
+      if (data && data.theme === "dark") {
+        document.body.classList.add("dark");
+      } else {
+        document.body.classList.remove("dark");
+      }
+      setTimeout(() => noteInput.focus(), 40);
+    });
+  </script>
+</body>
+</html>

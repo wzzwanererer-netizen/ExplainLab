@@ -29,16 +29,25 @@ export function ExperimentHistory({
   onDelete,
 }: Props) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-      <h3 className="mb-3 text-sm font-medium text-slate-300">
+    <div
+      className="rounded-[14px] border p-4 shadow-xs"
+      style={{
+        background: "var(--nesti-surface-1)",
+        borderColor: "var(--nesti-border-subtle)",
+      }}
+    >
+      <h3
+        className="mb-3 text-sm font-semibold"
+        style={{ color: "var(--nesti-text-primary)" }}
+      >
         历史实验（{sessions.length}）
       </h3>
       {loading ? (
-        <p role="status" className="text-sm text-slate-500">
+        <p role="status" className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
           正在加载历史…
         </p>
       ) : sessions.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm" style={{ color: "var(--nesti-text-secondary)" }}>
           暂无历史实验。选择模式与知识后生成第一个实验。
         </p>
       ) : (
@@ -49,18 +58,37 @@ export function ExperimentHistory({
             return (
               <li
                 key={s.id}
-                className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
-                  isActive ? `${meta.accent.border} ${meta.accent.bg}` : "border-slate-800 bg-slate-950/60"
-                }`}
+                className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                style={
+                  isActive
+                    ? {
+                        borderColor: "var(--nesti-accent)",
+                        background: "color-mix(in srgb, var(--nesti-accent) 10%, var(--nesti-surface-0))",
+                      }
+                    : {
+                        borderColor: "var(--nesti-border-subtle)",
+                        background: "var(--nesti-surface-0)",
+                      }
+                }
               >
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${meta.accent.badge}`}>
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  style={{
+                    background: "color-mix(in srgb, var(--nesti-accent) 12%, transparent)",
+                    color: "var(--nesti-accent)",
+                  }}
+                >
                   {meta.label}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-slate-200" title={s.title}>
+                  <p
+                    className="truncate text-sm font-medium"
+                    style={{ color: "var(--nesti-text-primary)" }}
+                    title={s.title}
+                  >
                     {s.title}
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs" style={{ color: "var(--nesti-text-tertiary)" }}>
                     {EXPERIMENT_STATUS_LABEL[s.status]} · {s.item_ids.length} 条知识 ·{" "}
                     {formatDate(s.created_at)}
                   </p>
@@ -68,7 +96,11 @@ export function ExperimentHistory({
                 <button
                   type="button"
                   onClick={() => onReopen(s)}
-                  className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                  className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--nesti-surface-hover)]"
+                  style={{
+                    borderColor: "var(--nesti-border-subtle)",
+                    color: "var(--nesti-text-secondary)",
+                  }}
                 >
                   打开
                 </button>
@@ -76,7 +108,11 @@ export function ExperimentHistory({
                   type="button"
                   onClick={() => onDelete(s.id)}
                   aria-label={`删除实验 ${s.title}`}
-                  className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-red-400 hover:bg-red-950/40"
+                  className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--nf-status-danger-bg)]"
+                  style={{
+                    borderColor: "var(--nesti-border-subtle)",
+                    color: "var(--nf-status-danger)",
+                  }}
                 >
                   删除
                 </button>

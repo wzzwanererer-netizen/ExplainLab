@@ -189,12 +189,18 @@ export function ChatView() {
     <div className="flex h-full flex-col gap-4 lg:flex-row">
       {/* 左侧会话列表 */}
       <aside
-        className="w-full shrink-0 rounded-xl border p-4 shadow-xs lg:w-72"
+        className="w-full shrink-0 rounded-[14px] border p-4 shadow-xs lg:w-72"
         style={{
           background: "var(--nesti-surface-1)",
           borderColor: "var(--nesti-border-subtle)",
         }}
       >
+        <div
+          className="mb-1 text-[10px] font-semibold tracking-[0.14em] uppercase"
+          style={{ color: "var(--nesti-accent)" }}
+        >
+          RESEARCH CHAT · 研究对话
+        </div>
         <h2
           className="mb-3 text-sm font-semibold"
           style={{ color: "var(--nesti-text-primary)" }}

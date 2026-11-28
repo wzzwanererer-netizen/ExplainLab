@@ -1,38 +1,80 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type {
+  AgentStatus,
   Conversation,
   ExperimentSession,
   HealthResponse,
   KnowledgeItem,
+  LibraryMediaItem,
   ReviewRequest,
   Space,
 } from "../api/types";
 import { Icon } from "./Icons";
 
 interface Props {
-  onNavigate: (tab: "chat" | "knowledge" | "search" | "map" | "experiments" | "reviews" | "status" | "theme") => void;
+  onNavigate: (
+    tab:
+      | "chat"
+      | "knowledge"
+      | "files"
+      | "search"
+      | "map"
+      | "experiments"
+      | "reviews"
+      | "models"
+      | "status"
+      | "theme",
+  ) => void;
+  onOpenAgentHub?: () => void;
+  onJumpToItem?: (spaceId: string | null | undefined, itemId: string) => void;
 }
 
-export function DashboardView({ onNavigate }: Props) {
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const STATUS_ZH: Record<string, string> = {
+  active: "已生效",
+  draft: "草稿",
+  archived: "已归档",
+};
+
+/**
+ * Nesti · AI 工作空间首页（Airy Techwear Atelier · 对齐官方设定图视觉语言）
+ */
+export function DashboardView({ onNavigate, onOpenAgentHub, onJumpToItem }: Props) {
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [reviews, setReviews] = useState<ReviewRequest[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [experiments, setExperiments] = useState<ExperimentSession[]>([]);
+  const [files, setFiles] = useState<LibraryMediaItem[]>([]);
+  const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showMascot, setShowMascot] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("nesti_dashboard_mascot") !== "false";
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const [k, c, r, s, e, h] = await Promise.allSettled([
+      const [k, c, r, s, e, h, f, a] = await Promise.allSettled([
         api.listKnowledge(),
         api.listConversations(),
         api.listReviews("pending"),
         api.listSpaces(),
         api.listExperiments(),
         api.getHealth(),
+        api.listMediaLibrary(),
+        api.discoverAgents(),
       ]);
       if (k.status === "fulfilled") setKnowledge(k.value);
       if (c.status === "fulfilled") setConversations(c.value);
@@ -40,246 +82,433 @@ export function DashboardView({ onNavigate }: Props) {
       if (s.status === "fulfilled") setSpaces(s.value);
       if (e.status === "fulfilled") setExperiments(e.value);
       if (h.status === "fulfilled") setHealth(h.value);
+      if (f.status === "fulfilled") setFiles(f.value);
+      if (a.status === "fulfilled") setAgents(a.value);
       setLoading(false);
     })();
   }, []);
 
-  const cardStyle = {
-    background: "var(--nf-bg-surface)",
-    border: "1px solid var(--nf-border-subtle)",
-    borderRadius: "var(--nf-radius-md)",
-    boxShadow: "var(--nf-shadow-sm)",
+  const totalFileBytes = useMemo(
+    () => files.reduce((acc, f) => acc + (f.size_bytes || 0), 0),
+    [files],
+  );
+  const connectedAgents = useMemo(
+    () => agents.filter((a) => a.connected),
+    [agents],
+  );
+
+  const toggleMascot = () => {
+    setShowMascot((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("nesti_dashboard_mascot", next ? "true" : "false");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   return (
-    <div className="space-y-4">
-      <div
-        className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-        style={cardStyle}
+    <div className="mx-auto max-w-6xl space-y-8 pb-8">
+      {/* Nesti 官方设定图风格 Hero 画报舞台 */}
+      <section
+        className="relative overflow-hidden rounded-2xl border px-8 py-7"
+        style={{
+          background: "var(--nf-bg-surface)",
+          borderColor: "var(--nf-border-subtle)",
+        }}
       >
-        <div>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--nf-text-primary)" }}>
-            工作台 · Nesti Fluent
-          </h2>
-          <p className="text-xs" style={{ color: "var(--nf-text-muted)" }}>
-            全部数据实时来自本地 ExplainLab V2 后端，无虚构统计。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onNavigate("chat")}
-            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium"
-            style={{
-              background: "var(--nf-bg-surface-subtle)",
-              border: "1px solid var(--nf-border-default)",
-              color: "var(--nf-text-primary)",
-            }}
-          >
-            <Icon name="chat" size={14} /> 研究对话
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("knowledge")}
-            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium"
-            style={{
-              background: "var(--nf-accent)",
-              color: "var(--nf-text-on-accent)",
-            }}
-          >
-            <Icon name="knowledge" size={14} /> 打开知识库 / 导入 ZIP
-          </button>
-        </div>
-      </div>
+        {/* 设定图同款：右上斜切淡冰蓝光带 + 工程标尺细线 */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-[44%] opacity-80"
+          style={{
+            background:
+              "linear-gradient(128deg, transparent 0%, color-mix(in srgb, var(--nf-accent) 7%, transparent) 46%, color-mix(in srgb, var(--nf-brand-glacier) 15%, transparent) 100%)",
+            clipPath: "polygon(18% 0, 100% 0, 100% 100%, 0% 100%)",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-5 right-5 bottom-5 hidden w-px lg:block"
+          style={{ background: "var(--nf-border-subtle)" }}
+        />
 
-      {loading ? (
-        <p role="status" className="text-xs" style={{ color: "var(--nf-text-muted)" }}>
-          正在加载工作台数据…
-        </p>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-          <div className="space-y-4">
-            <section style={cardStyle} className="overflow-hidden">
-              <div
-                className="flex items-center justify-between px-4 py-2.5 text-xs font-semibold"
-                style={{ borderBottom: "1px solid var(--nf-border-subtle)" }}
+        <div className="relative flex items-center justify-between gap-6">
+          <div className="max-w-xl space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                className="font-mono text-[10.5px] font-semibold tracking-[0.2em] uppercase"
+                style={{ color: "var(--nf-accent)" }}
               >
-                <span>最近知识（{knowledge.length}）</span>
+                NESTI · AI WORKSPACE
+              </span>
+              <span
+                className="h-px w-10"
+                style={{ background: "var(--nf-border-default)" }}
+              />
+              <span
+                className="text-[11px] tracking-[0.22em]"
+                style={{ color: "var(--nf-text-muted)" }}
+              >
+                效率 · 创作 · 项目 · 生活
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <h2
+                className="text-[26px] leading-tight font-semibold tracking-tight"
+                style={{ color: "var(--nf-text-primary)" }}
+              >
+                把想法，交给我们一起实现吧。
+              </h2>
+              <p
+                className="text-[13px] leading-relaxed"
+                style={{ color: "var(--nf-text-secondary)" }}
+              >
+                多 Agent 长期记忆中枢与本地文档工作台。随时按{" "}
+                <kbd
+                  className="rounded border px-1.5 py-0.5 text-[11px]"
+                  style={{
+                    background: "var(--nf-bg-surface-subtle)",
+                    borderColor: "var(--nf-border-default)",
+                  }}
+                >
+                  Ctrl K
+                </kbd>{" "}
+                瞬搜全库知识或直达本地文档。
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => onNavigate("knowledge")}
+                className="inline-flex items-center gap-2 rounded-[10px] px-4 py-2 text-xs font-semibold"
+                style={{
+                  background: "var(--nf-accent)",
+                  color: "var(--nf-text-on-accent)",
+                }}
+              >
+                <Icon name="knowledge" size={14} /> 进入知识库
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate("files")}
+                className="inline-flex items-center gap-2 rounded-[10px] border px-4 py-2 text-xs font-medium"
+                style={{
+                  background: "var(--nf-bg-surface)",
+                  borderColor: "var(--nf-border-default)",
+                  color: "var(--nf-text-primary)",
+                }}
+              >
+                本地文件库
+              </button>
+              {onOpenAgentHub && (
                 <button
                   type="button"
-                  onClick={() => onNavigate("knowledge")}
-                  className="text-xs font-medium"
-                  style={{ color: "var(--nf-accent)" }}
+                  onClick={onOpenAgentHub}
+                  className="inline-flex items-center gap-2 rounded-[10px] border px-4 py-2 text-xs font-medium"
+                  style={{
+                    background: "var(--nf-bg-surface)",
+                    borderColor: "var(--nf-border-default)",
+                    color: "var(--nf-text-primary)",
+                  }}
                 >
-                  查看全部
+                  自选对话吸尘
                 </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onNavigate("map")}
+                className="px-2 py-2 text-xs font-medium hover:underline"
+                style={{ color: "var(--nf-text-secondary)" }}
+              >
+                知识星图 →
+              </button>
+            </div>
+          </div>
+
+          {/* 官方 Nesti Q 版形象画报角标（严格保留原立绘，可一键开关） */}
+          <div className="relative hidden shrink-0 items-end sm:flex">
+            {showMascot && (
+              <img
+                src="/nesti-chibi.png"
+                alt="Nesti"
+                draggable={false}
+                className="h-[168px] w-auto object-contain select-none drop-shadow-[0_10px_18px_rgba(59,116,232,0.12)]"
+              />
+            )}
+            <button
+              type="button"
+              onClick={toggleMascot}
+              title={showMascot ? "隐藏首页 Nesti 插画" : "显示首页 Nesti 插画"}
+              className="absolute right-0 -bottom-4 font-mono text-[10px] opacity-50 transition-opacity hover:opacity-100"
+              style={{ color: "var(--nf-text-muted)" }}
+            >
+              {showMascot ? "收起立绘" : "显示立绘"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 一体化 4 列精密标尺指标条（告别 4 个沉重小方盒） */}
+      <section
+        className="grid grid-cols-2 divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-x lg:divide-y-0"
+        style={{
+          background: "var(--nf-bg-surface)",
+          borderColor: "var(--nf-border-subtle)",
+        }}
+      >
+        {[
+          {
+            idx: "01",
+            label: "知识条目",
+            value: String(knowledge.length),
+            sub: `${spaces.length} 个知识空间`,
+            onClick: () => onNavigate("knowledge"),
+          },
+          {
+            idx: "02",
+            label: "收编文件",
+            value: String(files.length),
+            sub: `占盘 ${fmtBytes(totalFileBytes)}`,
+            onClick: () => onNavigate("files"),
+          },
+          {
+            idx: "03",
+            label: "已接入 AI 助手",
+            value: String(connectedAgents.length),
+            sub: connectedAgents.length
+              ? connectedAgents
+                  .slice(0, 2)
+                  .map((a) => a.name)
+                  .join(" · ")
+              : "点击接入助手",
+            onClick: () =>
+              onOpenAgentHub ? onOpenAgentHub() : onNavigate("knowledge"),
+          },
+          {
+            idx: "04",
+            label: reviews.length > 0 ? "待审核变更" : "学习实验",
+            value: String(reviews.length > 0 ? reviews.length : experiments.length),
+            sub: reviews.length > 0 ? "前往审核队列确认" : "知识内化测验记录",
+            onClick: () =>
+              onNavigate(reviews.length > 0 ? "reviews" : "experiments"),
+          },
+        ].map((metric) => (
+          <button
+            key={metric.idx}
+            type="button"
+            onClick={metric.onClick}
+            className="flex flex-col items-start justify-between px-6 py-5 text-left transition-colors hover:bg-[var(--nf-bg-surface-subtle)]"
+            style={{ borderColor: "var(--nf-border-subtle)" }}
+          >
+            <div className="flex w-full items-center justify-between">
+              <span
+                className="text-xs font-medium"
+                style={{ color: "var(--nf-text-secondary)" }}
+              >
+                {metric.label}
+              </span>
+              <span
+                className="font-mono text-[10px]"
+                style={{ color: "var(--nf-accent)" }}
+              >
+                {metric.idx}
+              </span>
+            </div>
+            <div
+              className="mt-3 text-[28px] leading-none font-semibold tracking-tight tabular-nums"
+              style={{ color: "var(--nf-text-primary)" }}
+            >
+              {loading ? "—" : metric.value}
+            </div>
+            <div
+              className="mt-2 w-full truncate text-[11px]"
+              style={{ color: "var(--nf-text-muted)" }}
+            >
+              {metric.sub}
+            </div>
+          </button>
+        ))}
+      </section>
+
+      <div className="nf-ruler" />
+
+      {/* 主内容编辑部双栏 */}
+      {loading ? (
+        <p role="status" className="py-6 text-xs" style={{ color: "var(--nf-text-muted)" }}>
+          正在同步本地工作空间数据…
+        </p>
+      ) : (
+        <div className="grid gap-8 lg:grid-cols-[1.5fr_1fr]">
+          {/* 左列：最近沉淀的知识（极简列表流，无套娃边框） */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="nf-eyebrow">
+                <span className="nf-eyebrow-index">A</span>
+                <span>最近沉淀 · {knowledge.length}</span>
               </div>
+              <button
+                type="button"
+                onClick={() => onNavigate("knowledge")}
+                className="text-xs font-medium hover:underline"
+                style={{ color: "var(--nf-accent)" }}
+              >
+                查看全部 →
+              </button>
+            </div>
+
+            <div
+              className="overflow-hidden rounded-2xl border"
+              style={{
+                background: "var(--nf-bg-surface)",
+                borderColor: "var(--nf-border-subtle)",
+              }}
+            >
               {knowledge.length === 0 ? (
-                <p className="p-4 text-xs" style={{ color: "var(--nf-text-muted)" }}>
-                  暂无知识条目。前往「知识库」新建、导入 Markdown/ZIP，或在「研究对话」中提取。
+                <p className="px-6 py-10 text-xs" style={{ color: "var(--nf-text-muted)" }}>
+                  暂无知识条目。前往「知识库」新建图文笔记，或用「文件夹哨兵」一键收编桌面文档。
                 </p>
               ) : (
                 <ul className="divide-y" style={{ borderColor: "var(--nf-border-subtle)" }}>
-                  {knowledge.slice(0, 6).map((item) => (
+                  {knowledge.slice(0, 7).map((item) => (
                     <li
                       key={item.id}
-                      onClick={() => onNavigate("knowledge")}
-                      className="flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-xs transition-colors hover:opacity-85"
+                      onClick={() =>
+                        onJumpToItem
+                          ? onJumpToItem(item.space_id, item.id)
+                          : onNavigate("knowledge")
+                      }
+                      className="flex cursor-pointer items-center justify-between gap-4 px-5 py-3.5 text-[13px] transition-colors hover:bg-[var(--nf-bg-surface-subtle)]"
                     >
-                      <span className="truncate font-medium">{item.title}</span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{
+                            background:
+                              item.status === "active"
+                                ? "var(--nf-status-success)"
+                                : "var(--nf-accent)",
+                          }}
+                        />
+                        <span className="truncate font-medium">{item.title}</span>
+                      </div>
                       <span
-                        className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
-                        style={{
-                          background: "var(--nf-accent-soft)",
-                          color: "var(--nf-accent)",
-                        }}
+                        className="shrink-0 text-[11px]"
+                        style={{ color: "var(--nf-text-muted)" }}
                       >
-                        {item.status}
+                        {STATUS_ZH[item.status] ?? item.status}
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
-            </section>
+            </div>
+          </section>
 
-            <section style={cardStyle} className="overflow-hidden">
-              <div
-                className="flex items-center justify-between px-4 py-2.5 text-xs font-semibold"
-                style={{ borderBottom: "1px solid var(--nf-border-subtle)" }}
-              >
-                <span>最近研究对话（{conversations.length}）</span>
+          {/* 右列：最近研究对话 + 本地引擎心跳 */}
+          <div className="space-y-6">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="nf-eyebrow">
+                  <span className="nf-eyebrow-index">B</span>
+                  <span>研究对话 · {conversations.length}</span>
+                </div>
                 <button
                   type="button"
                   onClick={() => onNavigate("chat")}
-                  className="text-xs font-medium"
+                  className="text-xs font-medium hover:underline"
                   style={{ color: "var(--nf-accent)" }}
                 >
-                  进入对话
+                  开始对话 →
                 </button>
               </div>
-              {conversations.length === 0 ? (
-                <p className="p-4 text-xs" style={{ color: "var(--nf-text-muted)" }}>
-                  暂无研究会话。
-                </p>
-              ) : (
-                <ul className="divide-y" style={{ borderColor: "var(--nf-border-subtle)" }}>
-                  {conversations.slice(0, 5).map((c) => (
-                    <li
-                      key={c.id}
-                      onClick={() => onNavigate("chat")}
-                      className="flex cursor-pointer items-center justify-between px-4 py-2.5 text-xs"
-                    >
-                      <span className="truncate font-medium">{c.title}</span>
-                      <span style={{ color: "var(--nf-text-muted)" }}>
-                        {new Date(c.updated_at).toLocaleDateString("zh-CN")}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
-
-          <div className="space-y-4">
-            <section style={cardStyle} className="p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold">待审核事项</span>
-                <span
-                  className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    background: reviews.length ? "var(--nf-status-warning-bg)" : "var(--nf-status-success-bg)",
-                    color: reviews.length ? "var(--nf-status-warning)" : "var(--nf-status-success)",
-                  }}
-                >
-                  {reviews.length} 待处理
-                </span>
+              <div
+                className="overflow-hidden rounded-2xl border"
+                style={{
+                  background: "var(--nf-bg-surface)",
+                  borderColor: "var(--nf-border-subtle)",
+                }}
+              >
+                {conversations.length === 0 ? (
+                  <p className="px-5 py-6 text-xs" style={{ color: "var(--nf-text-muted)" }}>
+                    暂无研究会话。
+                  </p>
+                ) : (
+                  <ul className="divide-y" style={{ borderColor: "var(--nf-border-subtle)" }}>
+                    {conversations.slice(0, 4).map((c) => (
+                      <li
+                        key={c.id}
+                        onClick={() => onNavigate("chat")}
+                        className="flex cursor-pointer items-center justify-between gap-3 px-5 py-3 text-xs transition-colors hover:bg-[var(--nf-bg-surface-subtle)]"
+                      >
+                        <span className="truncate font-medium">{c.title}</span>
+                        <span
+                          className="shrink-0 font-mono text-[10.5px] tabular-nums"
+                          style={{ color: "var(--nf-text-muted)" }}
+                        >
+                          {new Date(c.updated_at).toLocaleDateString("zh-CN")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {reviews.length === 0 ? (
-                <p className="text-xs" style={{ color: "var(--nf-text-muted)" }}>
-                  当前无待审核变更。
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {reviews.slice(0, 3).map((r) => (
-                    <div
-                      key={r.id}
-                      className="rounded-md p-2 text-xs"
-                      style={{ background: "var(--nf-bg-surface-subtle)", border: "1px solid var(--nf-border-subtle)" }}
-                    >
-                      <div className="font-medium">{r.action} · {r.item_id.slice(0, 8)}…</div>
-                      {r.reason && <div style={{ color: "var(--nf-text-muted)" }}>{r.reason}</div>}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => onNavigate("reviews")}
-                    className="rounded-md px-3 py-1 text-xs font-medium"
-                    style={{ background: "var(--nf-accent)", color: "var(--nf-text-on-accent)" }}
-                  >
-                    前往审核队列
-                  </button>
-                </div>
-              )}
             </section>
 
-            <section style={cardStyle} className="p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold">知识空间（{spaces.length}）与实验（{experiments.length}）</span>
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="nf-eyebrow">
+                  <span className="nf-eyebrow-index">C</span>
+                  <span>本地引擎</span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => onNavigate("experiments")}
-                  className="text-xs font-medium"
+                  onClick={() => onNavigate("models")}
+                  className="text-xs font-medium hover:underline"
                   style={{ color: "var(--nf-accent)" }}
                 >
-                  进入实验
+                  配置模型 →
                 </button>
               </div>
-              <div className="space-y-1.5 text-xs">
-                {spaces.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between">
-                    <span>{s.name}</span>
-                    <span style={{ color: "var(--nf-text-muted)" }}>{s.kind}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section style={cardStyle} className="p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold">本地后端运行态</span>
-                <button
-                  type="button"
-                  onClick={() => onNavigate("status")}
-                  className="text-xs font-medium"
-                  style={{ color: "var(--nf-accent)" }}
-                >
-                  详情
-                </button>
-              </div>
-              {health ? (
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span style={{ color: "var(--nf-text-muted)" }}>数据库</span>
-                    <div className="font-mono">{health.database.dialect} · {health.database.connected ? "已连接" : "断开"}</div>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--nf-text-muted)" }}>模型适配层</span>
-                    <div className="font-mono">{health.model_adapter}</div>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--nf-text-muted)" }}>向量来源</span>
-                    <div className="font-mono">{health.embed_adapter}</div>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--nf-text-muted)" }}>版本</span>
-                    <div className="font-mono">v{health.version}</div>
-                  </div>
+              <div
+                className="space-y-2.5 rounded-2xl border px-5 py-4 text-xs"
+                style={{
+                  background: "var(--nf-bg-surface)",
+                  borderColor: "var(--nf-border-subtle)",
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <span style={{ color: "var(--nf-text-secondary)" }}>数据库</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{
+                        background:
+                          health?.status === "ok"
+                            ? "var(--nf-status-success)"
+                            : "var(--nf-status-warning)",
+                      }}
+                    />
+                    {health ? `${health.database.dialect.toUpperCase()} · 就绪` : "连接中"}
+                  </span>
                 </div>
-              ) : (
-                <p className="text-xs" style={{ color: "var(--nf-status-danger)" }}>
-                  无法连接本地后端（127.0.0.1:8000）
-                </p>
-              )}
+                <div className="flex items-center justify-between">
+                  <span style={{ color: "var(--nf-text-secondary)" }}>推理模型</span>
+                  <span className="font-mono text-[11px]">
+                    {health?.model_adapter ?? "未配置"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: "var(--nf-text-secondary)" }}>向量检索</span>
+                  <span className="font-mono text-[11px]">
+                    {health?.embed_adapter ?? "仅全文"}
+                  </span>
+                </div>
+              </div>
             </section>
           </div>
         </div>

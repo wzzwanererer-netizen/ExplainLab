@@ -1,0 +1,505 @@
+/* ============================================================================
+ * Nesti UI Style Plugins — Built-in Skins
+ * 1. cyber-neon      : 未来赛博（Cybernetic Terminal）
+ * 2. vintage-library : 复古图书馆（Classical Library）
+ * ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+ * PLUGIN 1: 未来赛博 · Cybernetic Terminal
+ * ---------------------------------------------------------------------------- */
+html[data-skin="cyber-neon"],
+html[data-skin="cyber-neon"][data-theme="dark"],
+html[data-skin="cyber-neon"][data-theme="light"] {
+  --nf-brand-primary: #00e5ff;
+  --nf-brand-glacier: #ff2e93;
+  --nf-brand-violet: #a855f7;
+  --nf-brand-ice: #102a43;
+  --nf-brand-offwhite: #070c1a;
+  --nf-brand-navy: #e6f7ff;
+
+  --nf-bg-window: #040712;
+  --nf-mica-window: radial-gradient(
+      ellipse 70% 55% at 0% 0%,
+      rgba(0, 229, 255, 0.13) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 60% 50% at 100% 100%,
+      rgba(255, 46, 147, 0.11) 0%,
+      transparent 55%
+    ),
+    linear-gradient(155deg, #040712 0%, #070d1f 52%, #050916 100%);
+  --nf-bg-canvas: #060b18;
+  --nf-bg-surface: #0b1328;
+  --nf-bg-surface-subtle: #080f20;
+  --nf-bg-surface-hover: #11203d;
+  --nf-bg-surface-active: #162a4f;
+  --nf-bg-glass: rgba(9, 17, 36, 0.88);
+  --nf-bg-overlay: rgba(2, 5, 14, 0.78);
+
+  --nf-text-primary: #e6f7ff;
+  --nf-text-secondary: #8fb4d4;
+  --nf-text-muted: #527394;
+  --nf-text-on-accent: #03111c;
+
+  --nf-border-subtle: rgba(0, 229, 255, 0.14);
+  --nf-border-default: rgba(0, 229, 255, 0.26);
+  --nf-border-strong: rgba(0, 229, 255, 0.48);
+
+  --nf-status-success: #22ffa8;
+  --nf-status-success-bg: rgba(34, 255, 168, 0.12);
+  --nf-status-warning: #ffcf33;
+  --nf-status-warning-bg: rgba(255, 207, 51, 0.13);
+  --nf-status-danger: #ff3b7f;
+  --nf-status-danger-bg: rgba(255, 59, 127, 0.15);
+  --nf-status-info: #00e5ff;
+  --nf-status-info-bg: rgba(0, 229, 255, 0.14);
+
+  --nf-accent: #00e5ff !important;
+  --nf-accent-hover: #4ff0ff !important;
+  --nf-accent-secondary: #ff2e93;
+  --nf-accent-soft: rgba(0, 229, 255, 0.14) !important;
+  --nf-accent-subtle: rgba(0, 229, 255, 0.08);
+  --nf-accent-border: rgba(0, 229, 255, 0.45) !important;
+  --nf-module-icon: #00e5ff !important;
+
+  --nf-shadow-sm: 0 0 0 1px rgba(0, 229, 255, 0.16), 0 4px 16px rgba(0, 0, 0, 0.48);
+  --nf-shadow-md: 0 0 20px rgba(0, 229, 255, 0.12), 0 10px 28px rgba(0, 0, 0, 0.6);
+  --nf-shadow-lg: 0 0 32px rgba(0, 229, 255, 0.18), 0 18px 46px rgba(0, 0, 0, 0.72);
+  --nf-workspace-shadow: -2px 0 24px rgba(0, 229, 255, 0.09);
+
+  --nf-radius-xs: 2px;
+  --nf-radius-sm: 3px;
+  --nf-radius-md: 5px;
+  --nf-radius-lg: 7px;
+
+  --nf-font-sans: "Cascadia Code", "JetBrains Mono", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --nf-font-display: "Cascadia Code", "JetBrains Mono", "Segoe UI", "Microsoft YaHei UI", monospace;
+  --nf-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  --nf-graph-grid: #10243d;
+  --nf-graph-edge-related: #6488ad;
+  --nf-graph-edge-depends: #00e5ff;
+  --nf-graph-edge-refines: #22ffa8;
+  --nf-graph-edge-duplicate: #ff2e93;
+  --nf-graph-edge-contradicts: #ff2e93;
+
+  --nesti-accent: #00e5ff;
+  --nesti-surface-0: #060b18;
+  --nesti-surface-1: #0b1328;
+  --nesti-surface-2: #080f20;
+  --nesti-surface-hover: #11203d;
+  --nesti-border-subtle: rgba(0, 229, 255, 0.16);
+  --nesti-border-strong: rgba(0, 229, 255, 0.36);
+  --nesti-text-primary: #e6f7ff;
+  --nesti-text-secondary: #8fb4d4;
+  --nesti-text-tertiary: #527394;
+}
+
+/* 赛博 HUD 坐标网格画布与荧光边框细节 */
+html[data-skin="cyber-neon"] .nf-workspace-pane {
+  background-color: #060b18;
+  background-image: linear-gradient(rgba(0, 229, 255, 0.038) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.038) 1px, transparent 1px);
+  background-size: 32px 32px;
+  border-left: 1px solid rgba(0, 229, 255, 0.34);
+  box-shadow: -4px 0 28px rgba(0, 229, 255, 0.08);
+}
+
+html[data-skin="cyber-neon"] .nf-nav-item[data-active="true"] {
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.16) 0%, rgba(255, 46, 147, 0.05) 100%);
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.55);
+}
+
+html[data-skin="cyber-neon"] .nf-nav-item[data-active="true"]::before {
+  background: #00e5ff;
+  box-shadow: 0 0 10px #00e5ff, 0 0 18px rgba(0, 229, 255, 0.65);
+}
+
+html[data-skin="cyber-neon"] .nf-eyebrow {
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.25);
+}
+
+html[data-skin="cyber-neon"] article:hover {
+  border-color: rgba(0, 229, 255, 0.52) !important;
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.14), inset 0 0 0 1px rgba(0, 229, 255, 0.12);
+}
+
+html[data-skin="cyber-neon"] .nf-shell button.text-white {
+  color: #03111c !important;
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.32);
+}
+
+/* ----------------------------------------------------------------------------
+ * PLUGIN 2: 复古图书馆 · Classical Library
+ * ---------------------------------------------------------------------------- */
+html[data-skin="vintage-library"],
+html[data-skin="vintage-library"][data-theme="light"],
+html[data-skin="vintage-library"][data-theme="dark"] {
+  --nf-brand-primary: #8c3228;
+  --nf-brand-glacier: #b38236;
+  --nf-brand-violet: #6d4c3d;
+  --nf-brand-ice: #e8dcc4;
+  --nf-brand-offwhite: #f5efe2;
+  --nf-brand-navy: #2b2118;
+
+  --nf-bg-window: #e4d7be;
+  --nf-mica-window: radial-gradient(
+      ellipse 80% 70% at 12% 8%,
+      rgba(179, 130, 54, 0.14) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 65% 60% at 95% 92%,
+      rgba(140, 50, 40, 0.08) 0%,
+      transparent 55%
+    ),
+    linear-gradient(150deg, #e7dbc5 0%, #efe5d2 50%, #e4d6bd 100%);
+  --nf-bg-canvas: #f5efe2;
+  --nf-bg-surface: #fbf7ef;
+  --nf-bg-surface-subtle: #efe7d6;
+  --nf-bg-surface-hover: #e7dcc5;
+  --nf-bg-surface-active: #dfd0b4;
+  --nf-bg-glass: rgba(251, 247, 239, 0.88);
+  --nf-bg-overlay: rgba(43, 33, 24, 0.42);
+
+  --nf-text-primary: #2b2118;
+  --nf-text-secondary: #5c4b3b;
+  --nf-text-muted: #8a7762;
+  --nf-text-on-accent: #fbf7ef;
+
+  --nf-border-subtle: rgba(92, 68, 42, 0.14);
+  --nf-border-default: rgba(92, 68, 42, 0.24);
+  --nf-border-strong: rgba(92, 68, 42, 0.38);
+
+  --nf-status-success: #2f6f4e;
+  --nf-status-success-bg: rgba(47, 111, 78, 0.11);
+  --nf-status-warning: #a66c16;
+  --nf-status-warning-bg: rgba(166, 108, 22, 0.12);
+  --nf-status-danger: #9e2a2b;
+  --nf-status-danger-bg: rgba(158, 42, 43, 0.11);
+  --nf-status-info: #8c3228;
+  --nf-status-info-bg: rgba(140, 50, 40, 0.10);
+
+  --nf-accent: #8c3228 !important;
+  --nf-accent-hover: #71251d !important;
+  --nf-accent-secondary: #b38236;
+  --nf-accent-soft: rgba(140, 50, 40, 0.11) !important;
+  --nf-accent-subtle: rgba(179, 130, 54, 0.09);
+  --nf-accent-border: rgba(140, 50, 40, 0.34) !important;
+  --nf-module-icon: #8c3228 !important;
+
+  --nf-shadow-sm: 0 1px 2px rgba(43, 33, 24, 0.06), inset 0 0 0 1px rgba(255, 250, 240, 0.7);
+  --nf-shadow-md: 0 8px 22px -10px rgba(43, 33, 24, 0.16), 0 1px 3px rgba(43, 33, 24, 0.06);
+  --nf-shadow-lg: 0 18px 40px -12px rgba(43, 33, 24, 0.24), 0 2px 8px rgba(43, 33, 24, 0.09);
+  --nf-workspace-shadow: -3px 0 18px rgba(43, 33, 24, 0.08);
+
+  --nf-radius-xs: 3px;
+  --nf-radius-sm: 5px;
+  --nf-radius-md: 8px;
+  --nf-radius-lg: 10px;
+
+  --nf-font-sans: "Georgia", "Songti SC", "STSong", "Noto Serif SC", "FangSong", "Microsoft YaHei UI", serif;
+  --nf-font-display: "Georgia", "Songti SC", "STSong", "Noto Serif SC", serif;
+  --nf-font-mono: "Cascadia Code", "Courier New", Consolas, monospace;
+
+  --nf-graph-grid: #ddd0b8;
+  --nf-graph-edge-related: #8a7762;
+  --nf-graph-edge-depends: #8c3228;
+  --nf-graph-edge-refines: #2f6f4e;
+  --nf-graph-edge-duplicate: #b38236;
+  --nf-graph-edge-contradicts: #9e2a2b;
+
+  --nesti-accent: #8c3228;
+  --nesti-surface-0: #f5efe2;
+  --nesti-surface-1: #fbf7ef;
+  --nesti-surface-2: #efe7d6;
+  --nesti-surface-hover: #e7dcc5;
+  --nesti-border-subtle: rgba(92, 68, 42, 0.16);
+  --nesti-border-strong: rgba(92, 68, 42, 0.30);
+  --nesti-text-primary: #2b2118;
+  --nesti-text-secondary: #5c4b3b;
+  --nesti-text-tertiary: #8a7762;
+}
+
+/* 复古书页暗纹与精装装帧边框 */
+html[data-skin="vintage-library"] .nf-workspace-pane {
+  background-color: #f5efe2;
+  background-image: radial-gradient(rgba(140, 108, 66, 0.06) 1px, transparent 0);
+  background-size: 22px 22px;
+  border-left: 2px solid rgba(179, 130, 54, 0.45);
+  box-shadow: -4px 0 20px rgba(43, 33, 24, 0.08);
+}
+
+html[data-skin="vintage-library"] .nf-nav-item[data-active="true"] {
+  background: rgba(140, 50, 40, 0.09);
+  font-weight: 700;
+}
+
+html[data-skin="vintage-library"] .nf-nav-item[data-active="true"]::before {
+  background: #8c3228;
+  width: 3px;
+}
+
+html[data-skin="vintage-library"] article {
+  box-shadow: 0 2px 6px rgba(43, 33, 24, 0.05), inset 0 0 0 1px rgba(179, 130, 54, 0.14);
+}
+
+html[data-skin="vintage-library"] article:hover {
+  border-color: rgba(140, 50, 40, 0.42) !important;
+  box-shadow: 0 6px 18px rgba(43, 33, 24, 0.09), inset 0 0 0 1px rgba(179, 130, 54, 0.28);
+}
+
+/* ----------------------------------------------------------------------------
+ * PLUGIN 3: 极简墨水屏 · E-Ink Zen
+ * ---------------------------------------------------------------------------- */
+html[data-skin="eink-zen"],
+html[data-skin="eink-zen"][data-theme="light"],
+html[data-skin="eink-zen"][data-theme="dark"] {
+  --nf-brand-primary: #181817;
+  --nf-brand-glacier: #6b6a65;
+  --nf-brand-violet: #40403d;
+  --nf-brand-ice: #ecebe6;
+  --nf-brand-offwhite: #faf9f5;
+  --nf-brand-navy: #141413;
+
+  --nf-bg-window: #f2f1ec;
+  --nf-mica-window: #f2f1ec;
+  --nf-bg-canvas: #faf9f5;
+  --nf-bg-surface: #ffffff;
+  --nf-bg-surface-subtle: #f4f3ee;
+  --nf-bg-surface-hover: #eae9e2;
+  --nf-bg-surface-active: #e0dfd8;
+  --nf-bg-glass: #faf9f5;
+  --nf-bg-overlay: rgba(20, 20, 19, 0.36);
+
+  --nf-text-primary: #141413;
+  --nf-text-secondary: #484744;
+  --nf-text-muted: #767570;
+  --nf-text-on-accent: #faf9f5;
+
+  --nf-border-subtle: rgba(20, 20, 19, 0.16);
+  --nf-border-default: rgba(20, 20, 19, 0.28);
+  --nf-border-strong: rgba(20, 20, 19, 0.56);
+
+  --nf-status-success: #1f5c3a;
+  --nf-status-success-bg: rgba(31, 92, 58, 0.08);
+  --nf-status-warning: #7a5209;
+  --nf-status-warning-bg: rgba(122, 82, 9, 0.08);
+  --nf-status-danger: #8c2323;
+  --nf-status-danger-bg: rgba(140, 35, 35, 0.08);
+  --nf-status-info: #181817;
+  --nf-status-info-bg: rgba(24, 24, 23, 0.07);
+
+  --nf-accent: #181817 !important;
+  --nf-accent-hover: #333330 !important;
+  --nf-accent-secondary: #6b6a65;
+  --nf-accent-soft: rgba(24, 24, 23, 0.08) !important;
+  --nf-accent-subtle: rgba(24, 24, 23, 0.04);
+  --nf-accent-border: rgba(24, 24, 23, 0.36) !important;
+  --nf-module-icon: #181817 !important;
+
+  --nf-shadow-sm: none;
+  --nf-shadow-md: none;
+  --nf-shadow-lg: 0 2px 8px rgba(20, 20, 19, 0.10);
+  --nf-workspace-shadow: none;
+
+  --nf-radius-xs: 2px;
+  --nf-radius-sm: 4px;
+  --nf-radius-md: 6px;
+  --nf-radius-lg: 8px;
+
+  --nf-font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --nf-font-display: "Georgia", "Songti SC", "STSong", serif;
+
+  --nf-graph-grid: #e2e1db;
+  --nf-graph-edge-related: #6b6a65;
+  --nf-graph-edge-depends: #181817;
+  --nf-graph-edge-refines: #484744;
+  --nf-graph-edge-duplicate: #8c2323;
+  --nf-graph-edge-contradicts: #8c2323;
+
+  --nesti-accent: #181817;
+  --nesti-surface-0: #faf9f5;
+  --nesti-surface-1: #ffffff;
+  --nesti-surface-2: #f4f3ee;
+  --nesti-surface-hover: #eae9e2;
+  --nesti-border-subtle: rgba(20, 20, 19, 0.18);
+  --nesti-border-strong: rgba(20, 20, 19, 0.36);
+  --nesti-text-primary: #141413;
+  --nesti-text-secondary: #484744;
+  --nesti-text-tertiary: #767570;
+}
+
+html[data-skin="eink-zen"] .nf-workspace-pane {
+  border-left: 1px solid rgba(20, 20, 19, 0.28);
+}
+
+/* ----------------------------------------------------------------------------
+ * PLUGIN 4: 森系护眼 · Nordic Matcha
+ * ---------------------------------------------------------------------------- */
+html[data-skin="nordic-matcha"],
+html[data-skin="nordic-matcha"][data-theme="light"],
+html[data-skin="nordic-matcha"][data-theme="dark"] {
+  --nf-brand-primary: #2c6b54;
+  --nf-brand-glacier: #6ea388;
+  --nf-brand-violet: #4a7c67;
+  --nf-brand-ice: #dce8de;
+  --nf-brand-offwhite: #f2f6f2;
+  --nf-brand-navy: #1c2b24;
+
+  --nf-bg-window: #e1ebe3;
+  --nf-mica-window: linear-gradient(145deg, #e2ece4 0%, #eaf1eb 52%, #e0eae2 100%);
+  --nf-bg-canvas: #f2f6f2;
+  --nf-bg-surface: #fafcfa;
+  --nf-bg-surface-subtle: #eaf1eb;
+  --nf-bg-surface-hover: #dfe9e1;
+  --nf-bg-surface-active: #d3e2d6;
+  --nf-bg-glass: rgba(250, 252, 250, 0.88);
+  --nf-bg-overlay: rgba(22, 38, 30, 0.36);
+
+  --nf-text-primary: #1c2b24;
+  --nf-text-secondary: #496055;
+  --nf-text-muted: #768f83;
+  --nf-text-on-accent: #fafcfa;
+
+  --nf-border-subtle: rgba(44, 107, 84, 0.12);
+  --nf-border-default: rgba(44, 107, 84, 0.20);
+  --nf-border-strong: rgba(44, 107, 84, 0.34);
+
+  --nf-status-success: #247857;
+  --nf-status-success-bg: rgba(36, 120, 87, 0.11);
+  --nf-status-warning: #b37414;
+  --nf-status-warning-bg: rgba(179, 116, 20, 0.11);
+  --nf-status-danger: #c44545;
+  --nf-status-danger-bg: rgba(196, 69, 69, 0.10);
+  --nf-status-info: #2c6b54;
+  --nf-status-info-bg: rgba(44, 107, 84, 0.10);
+
+  --nf-accent: #2c6b54 !important;
+  --nf-accent-hover: #215542 !important;
+  --nf-accent-secondary: #6ea388;
+  --nf-accent-soft: rgba(44, 107, 84, 0.11) !important;
+  --nf-accent-subtle: rgba(44, 107, 84, 0.06);
+  --nf-accent-border: rgba(44, 107, 84, 0.30) !important;
+  --nf-module-icon: #2c6b54 !important;
+
+  --nf-shadow-sm: 0 1px 2px rgba(28, 43, 36, 0.04);
+  --nf-shadow-md: 0 8px 22px -10px rgba(28, 43, 36, 0.10);
+  --nf-shadow-lg: 0 18px 38px -12px rgba(28, 43, 36, 0.16);
+
+  --nf-radius-xs: 5px;
+  --nf-radius-sm: 8px;
+  --nf-radius-md: 12px;
+  --nf-radius-lg: 16px;
+
+  --nf-graph-grid: #d4e3d7;
+  --nf-graph-edge-related: #6b8578;
+  --nf-graph-edge-depends: #2c6b54;
+  --nf-graph-edge-refines: #5b9a78;
+  --nf-graph-edge-duplicate: #c44545;
+  --nf-graph-edge-contradicts: #c44545;
+
+  --nesti-accent: #2c6b54;
+  --nesti-surface-0: #f2f6f2;
+  --nesti-surface-1: #fafcfa;
+  --nesti-surface-2: #eaf1eb;
+  --nesti-surface-hover: #dfe9e1;
+  --nesti-border-subtle: rgba(44, 107, 84, 0.14);
+  --nesti-border-strong: rgba(44, 107, 84, 0.26);
+  --nesti-text-primary: #1c2b24;
+  --nesti-text-secondary: #496055;
+  --nesti-text-tertiary: #768f83;
+}
+
+/* ----------------------------------------------------------------------------
+ * PLUGIN 5: 爵士黑金 · Noir Gold Atelier
+ * ---------------------------------------------------------------------------- */
+html[data-skin="noir-gold"],
+html[data-skin="noir-gold"][data-theme="dark"],
+html[data-skin="noir-gold"][data-theme="light"] {
+  --nf-brand-primary: #d4a853;
+  --nf-brand-glacier: #e5c37a;
+  --nf-brand-violet: #a47a32;
+  --nf-brand-ice: #29241d;
+  --nf-brand-offwhite: #131210;
+  --nf-brand-navy: #f3ece0;
+
+  --nf-bg-window: #0d0c0a;
+  --nf-mica-window: radial-gradient(
+      ellipse 70% 50% at 8% 0%,
+      rgba(212, 168, 83, 0.11) 0%,
+      transparent 55%
+    ),
+    linear-gradient(155deg, #0d0c0a 0%, #14120f 55%, #0e0d0b 100%);
+  --nf-bg-canvas: #131210;
+  --nf-bg-surface: #1b1916;
+  --nf-bg-surface-subtle: #161411;
+  --nf-bg-surface-hover: #24211c;
+  --nf-bg-surface-active: #2e2922;
+  --nf-bg-glass: rgba(24, 22, 18, 0.90);
+  --nf-bg-overlay: rgba(6, 5, 4, 0.72);
+
+  --nf-text-primary: #f3ece0;
+  --nf-text-secondary: #b8ad9b;
+  --nf-text-muted: #7d7364;
+  --nf-text-on-accent: #14110b;
+
+  --nf-border-subtle: rgba(212, 168, 83, 0.14);
+  --nf-border-default: rgba(212, 168, 83, 0.24);
+  --nf-border-strong: rgba(212, 168, 83, 0.44);
+
+  --nf-status-success: #52c997;
+  --nf-status-success-bg: rgba(82, 201, 151, 0.12);
+  --nf-status-warning: #e5b754;
+  --nf-status-warning-bg: rgba(229, 183, 84, 0.14);
+  --nf-status-danger: #e26d6d;
+  --nf-status-danger-bg: rgba(226, 109, 109, 0.14);
+  --nf-status-info: #d4a853;
+  --nf-status-info-bg: rgba(212, 168, 83, 0.13);
+
+  --nf-accent: #d4a853 !important;
+  --nf-accent-hover: #e3bc6e !important;
+  --nf-accent-secondary: #a47a32;
+  --nf-accent-soft: rgba(212, 168, 83, 0.15) !important;
+  --nf-accent-subtle: rgba(212, 168, 83, 0.08);
+  --nf-accent-border: rgba(212, 168, 83, 0.38) !important;
+  --nf-module-icon: #d4a853 !important;
+
+  --nf-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.42);
+  --nf-shadow-md: 0 10px 26px rgba(0, 0, 0, 0.52);
+  --nf-shadow-lg: 0 20px 44px rgba(0, 0, 0, 0.65);
+
+  --nf-font-sans: "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --nf-font-display: "Georgia", "Songti SC", "STSong", serif;
+
+  --nf-graph-grid: #25211b;
+  --nf-graph-edge-related: #8d8270;
+  --nf-graph-edge-depends: #d4a853;
+  --nf-graph-edge-refines: #52c997;
+  --nf-graph-edge-duplicate: #e26d6d;
+  --nf-graph-edge-contradicts: #e26d6d;
+
+  --nesti-accent: #d4a853;
+  --nesti-surface-0: #131210;
+  --nesti-surface-1: #1b1916;
+  --nesti-surface-2: #161411;
+  --nesti-surface-hover: #24211c;
+  --nesti-border-subtle: rgba(212, 168, 83, 0.15);
+  --nesti-border-strong: rgba(212, 168, 83, 0.30);
+  --nesti-text-primary: #f3ece0;
+  --nesti-text-secondary: #b8ad9b;
+  --nesti-text-tertiary: #7d7364;
+}
+
+html[data-skin="noir-gold"] .nf-shell button.text-white {
+  color: #14110b !important;
+  font-weight: 700;
+}
+
+html[data-skin="noir-gold"] article:hover {
+  border-color: rgba(212, 168, 83, 0.45) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(212, 168, 83, 0.14);
+}
