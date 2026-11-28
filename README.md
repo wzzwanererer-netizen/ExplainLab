@@ -1,11 +1,22 @@
 # Nesti · AI 工作空间（ExplainLab V3）
 
+[![CI (Windows / macOS / Linux)](https://github.com/wzzwanererer-netizen/ExplainLab/actions/workflows/ci.yml/badge.svg)](https://github.com/wzzwanererer-netizen/ExplainLab/actions/workflows/ci.yml)
+[![Release v3.0.0](https://img.shields.io/github/v/release/wzzwanererer-netizen/ExplainLab)](https://github.com/wzzwanererer-netizen/ExplainLab/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ![ExplainLab Banner](docs/assets/explainlab-banner.png)
 
 > **给电脑里所有 AI 助手装上同一个本地「长期海马体」** · 100% 本地隐私、跨 22 款主流 AI 助手共享记忆、乱文件夹资产化管理、一键生成办公成品、以及可扩展的 Theme Studio 2.0 风格插件工坊。
 
-- **开源协议**：MIT License（完全免费，本地运行，零云端数据上传）
+- **产品官网**：https://wzzwanererer-netizen.github.io/ExplainLab/
+- **Windows 一键体验包**：https://github.com/wzzwanererer-netizen/ExplainLab/releases/latest
 - **演示视频（B站）**：https://www.bilibili.com/video/BV1dgykzrE7h/
+
+| 平台 | 支持状态 | 启动方式 |
+| :--- | :--- | :--- |
+| **Windows 10 / 11** | ✅ 真机完整验证 | 下载 Release 一键体验包，双击 `一键启动-Nesti工作空间.bat` |
+| **macOS (Apple Silicon / Intel)** | 🧪 跨平台源码支持（GitHub Actions `macos-latest` CI 验证） | 克隆仓库后运行 `chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh` |
+| **Linux (Ubuntu / WSL2 等)** | 🧪 跨平台源码支持（GitHub Actions `ubuntu-latest` CI 验证） | 克隆仓库后运行 `chmod +x start-nesti.sh scripts/explainlab-mcp.sh && ./start-nesti.sh` |
 
 ---
 

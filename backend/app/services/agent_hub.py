@@ -16,6 +16,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -132,11 +133,21 @@ def _home() -> Path:
 
 
 def _appdata() -> Path:
+    if sys.platform == "darwin":
+        return _home() / "Library" / "Application Support"
+    if sys.platform != "win32":
+        raw_xdg = os.environ.get("XDG_CONFIG_HOME")
+        return Path(raw_xdg) if raw_xdg else (_home() / ".config")
     raw = os.environ.get("APPDATA")
     return Path(raw) if raw else (_home() / "AppData" / "Roaming")
 
 
 def _localappdata() -> Path:
+    if sys.platform == "darwin":
+        return _home() / "Library" / "Application Support"
+    if sys.platform != "win32":
+        raw_xdg = os.environ.get("XDG_DATA_HOME")
+        return Path(raw_xdg) if raw_xdg else (_home() / ".local" / "share")
     raw = os.environ.get("LOCALAPPDATA")
     return Path(raw) if raw else (_home() / "AppData" / "Local")
 

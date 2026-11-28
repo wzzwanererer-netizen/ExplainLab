@@ -14,11 +14,17 @@ const http = require("node:http");
 const net = require("node:net");
 const path = require("node:path");
 
+const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
 const ROOT_DIR = path.resolve(__dirname, "..");
 const FRONTEND_DIST = path.join(ROOT_DIR, "frontend", "dist");
 const BACKEND_DIR = path.join(ROOT_DIR, "backend");
-const PYTHON_EXE = path.join(ROOT_DIR, ".venv", "Scripts", "python.exe");
-const ICON_PATH = path.join(ROOT_DIR, "scripts", "explainlab.ico");
+const PYTHON_EXE = IS_WIN
+  ? path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
+  : path.join(ROOT_DIR, ".venv", "bin", "python");
+const ICON_PATH = IS_WIN
+  ? path.join(ROOT_DIR, "scripts", "explainlab.ico")
+  : path.join(__dirname, "nesti-logo.png");
 
 const BACKEND_HOST = "127.0.0.1";
 const BACKEND_PORT = 8000;
@@ -170,12 +176,16 @@ function createWindow(appPort) {
     title: "Nesti · AI 工作空间",
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     backgroundColor: "#eef3fa",
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#00000000",
-      symbolColor: "#243247",
-      height: 44,
-    },
+    titleBarStyle: IS_MAC ? "hiddenInset" : "hidden",
+    ...(IS_WIN
+      ? {
+          titleBarOverlay: {
+            color: "#00000000",
+            symbolColor: "#243247",
+            height: 44,
+          },
+        }
+      : {}),
     autoHideMenuBar: true,
     show: !START_SILENT,
     webPreferences: {
@@ -211,11 +221,13 @@ ipcMain.on("nesti-theme-changed", (_event, theme) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const isDark = currentTheme === "dark";
   try {
-    mainWindow.setTitleBarOverlay({
-      color: "#00000000",
-      symbolColor: isDark ? "#e7effa" : "#243247",
-      height: 44,
-    });
+    if (IS_WIN && typeof mainWindow.setTitleBarOverlay === "function") {
+      mainWindow.setTitleBarOverlay({
+        color: "#00000000",
+        symbolColor: isDark ? "#e7effa" : "#243247",
+        height: 44,
+      });
+    }
     mainWindow.setBackgroundColor(isDark ? "#0b1019" : "#eef3fa");
   } catch {
     // 忽略旧版系统不支持
@@ -540,7 +552,10 @@ async function pollCompletedAgentTasks(includeLatest = false) {
 
 function isAutoStartEnabled() {
   try {
-    return fs.existsSync(STARTUP_SHORTCUT_PATH);
+    if (IS_WIN) {
+      return fs.existsSync(STARTUP_SHORTCUT_PATH);
+    }
+    return Boolean(app.getLoginItemSettings().openAtLogin);
   } catch {
     return false;
   }
@@ -548,7 +563,13 @@ function isAutoStartEnabled() {
 
 function setAutoStartEnabled(enabled) {
   try {
-    if (enabled) {
+    if (!IS_WIN) {
+      app.setLoginItemSettings({
+        openAtLogin: Boolean(enabled),
+        openAsHidden: true,
+        args: ["--silent"],
+      });
+    } else if (enabled) {
       const startupDir = path.dirname(STARTUP_SHORTCUT_PATH);
       if (!fs.existsSync(startupDir)) {
         fs.mkdirSync(startupDir, { recursive: true });
